@@ -384,12 +384,12 @@ export function ChatKitPanel({
       color: {
         grayscale: {
           hue: 220,
-          tint: 6,
-          shade: theme === "dark" ? -1 : -4,
+          tint: 6 as const,
+          shade: (theme === "dark" ? -1 : -4) as const,
         },
         accent: {
           primary: theme === "dark" ? "#f1f5f9" : "#0f172a",
-          level: 1,
+          level: 1 as const,
         },
       },
       radius: "round" as const,
