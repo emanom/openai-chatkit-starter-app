@@ -392,7 +392,7 @@ export function ChatKitPanel({
           level: 1,
         },
       },
-      radius: "round",
+      radius: "round" as const,
     },
     startScreen: {
       greeting: GREETING,
