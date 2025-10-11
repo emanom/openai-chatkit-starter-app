@@ -171,6 +171,7 @@ export function ChatKitPanel({
     async (currentSecret: string | null) => {
       console.info("[ChatKitPanel] getClientSecret invoked", {
         currentSecretPresent: Boolean(currentSecret),
+        currentSecretPreview: currentSecret ? currentSecret.substring(0, 10) + '...' : 'none',
         workflowId: WORKFLOW_ID,
         endpoint: CREATE_SESSION_ENDPOINT,
         isProduction: process.env.NODE_ENV === "production",
@@ -179,8 +180,27 @@ export function ChatKitPanel({
         secretExpired: Date.now() > secretExpiresRef.current
       });
 
+      // CRITICAL: If ChatKit is passing us an existing secret, validate and return it!
+      // ChatKit will pass the current secret when it wants to reuse the same session
+      if (currentSecret) {
+        console.info("[ChatKitPanel] ✅ ChatKit provided existing secret, returning it to maintain session continuity");
+        // Store it in our cache for future use
+        cachedSecretRef.current = currentSecret;
+        if (!secretExpiresRef.current || secretExpiresRef.current < Date.now()) {
+          // Set a reasonable expiration if we don't have one (5 minutes from now)
+          secretExpiresRef.current = Date.now() + (5 * 60 * 1000);
+        }
+        hasActiveSessionRef.current = true;
+        if (isMountedRef.current) {
+          isInitializingRef.current = false;
+          setIsInitializingSession(false);
+          setErrorState({ session: null, integration: null });
+        }
+        return currentSecret;
+      }
+
       // If we have a cached secret in-memory that hasn't expired, return it immediately
-      if (!currentSecret && cachedSecretRef.current && Date.now() < secretExpiresRef.current) {
+      if (cachedSecretRef.current && Date.now() < secretExpiresRef.current) {
         console.info(
           "[ChatKitPanel] ✅ Returning cached secret (valid for another",
           Math.floor((secretExpiresRef.current - Date.now()) / 1000),
@@ -196,7 +216,7 @@ export function ChatKitPanel({
       }
 
       // Check browser localStorage cache as a fallback (persists across re-mounts)
-      if (isBrowser && !currentSecret) {
+      if (isBrowser) {
         try {
           const lsSecret = window.localStorage.getItem("chatkit_client_secret");
           const lsExpires = Number(window.localStorage.getItem("chatkit_client_secret_expires"));
