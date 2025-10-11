@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { ChatKitPanel, type FactAction } from "@/components/ChatKitPanel";
 import { useColorScheme } from "@/hooks/useColorScheme";
 
 export default function App() {
   const { scheme, setScheme } = useColorScheme();
   const [isOpen, setIsOpen] = useState(false);
+  
+  // Log modal state changes
+  useEffect(() => {
+    console.info("[App] Modal isOpen:", isOpen);
+  }, [isOpen]);
 
   const handleWidgetAction = useCallback(async (action: FactAction) => {
     if (process.env.NODE_ENV !== "production") {
