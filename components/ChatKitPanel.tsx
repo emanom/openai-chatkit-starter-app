@@ -211,12 +211,14 @@ export function ChatKitPanel({
           Math.floor((secretExpiresRef.current - Date.now()) / 1000),
           "seconds)"
         );
-        if (isMountedRef.current) {
-          isInitializingRef.current = false;
+        // ALWAYS clear initializing state when returning cached secret
+        isInitializingRef.current = false;
+        hasActiveSessionRef.current = true;
+        // Use setTimeout to ensure state update happens even if component remounts
+        setTimeout(() => {
           setIsInitializingSession(false);
           setErrorState({ session: null, integration: null });
-        }
-        hasActiveSessionRef.current = true;
+        }, 0);
         return cachedSecretRef.current;
       }
 
@@ -233,12 +235,14 @@ export function ChatKitPanel({
               Math.floor((lsExpires - Date.now()) / 1000),
               "seconds)"
             );
-            if (isMountedRef.current) {
-              isInitializingRef.current = false;
+            // ALWAYS clear initializing state when returning cached secret
+            isInitializingRef.current = false;
+            hasActiveSessionRef.current = true;
+            // Use setTimeout to ensure state update happens even if component remounts
+            setTimeout(() => {
               setIsInitializingSession(false);
               setErrorState({ session: null, integration: null });
-            }
-            hasActiveSessionRef.current = true;
+            }, 0);
             return lsSecret;
           }
         } catch (e) {
