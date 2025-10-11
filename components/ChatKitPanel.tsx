@@ -541,18 +541,11 @@ export function ChatKitPanel({
   }
 
   return (
-    <div className="relative flex h-[90vh] w-full flex-col overflow-hidden bg-white shadow-sm transition-colors dark:bg-slate-900">
-      {/* Persistent production debug info */}
-      {process.env.NODE_ENV === "production" && (
-        <div className="absolute top-0 left-0 right-0 z-[100] bg-yellow-100 p-2 text-xs border-b border-yellow-300">
-          <strong>Debug:</strong> init={String(isInitializingSession)} | err={blockingError || "none"} | ctrl={String(Boolean(chatkit.control))} | script={scriptStatus} | wf={WORKFLOW_ID ? "✓" : "✗"}
-        </div>
-      )}
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-white shadow-sm transition-colors dark:bg-slate-900">
       <ChatKit
         key={widgetInstanceKey}
         control={chatkit.control}
         className={"block h-full w-full"}
-        style={{ paddingTop: process.env.NODE_ENV === "production" ? "2.5rem" : undefined }}
       />
       {blockingError && (
         <ErrorOverlay
