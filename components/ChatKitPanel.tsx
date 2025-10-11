@@ -466,7 +466,7 @@ export function ChatKitPanel({
       setTimeout(() => {
         const chatkitElement = document.querySelector('openai-chatkit');
         if (chatkitElement) {
-          const shadowRoot = (chatkitElement as any).shadowRoot;
+          const shadowRoot = (chatkitElement as Element & { shadowRoot?: ShadowRoot }).shadowRoot;
           console.info("[ChatKitPanel] ChatKit element check:", {
             elementExists: true,
             hasShadowRoot: Boolean(shadowRoot),
