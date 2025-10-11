@@ -377,7 +377,7 @@ export function ChatKitPanel({
     [isWorkflowConfigured, setErrorState]
   );
 
-  const chatkit = useChatKit({
+  const chatkitConfig = {
     api: { getClientSecret },
     theme: {
       colorScheme: theme,
@@ -449,9 +449,12 @@ export function ChatKitPanel({
     onError: ({ error }: { error: unknown }) => {
       // Note that Chatkit UI handles errors for your users.
       // Thus, your app code doesn't need to display errors on UI.
-      console.error("ChatKit error", error);
+      console.error("❌ [ChatKitPanel] ChatKit error:", error);
+      console.error("❌ [ChatKitPanel] Error details:", JSON.stringify(error, null, 2));
     },
-  });
+  };
+  
+  const chatkit = useChatKit(chatkitConfig);
 
   // Track control changes specifically
   useEffect(() => {
