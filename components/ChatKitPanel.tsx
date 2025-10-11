@@ -71,7 +71,9 @@ export function ChatKitPanel({
   }, []);
 
   useEffect(() => {
+    console.info("[ChatKitPanel] Component mounted");
     return () => {
+      console.info("[ChatKitPanel] Component unmounting");
       isMountedRef.current = false;
     };
   }, []);
@@ -500,7 +502,7 @@ export function ChatKitPanel({
       {/* Persistent production debug info */}
       {process.env.NODE_ENV === "production" && (
         <div className="absolute top-0 left-0 right-0 z-[100] bg-yellow-100 p-2 text-xs border-b border-yellow-300">
-          <strong>Debug:</strong> init={String(isInitializingSession)} | err={blockingError || "none"} | ctrl={String(Boolean(chatkit.control))} | script={scriptStatus} | wf={WORKFLOW_ID ? "✓" : "✗"} | opacity={blockingError || isInitializingSession ? "0" : "100"}
+          <strong>Debug:</strong> init={String(isInitializingSession)} | err={blockingError || "none"} | ctrl={String(Boolean(chatkit.control))} | script={scriptStatus} | wf={WORKFLOW_ID ? "✓" : "✗"}
         </div>
       )}
       <ChatKit
@@ -509,16 +511,19 @@ export function ChatKitPanel({
         className={"block h-full w-full"}
         style={{ paddingTop: process.env.NODE_ENV === "production" ? "2.5rem" : undefined }}
       />
-      <ErrorOverlay
-        error={blockingError}
-        fallbackMessage={
-          blockingError || !isInitializingSession
-            ? null
-            : "Loading assistant session..."
-        }
-        onRetry={handleResetChat}
-        retryLabel="Restart chat"
-      />
+      {blockingError && (
+        <ErrorOverlay
+          error={blockingError}
+          fallbackMessage={null}
+          onRetry={handleResetChat}
+          retryLabel="Restart chat"
+        />
+      )}
+      {isInitializingSession && !blockingError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80">
+          <div className="text-slate-600 dark:text-slate-400">Loading assistant session...</div>
+        </div>
+      )}
     </div>
   );
 }
