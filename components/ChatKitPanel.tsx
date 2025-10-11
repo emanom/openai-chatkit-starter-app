@@ -453,6 +453,14 @@ export function ChatKitPanel({
     },
   });
 
+  // Track control changes specifically
+  useEffect(() => {
+    console.info("[ChatKitPanel] Control changed:", {
+      hasControl: Boolean(chatkit.control),
+      controlValue: chatkit.control ? "exists" : "null",
+    });
+  }, [chatkit.control]);
+
   // Log state changes
   useEffect(() => {
     console.info("[ChatKitPanel] State changed:", {
@@ -463,24 +471,26 @@ export function ChatKitPanel({
       widgetInstanceKey,
     });
     
-    // Check if ChatKit element is actually rendered and has content
+    // Check if ChatKit element is actually rendered and has content - check multiple times
     if (isBrowser && !isInitializingSession && chatkit.control) {
-      setTimeout(() => {
-        const chatkitElement = document.querySelector('openai-chatkit');
-        if (chatkitElement) {
-          const shadowRoot = (chatkitElement as Element & { shadowRoot?: ShadowRoot }).shadowRoot;
-          console.info("[ChatKitPanel] ChatKit element check:", {
-            elementExists: true,
-            hasShadowRoot: Boolean(shadowRoot),
-            shadowRootChildren: shadowRoot?.childElementCount || 0,
-            elementDisplay: window.getComputedStyle(chatkitElement).display,
-            elementVisibility: window.getComputedStyle(chatkitElement).visibility,
-            elementOpacity: window.getComputedStyle(chatkitElement).opacity,
-          });
-        } else {
-          console.warn("[ChatKitPanel] ChatKit element not found in DOM!");
-        }
-      }, 500);
+      [500, 1000, 2000, 3000].forEach((delay) => {
+        setTimeout(() => {
+          const chatkitElement = document.querySelector('openai-chatkit');
+          if (chatkitElement) {
+            const shadowRoot = (chatkitElement as Element & { shadowRoot?: ShadowRoot }).shadowRoot;
+            console.info(`[ChatKitPanel] ChatKit element check (${delay}ms):`, {
+              elementExists: true,
+              hasShadowRoot: Boolean(shadowRoot),
+              shadowRootChildren: shadowRoot?.childElementCount || 0,
+              elementDisplay: window.getComputedStyle(chatkitElement).display,
+              elementVisibility: window.getComputedStyle(chatkitElement).visibility,
+              elementOpacity: window.getComputedStyle(chatkitElement).opacity,
+            });
+          } else {
+            console.warn(`[ChatKitPanel] ChatKit element not found in DOM at ${delay}ms!`);
+          }
+        }, delay);
+      });
     }
   }, [isInitializingSession, chatkit.control, scriptStatus, errors, widgetInstanceKey]);
 
