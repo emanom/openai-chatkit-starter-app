@@ -80,6 +80,12 @@ export async function POST(request: Request): Promise<Response> {
       headers["OpenAI-Project"] = projectId;
     }
     
+    // Add domain key for domain verification in production
+    const domainKey = process.env.CHATKIT_DOMAIN_KEY;
+    if (domainKey) {
+      headers["ChatKit-Domain-Key"] = domainKey;
+    }
+    
     const upstreamResponse = await fetch(url, {
       method: "POST",
       headers,
