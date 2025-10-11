@@ -169,15 +169,20 @@ export function ChatKitPanel({
 
   const getClientSecret = useCallback(
     async (currentSecret: string | null) => {
-      console.info("[ChatKitPanel] getClientSecret invoked", {
+      const timestamp = new Date().toISOString();
+      const callId = Math.random().toString(36).substring(7);
+      console.info(`🔔 [ChatKitPanel] getClientSecret invoked [${callId}] at ${timestamp}`, {
         currentSecretPresent: Boolean(currentSecret),
-        currentSecretPreview: currentSecret ? currentSecret.substring(0, 10) + '...' : 'none',
+        currentSecretPreview: currentSecret ? currentSecret.substring(0, 15) + '...' : 'none',
+        currentSecretLength: currentSecret?.length || 0,
         workflowId: WORKFLOW_ID,
         endpoint: CREATE_SESSION_ENDPOINT,
         isProduction: process.env.NODE_ENV === "production",
         isCurrentlyInitializing: isInitializingRef.current,
         hasCachedSecret: !!cachedSecretRef.current,
-        secretExpired: Date.now() > secretExpiresRef.current
+        cachedSecretPreview: cachedSecretRef.current ? cachedSecretRef.current.substring(0, 15) + '...' : 'none',
+        secretExpired: Date.now() > secretExpiresRef.current,
+        expiresIn: secretExpiresRef.current ? Math.floor((secretExpiresRef.current - Date.now()) / 1000) : 0
       });
 
       // CRITICAL: If ChatKit is passing us an existing secret, validate and return it!
