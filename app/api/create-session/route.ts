@@ -120,15 +120,9 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const clientSecret = upstreamJson?.client_secret ?? null;
-    const expiresAfter = upstreamJson?.expires_after ?? null;
-    const responsePayload = {
-      client_secret: clientSecret,
-      expires_after: expiresAfter,
-    };
-
+    // Return the full upstream response to ensure ChatKit gets all session data
     return buildJsonResponse(
-      responsePayload,
+      upstreamJson,
       200,
       { "Content-Type": "application/json" },
       sessionCookie
