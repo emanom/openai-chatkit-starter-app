@@ -9,7 +9,7 @@ export const STARTER_PROMPTS: StartScreenPrompt[] = [
     label: "Enhancement request",
     prompt:
       "I'd like to request an enhancement. Ask me the product area, the problem, and the desired outcome. Then propose next steps.",
-    icon: "sparkles",
+    icon: "sparkle",
   },
   {
     label: "Report an issue",
