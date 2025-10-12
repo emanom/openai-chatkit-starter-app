@@ -31,8 +31,11 @@ cp .env.example .env.local
 Update `.env.local` with the variables that match your setup.
 
 - `OPENAI_API_KEY` — API key created **within the same org & project as your Agent Builder**
+- `OPENAI_ORG_ID` — your org id (recommended for clarity)
+- `OPENAI_PROJECT_ID` — your project id (required for project-scoped keys)
 - `NEXT_PUBLIC_CHATKIT_WORKFLOW_ID` — the workflow you created in [Agent Builder](https://platform.openai.com/agent-builder)
 - (optional) `CHATKIT_API_BASE` - customizable base URL for the ChatKit API endpoint
+- (production) `CHATKIT_DOMAIN_KEY` — domain allowlist key from the OpenAI dashboard
 
 ### 4. Run the app
 
@@ -75,3 +78,9 @@ Run the PowerShell setup script to create your `.env.local` file:
 - [ChatKit JavaScript Library](http://openai.github.io/chatkit-js/)
 - [Advanced Self-Hosting Examples](https://github.com/openai/openai-chatkit-advanced-samples)
 - [AWS Amplify Documentation](https://docs.amplify.aws/)
+
+### Production notes
+
+- In Amplify, add env vars: `OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `NEXT_PUBLIC_CHATKIT_WORKFLOW_ID`, `CHATKIT_DOMAIN_KEY`.
+- This repo writes env vars to `.env.production` in `amplify.yml` so Next.js can access them at build/runtime.
+- Get the domain key from the OpenAI domain allowlist page and set it as `CHATKIT_DOMAIN_KEY`. The API layer forwards it via `ChatKit-Domain-Key` header.

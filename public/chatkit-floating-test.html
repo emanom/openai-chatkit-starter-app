@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatKit Floating Test</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        background: #f8fafc;
+        color: #0f172a;
+        min-height: 100vh;
+      }
+      .content {
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 16px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 0 0 16px;
+        color: #475569;
+      }
+      /* Bottom-right floating container for the chat widget */
+      openai-chatkit {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 320px;
+        height: 560px;
+        background: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(2, 6, 23, 0.18);
+        z-index: 10000;
+      }
+      @media (max-width: 480px) {
+        openai-chatkit {
+          width: calc(100vw - 24px);
+          height: 60vh;
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+        }
+      }
+    </style>
+    <!-- Load the ChatKit web component -->
+    <script
+      src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
+      async
+    ></script>
+  </head>
+  <body>
+    <div class="content">
+      <h1>ChatKit Floating Test</h1>
+      <p>
+        Make sure your server is running with <code>OPENAI_API_KEY</code> and
+        <code>NEXT_PUBLIC_CHATKIT_WORKFLOW_ID</code> set. Then visit this page at
+        <code>http://localhost:3000/chatkit-floating-test.html</code>.
+      </p>
+    </div>
+
+    <!-- The floating chatbot -->
+    <openai-chatkit id="chatbot"></openai-chatkit>
+
+    <script>
+      async function getClientSecret(currentSecret) {
+        // Obtain a short-lived client secret from the local Next.js API route.
+        const response = await fetch('/api/create-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // Body optional; server defaults to configured workflow. Override by sending { workflowId }.
+          body: JSON.stringify({})
+        });
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          throw new Error('Failed to create ChatKit session: ' + (text || response.statusText));
+        }
+        const data = await response.json();
+        if (!data || !data.client_secret) {
+          throw new Error('Missing client_secret in response');
+        }
+        return data.client_secret;
+      }
+
+      // Wait until the custom element is defined, then initialize.
+      (function initWhenReady() {
+        if (window.customElements && window.customElements.get('openai-chatkit')) {
+          const el = document.getElementById('chatbot');
+          // Configure ChatKit to call our token endpoint whenever it needs a secret.
+          el.setOptions({
+            api: { getClientSecret },
+            header: { title: 'Local Assistant' }
+          });
+        } else {
+          requestAnimationFrame(initWhenReady);
+        }
+      })();
+    </script>
+  </body>
+  </html>
+
+
