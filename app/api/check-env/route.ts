@@ -1,4 +1,10 @@
 export async function GET() {
+  if (process.env.NODE_ENV === 'production') {
+    return new Response(JSON.stringify({ error: 'Disabled in production' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   const apiKey = process.env.OPENAI_API_KEY || '';
   const orgId = process.env.OPENAI_ORG_ID || '';
   const projectId = process.env.OPENAI_PROJECT_ID || '';

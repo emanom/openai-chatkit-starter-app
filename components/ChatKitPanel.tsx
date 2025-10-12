@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatKit, useChatKit } from "@openai/chatkit-react";
+import type { UseChatKitOptions } from "@openai/chatkit-react";
 import {
   STARTER_PROMPTS,
   PLACEHOLDER_INPUT,
@@ -71,9 +72,7 @@ export function ChatKitPanel({
   }, []);
 
   useEffect(() => {
-    console.info("[ChatKitPanel] Component mounted");
     return () => {
-      console.info("[ChatKitPanel] Component unmounting");
       isMountedRef.current = false;
     };
   }, []);
@@ -94,7 +93,7 @@ export function ChatKitPanel({
     };
 
     const handleError = (event: Event) => {
-      console.error("Failed to load chatkit.js for some reason", event);
+      if (isDev) console.error("Failed to load chatkit.js", event);
       if (!isMountedRef.current) {
         return;
       }
@@ -169,21 +168,12 @@ export function ChatKitPanel({
 
   const getClientSecret = useCallback(
     async (currentSecret: string | null) => {
-      const timestamp = new Date().toISOString();
-      const callId = Math.random().toString(36).substring(7);
-      console.info(`🔔 [ChatKitPanel] getClientSecret invoked [${callId}] at ${timestamp}`, {
-        currentSecretPresent: Boolean(currentSecret),
-        currentSecretPreview: currentSecret ? currentSecret.substring(0, 15) + '...' : 'none',
-        currentSecretLength: currentSecret?.length || 0,
-        workflowId: WORKFLOW_ID,
-        endpoint: CREATE_SESSION_ENDPOINT,
-        isProduction: process.env.NODE_ENV === "production",
-        isCurrentlyInitializing: isInitializingRef.current,
-        hasCachedSecret: !!cachedSecretRef.current,
-        cachedSecretPreview: cachedSecretRef.current ? cachedSecretRef.current.substring(0, 15) + '...' : 'none',
-        secretExpired: Date.now() > secretExpiresRef.current,
-        expiresIn: secretExpiresRef.current ? Math.floor((secretExpiresRef.current - Date.now()) / 1000) : 0
-      });
+      if (isDev) {
+        console.info("[ChatKitPanel] getClientSecret", {
+          hasCurrent: Boolean(currentSecret),
+          hasCached: Boolean(cachedSecretRef.current),
+        });
+      }
 
       // CRITICAL: If ChatKit is passing us an existing secret, validate and return it!
       // ChatKit will pass the current secret when it wants to reuse the same session
@@ -206,11 +196,7 @@ export function ChatKitPanel({
 
       // If we have a cached secret in-memory that hasn't expired, return it immediately
       if (cachedSecretRef.current && Date.now() < secretExpiresRef.current) {
-        console.info(
-          "[ChatKitPanel] ✅ Returning cached secret (valid for another",
-          Math.floor((secretExpiresRef.current - Date.now()) / 1000),
-          "seconds)"
-        );
+        if (isDev) console.info("[ChatKitPanel] returning cached secret");
         // ALWAYS clear initializing state when returning cached secret
         isInitializingRef.current = false;
         hasActiveSessionRef.current = true;
@@ -230,11 +216,7 @@ export function ChatKitPanel({
           if (lsSecret && Number.isFinite(lsExpires) && Date.now() < lsExpires) {
             cachedSecretRef.current = lsSecret;
             secretExpiresRef.current = lsExpires;
-            console.info(
-              "[ChatKitPanel] ✅ Returning localStorage cached secret (valid for",
-              Math.floor((lsExpires - Date.now()) / 1000),
-              "seconds)"
-            );
+            if (isDev) console.info("[ChatKitPanel] returning localStorage cached secret");
             // ALWAYS clear initializing state when returning cached secret
             isInitializingRef.current = false;
             hasActiveSessionRef.current = true;
@@ -263,36 +245,25 @@ export function ChatKitPanel({
       // Prevent rapid successive session creation calls (cooldown: 2 seconds)
       const now = Date.now();
       const timeSinceLastSession = now - lastSessionCreatedRef.current;
-      console.info("[ChatKitPanel] Cooldown check", {
-        now,
-        lastTimestamp: lastSessionCreatedRef.current,
-        timeSinceLastMs: timeSinceLastSession,
-        cooldownActive: timeSinceLastSession < 2000,
-        timestampExists: lastSessionCreatedRef.current > 0,
-        isNewSession: !currentSecret,
-        willBlock: !currentSecret && timeSinceLastSession < 2000 && lastSessionCreatedRef.current > 0
-      });
+      if (isDev) console.info("[ChatKitPanel] cooldown", { sinceMs: timeSinceLastSession });
       
       if (!currentSecret && timeSinceLastSession < 2000 && lastSessionCreatedRef.current > 0) {
-        console.warn("[ChatKitPanel] ⚠️ COOLDOWN ACTIVE - Blocking duplicate session creation", {
-          timeSinceLastMs: timeSinceLastSession,
-          cooldownMs: 2000
-        });
+        if (isDev) console.warn("[ChatKitPanel] cooldown active; waiting");
         // Wait for cooldown to expire
         await new Promise(resolve => setTimeout(resolve, 2000 - timeSinceLastSession + 100));
-        console.info("[ChatKitPanel] Cooldown expired, proceeding");
+        if (isDev) console.info("[ChatKitPanel] cooldown ok");
       }
 
       // Prevent concurrent initialization calls - wait for existing init to complete
       if (!currentSecret && isInitializingRef.current) {
-        console.warn("[ChatKitPanel] Concurrent initialization detected, waiting...");
+        if (isDev) console.warn("[ChatKitPanel] concurrent init; waiting...");
         // Wait for the existing initialization to complete
         let attempts = 0;
         while (isInitializingRef.current && attempts < 50) {
           await new Promise(resolve => setTimeout(resolve, 100));
           attempts++;
         }
-        console.info("[ChatKitPanel] Wait complete, proceeding with initialization");
+        if (isDev) console.info("[ChatKitPanel] proceed after wait");
       }
 
       if (isMountedRef.current) {
@@ -301,7 +272,7 @@ export function ChatKitPanel({
             isInitializingRef.current = true; // Mark initialization as in progress
             lastSessionCreatedRef.current = Date.now(); // Set timestamp immediately
             setIsInitializingSession(true);
-            console.info("[ChatKitPanel] Setting isInitializingSession to true and timestamp");
+          if (isDev) console.info("[ChatKitPanel] initializing session");
           } else {
             // We already have a valid session; keep UI unblocked
             isInitializingRef.current = false;
@@ -324,30 +295,20 @@ export function ChatKitPanel({
 
         const raw = await response.text();
 
-        console.info("[ChatKitPanel] createSession response", {
-          status: response.status,
-          ok: response.ok,
-          bodyLength: raw.length,
-        });
+        if (isDev) console.info("[ChatKitPanel] createSession", { status: response.status });
 
         let data: Record<string, unknown> = {};
         if (raw) {
           try {
             data = JSON.parse(raw) as Record<string, unknown>;
           } catch (parseError) {
-            console.error(
-              "Failed to parse create-session response",
-              parseError
-            );
+            if (isDev) console.error("Failed to parse create-session response", parseError);
           }
         }
 
         if (!response.ok) {
           const detail = extractErrorDetail(data, response.statusText);
-          console.error("Create session request failed", {
-            status: response.status,
-            body: data,
-          });
+          if (isDev) console.error("Create session request failed", { status: response.status });
           throw new Error(detail);
         }
 
@@ -381,7 +342,7 @@ export function ChatKitPanel({
         console.info("[ChatKitPanel] Session created successfully, cached secret expires in", Math.floor((secretExpiresRef.current - Date.now()) / 1000), "seconds");
         return clientSecret;
       } catch (error) {
-        console.error("Failed to create ChatKit session", error);
+        if (isDev) console.error("Failed to create ChatKit session", error);
         const detail =
           error instanceof Error
             ? error.message
@@ -391,22 +352,18 @@ export function ChatKitPanel({
         }
         throw error instanceof Error ? error : new Error(detail);
       } finally {
-        console.info("[ChatKitPanel] getClientSecret finally block", {
-          isMounted: isMountedRef.current,
-          currentSecret,
-          willSetInitFalse: isMountedRef.current && !currentSecret
-        });
+        if (isDev) console.info("[ChatKitPanel] finalize getClientSecret", { isMounted: isMountedRef.current });
         if (isMountedRef.current && !currentSecret) {
           isInitializingRef.current = false; // Reset initialization flag
           setIsInitializingSession(false);
-          console.info("[ChatKitPanel] Set isInitializingSession to false and reset init flag");
+          if (isDev) console.info("[ChatKitPanel] init=false");
         }
       }
     },
     [isWorkflowConfigured, setErrorState]
   );
 
-  const chatkitConfig = {
+  const chatkitConfig: UseChatKitOptions = {
     api: { getClientSecret },
     theme: {
       colorScheme: theme,
@@ -414,7 +371,8 @@ export function ChatKitPanel({
         grayscale: {
           hue: 220,
           tint: 6,
-          shade: theme === "dark" ? -1 : -4,
+          // Keep within documented numeric range to avoid type errors
+          shade: theme === "dark" ? 1 : 4,
         },
         accent: {
           primary: theme === "dark" ? "#f1f5f9" : "#0f172a",
@@ -486,58 +444,28 @@ export function ChatKitPanel({
   // @ts-expect-error - Type mismatch between theme config and ChatKit expectations
   const chatkit = useChatKit(chatkitConfig);
 
-  // Track control changes specifically
+  // Optional dev log
   useEffect(() => {
-    console.info("[ChatKitPanel] Control changed:", {
-      hasControl: Boolean(chatkit.control),
-      controlValue: chatkit.control ? "exists" : "null",
-    });
+    if (isDev) {
+      console.info("[ChatKitPanel] control", { has: Boolean(chatkit.control) });
+    }
   }, [chatkit.control]);
 
-  // Log state changes
+  // Minimal state log in development only
   useEffect(() => {
-    console.info("[ChatKitPanel] State changed:", {
-      isInitializingSession,
-      hasControl: Boolean(chatkit.control),
-      scriptStatus,
-      hasError: Boolean(errors.session ?? errors.integration ?? errors.script),
-      widgetInstanceKey,
+    if (!isDev) return;
+    console.info("[ChatKitPanel] state", {
+      init: isInitializingSession,
+      control: Boolean(chatkit.control),
+      script: scriptStatus,
     });
-    
-    // Check if ChatKit element is actually rendered and has content - check multiple times
-    if (isBrowser && !isInitializingSession && chatkit.control) {
-      [500, 1000, 2000, 3000].forEach((delay) => {
-        setTimeout(() => {
-          const chatkitElement = document.querySelector('openai-chatkit');
-          if (chatkitElement) {
-            const shadowRoot = (chatkitElement as Element & { shadowRoot?: ShadowRoot }).shadowRoot;
-            console.info(`[ChatKitPanel] ChatKit element check (${delay}ms):`, {
-              elementExists: true,
-              hasShadowRoot: Boolean(shadowRoot),
-              shadowRootChildren: shadowRoot?.childElementCount || 0,
-              elementDisplay: window.getComputedStyle(chatkitElement).display,
-              elementVisibility: window.getComputedStyle(chatkitElement).visibility,
-              elementOpacity: window.getComputedStyle(chatkitElement).opacity,
-            });
-          } else {
-            console.warn(`[ChatKitPanel] ChatKit element not found in DOM at ${delay}ms!`);
-          }
-        }, delay);
-      });
-    }
-  }, [isInitializingSession, chatkit.control, scriptStatus, errors, widgetInstanceKey]);
+  }, [isInitializingSession, chatkit.control, scriptStatus]);
 
   const activeError = errors.session ?? errors.integration;
   const blockingError = errors.script ?? activeError;
 
   if (isDev) {
-    console.debug("[ChatKitPanel] render state", {
-      isInitializingSession,
-      hasControl: Boolean(chatkit.control),
-      scriptStatus,
-      hasError: Boolean(blockingError),
-      workflowId: WORKFLOW_ID,
-    });
+    console.debug("[ChatKitPanel] render", { init: isInitializingSession });
   }
 
   return (
