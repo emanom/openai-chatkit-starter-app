@@ -271,7 +271,7 @@ export function ChatKitPanel({
           if (!hasActiveSessionRef.current) {
             isInitializingRef.current = true; // Mark initialization as in progress
             lastSessionCreatedRef.current = Date.now(); // Set timestamp immediately
-            setIsInitializingSession(true);
+          setIsInitializingSession(true);
           if (isDev) console.info("[ChatKitPanel] initializing session");
           } else {
             // We already have a valid session; keep UI unblocked
@@ -499,12 +499,12 @@ export function ChatKitPanel({
         </div>
       </div>
       {blockingError && (
-        <ErrorOverlay
-          error={blockingError}
+      <ErrorOverlay
+        error={blockingError}
           fallbackMessage={null}
           onRetry={handleResetChat}
-          retryLabel="Restart chat"
-        />
+        retryLabel="Restart chat"
+      />
       )}
       {isInitializingSession && !blockingError && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80">
