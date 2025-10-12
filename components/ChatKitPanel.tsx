@@ -441,7 +441,6 @@ export function ChatKitPanel({
     },
   };
   
-  // @ts-expect-error - Type mismatch between theme config and ChatKit expectations
   const chatkit = useChatKit(chatkitConfig);
 
   // Optional dev log
