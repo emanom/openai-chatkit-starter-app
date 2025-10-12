@@ -383,7 +383,6 @@ export function ChatKitPanel({
     },
     startScreen: {
       greeting: GREETING,
-      prompts: STARTER_PROMPTS,
     },
     composer: {
       placeholder: PLACEHOLDER_INPUT,
@@ -443,6 +442,17 @@ export function ChatKitPanel({
   
   const chatkit = useChatKit(chatkitConfig);
 
+  const handleQuickPrompt = useCallback(
+    (text: string) => {
+      if (!text) return;
+      try {
+        chatkit.setComposerValue(text);
+        chatkit.focusComposer();
+      } catch {}
+    },
+    [chatkit]
+  );
+
   // Optional dev log
   useEffect(() => {
     if (isDev) {
@@ -472,8 +482,22 @@ export function ChatKitPanel({
       <ChatKit
         key={widgetInstanceKey}
         control={chatkit.control}
-        className={"block h-full w-full"}
+        className={"flex-1 w-full"}
       />
+      <div className="border-t border-slate-200 bg-white/90 p-2 backdrop-blur supports-[backdrop-filter]:bg-white/70 dark:border-slate-800 dark:bg-slate-900/90">
+        <div className="flex flex-wrap gap-2">
+          {STARTER_PROMPTS.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => handleQuickPrompt(p.prompt)}
+              className="rounded-full bg-slate-900 px-3 py-1.5 text-sm text-white shadow-sm transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white dark:focus:ring-slate-600"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
       {blockingError && (
         <ErrorOverlay
           error={blockingError}
