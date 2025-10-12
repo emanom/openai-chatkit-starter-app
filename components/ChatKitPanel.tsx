@@ -446,7 +446,7 @@ export function ChatKitPanel({
     (text: string) => {
       if (!text) return;
       try {
-        chatkit.setComposerValue(text);
+        chatkit.setComposerValue({ text });
         chatkit.focusComposer();
       } catch {}
     },
