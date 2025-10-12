@@ -4,7 +4,8 @@ export const runtime = "nodejs";
 
 interface CreateSessionRequestBody {
   workflow?: { id?: string | null } | null;
-  scope?: { user_id?: string | null } | null;
+  // Arbitrary key/values you want your agent to receive (e.g., user profile)
+  scope?: Record<string, unknown> | null;
   workflowId?: string | null;
 }
 
@@ -86,15 +87,16 @@ export async function POST(request: Request): Promise<Response> {
       headers["ChatKit-Domain-Key"] = domainKey;
     }
     
+    // Build payload (scope is not currently supported by hosted sessions)
+    const payload: Record<string, unknown> = {
+      workflow: { id: resolvedWorkflowId },
+      user: userId,
+    };
+
     const upstreamResponse = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        workflow: { 
-          id: resolvedWorkflowId
-        },
-        user: userId,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (process.env.NODE_ENV !== "production") {

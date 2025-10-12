@@ -7,7 +7,7 @@
     <style>
       body {
         margin: 0;
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
         background: #f8fafc;
         color: #0f172a;
         min-height: 100vh;
@@ -26,26 +26,84 @@
         color: #475569;
       }
       /* Bottom-right floating container for the chat widget */
-      openai-chatkit {
+      #chat-wrapper {
         position: fixed;
         bottom: 20px;
         right: 20px;
-        width: 320px;
-        height: 560px;
+        width: 470px;  /* desktop size */
+        height: 821px; /* desktop size */
+        z-index: 10000;
+        display: none;
+      }
+      #chat-wrapper.open { display: block; }
+
+      /* Top-right launcher link */
+      #chat-launcher {
+        position: fixed;
+        top: 14px;
+        right: 18px;
+        background: transparent;
+        color: #0f172a;
+        font-weight: 700;
+        text-decoration: underline;
+        cursor: pointer;
+        z-index: 10002;
+      }
+      #chat-wrapper > openai-chatkit {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         background: #ffffff;
         border-radius: 12px;
         overflow: hidden;
         box-shadow: 0 10px 30px rgba(2, 6, 23, 0.18);
-        z-index: 10000;
       }
+      /* Prompt toolbar that sits above the widget (desktop only) */
+      #chat-prompt-bar {
+        position: absolute;
+        right: 12px;
+        bottom: 90px; /* sit above the composer */
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        z-index: 2;
+      }
+      /* Scrim to hide scrolling content behind the buttons */
+      #chat-bottom-scrim {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 64px; /* approx top edge of composer */
+        height: 40px; /* fade just up to the prompt buttons */
+        background: linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0));
+        z-index: 1;
+        pointer-events: none; /* do not block interactions */
+        border-bottom-left-radius: 12px;
+        border-bottom-right-radius: 12px;
+      }
+      #chat-prompt-bar button {
+        background: #003769;
+        color: #ffffff;
+        border: none;
+        border-radius: 9999px;
+        padding: 8px 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #chat-prompt-bar button:hover { background:#004a8f; }
+
+      /* (minimize now uses native header rightAction, no overlay) */
+
       @media (max-width: 480px) {
-        openai-chatkit {
-          width: calc(100vw - 24px);
-          height: 60vh;
+        #chat-wrapper {
+          width: calc((100vw - 24px) * 1.21);
+          height: 73vh;
           left: 12px;
           right: 12px;
           bottom: 12px;
         }
+        #chat-prompt-bar { display: none; }
       }
     </style>
     <!-- Load the ChatKit web component -->
@@ -58,23 +116,31 @@
     <div class="content">
       <h1>ChatKit Floating Test</h1>
       <p>
-        Make sure your server is running with <code>OPENAI_API_KEY</code> and
-        <code>NEXT_PUBLIC_CHATKIT_WORKFLOW_ID</code> set. Then visit this page at
-        <code>http://localhost:3000/chatkit-floating-test.html</code>.
-      </p>
+        Make sure your server is running with <code>OPENAI_API_KEY</code>      </p>
     </div>
 
-    <!-- The floating chatbot -->
-    <openai-chatkit id="chatbot"></openai-chatkit>
+    <a id="chat-launcher" href="#" aria-controls="chat-wrapper" aria-expanded="false">Support</a>
+    <div id="chat-wrapper"></div>
 
     <script>
+      function getUrlParam(name) {
+        const url = new URL(window.location.href);
+        const v = url.searchParams.get(name);
+        return v ? v.trim() : null;
+      }
+
       async function getClientSecret(currentSecret) {
-        // Obtain a short-lived client secret from the local Next.js API route.
+        // Always mint on our server; ChatKit may call this again to refresh.
         const response = await fetch('/api/create-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // Body optional; server defaults to configured workflow. Override by sending { workflowId }.
-          body: JSON.stringify({})
+          body: JSON.stringify({
+            // Pass optional user context to the agent via scope
+            scope: {
+              firstName: getUrlParam('firstName') || getUrlParam('first') || null,
+              email: getUrlParam('email') || null
+            }
+          })
         });
         if (!response.ok) {
           const text = await response.text().catch(() => '');
@@ -87,17 +153,130 @@
         return data.client_secret;
       }
 
-      // Wait until the custom element is defined, then initialize.
-      (function initWhenReady() {
-        if (window.customElements && window.customElements.get('openai-chatkit')) {
-          const el = document.getElementById('chatbot');
-          // Configure ChatKit to call our token endpoint whenever it needs a secret.
+      // Wait until the custom element is defined, then create and initialize it.
+      (async function initWhenReady() {
+        if (!(window.customElements && window.customElements.get('openai-chatkit'))) {
+          requestAnimationFrame(initWhenReady);
+          return;
+        }
+
+        try {
+          const wrapper = document.getElementById('chat-wrapper');
+          const launcher = document.getElementById('chat-launcher');
+          const el = document.createElement('openai-chatkit');
+          // Provide a token fetcher; ChatKit will call this as needed.
           el.setOptions({
             api: { getClientSecret },
-            header: { title: 'Local Assistant' }
+            header: {
+              rightAction: {
+                icon: 'collapse-small',
+                onClick: () => {
+                  wrapper.classList.remove('open');
+                  launcher.setAttribute('aria-expanded', 'false');
+                }
+              }
+            },
+            startScreen: {
+              greeting: 'How can I help you with fyi?'
+            },
+            // Make source items clickable when they include a usable URL.
+            entities: {
+              onClick: (entity) => {
+                let url = (entity.data && entity.data.url) || (typeof entity.title === 'string' && entity.title.match(/^https?:\/\//) ? entity.title : null);
+                // Fallback: derive FYI support article link from filename-like titles
+                if (!url && typeof entity.title === 'string') {
+                  const t = entity.title.trim();
+                  // Match: 4404600478605-Support-Requests-and-... .html
+                  const m = t.match(/^(\d{6,})-([A-Za-z0-9\-]+)\.html$/);
+                  if (m) {
+                    url = `https://support.fyi.app/hc/en-us/articles/${m[1]}-${m[2]}.html`;
+                  }
+                }
+                if (url) {
+                  try { window.open(url, '_blank', 'noopener,noreferrer'); } catch (_) {}
+                }
+              }
+            },
+            widgets: {
+              onAction: async (action) => {
+                const url = (action && (action.payload?.url || action.payload?.href)) || null;
+                if (url && /^https?:\/\//.test(String(url))) {
+                  try { window.open(String(url), '_blank', 'noopener,noreferrer'); } catch (_) {}
+                }
+              }
+            }
           });
-        } else {
-          requestAnimationFrame(initWhenReady);
+          wrapper.appendChild(el);
+
+          // Build a prompt toolbar that PREFILLS (does not send) the composer.
+          const bar = document.createElement('div');
+          bar.id = 'chat-prompt-bar';
+          const prompts = [
+            ['Enhancement request', 'I want to request a product enhancement: '],
+            ['Report an issue', 'I want to report a bug: '],
+            ['I need help with…', 'I need help with: ']
+          ];
+          for (const [label, text] of prompts) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = label;
+            btn.addEventListener('click', async () => {
+              try {
+                await el.setComposerValue({ text });
+                await el.focusComposer();
+              } catch (_) {}
+            });
+            bar.appendChild(btn);
+          }
+          wrapper.appendChild(bar);
+
+          // Add a fading scrim behind the buttons to hide scrolling content
+          const scrim = document.createElement('div');
+          scrim.id = 'chat-bottom-scrim';
+          wrapper.appendChild(scrim);
+
+          // Keep scrim aligned with composer height if it changes later
+          const resizeObserver = new ResizeObserver(() => {
+            // no-op placeholder for future composer height adjustments
+          });
+          resizeObserver.observe(wrapper);
+
+          // Position the toolbar above the widget and update on resize.
+
+          function openChat() {
+            wrapper.classList.add('open');
+            launcher.setAttribute('aria-expanded', 'true');
+            // Focus composer after opening
+            setTimeout(() => {
+              try { el.focusComposer(); } catch (_) {}
+            }, 0);
+          }
+
+          function closeChat() {
+            wrapper.classList.remove('open');
+            launcher.setAttribute('aria-expanded', 'false');
+          }
+
+          // Launcher click toggles chat visibility
+          launcher.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (wrapper.classList.contains('open')) {
+              closeChat();
+            } else {
+              openChat();
+            }
+          });
+
+          // Optionally open on first prompt button click
+          bar.addEventListener('click', () => {
+            if (!wrapper.classList.contains('open')) openChat();
+          }, { once: false });
+
+          // Expose for console testing
+          window.chatkitOpen = openChat;
+          window.chatkitClose = closeChat;
+        } catch (e) {
+          console.error('[chatkit-floating-test] init failed', e);
         }
       })();
     </script>
