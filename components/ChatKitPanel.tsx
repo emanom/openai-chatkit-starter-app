@@ -408,13 +408,20 @@ export function ChatKitPanel({
       },
     },
     widgets: {
-      onAction: async (action) => {
+      onAction: async (action: unknown) => {
         try {
-          if (action?.type === "prefill") {
-            const text = String((action as any)?.payload?.text || "");
-            if (text) {
-              await chatkit.setComposerValue({ text });
-              await chatkit.focusComposer();
+          if (typeof action === "object" && action !== null) {
+            const obj = action as Record<string, unknown>;
+            if (obj.type === "prefill") {
+              const payload = (obj as { payload?: unknown }).payload;
+              const text =
+                typeof (payload as { text?: unknown } | undefined)?.text === "string"
+                  ? ((payload as { text?: string }).text as string)
+                  : "";
+              if (text) {
+                await chatkit.setComposerValue({ text });
+                await chatkit.focusComposer();
+              }
             }
           }
         } catch {}
@@ -486,9 +493,10 @@ export function ChatKitPanel({
     [chatkit]
   );
 
-  const PromptIcon = ({ name }: { name?: string }) => {
+  const PromptIcon = ({ name }: { name?: unknown }) => {
     const common = "h-4 w-4";
-    switch (name) {
+    const n = typeof name === "string" ? name : undefined;
+    switch (n) {
       case "sparkle":
         return (
           <svg viewBox="0 0 20 20" className={common} aria-hidden="true">
