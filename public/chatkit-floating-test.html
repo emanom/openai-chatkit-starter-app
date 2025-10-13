@@ -293,9 +293,8 @@
             startScreen: {
               greeting: uiGreeting,
               prompts: [
-                { label: 'What can fyi do for me?', prompt: 'What can fyi do for me?', icon: 'sparkle' },
-                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' },
-                { label: "What's new with fyi?", prompt: "What's the latest with fyi?", icon: 'sparkle' }
+                { label: "What's new with fyi?", prompt: "What's the latest with fyi?", icon: 'sparkle' },
+                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' }
               ]
             },
             disclaimer: {
@@ -442,8 +441,7 @@
           list.className = 'prefill-list';
           const prompts = [
             ['Enhancement request', 'I want to request this product enhancement: '],
-            ['Report an issue', 'I want to report the following issue: '],
-            ['I need help with…', 'I need help with: '],
+            ['Report an issue', 'I want to report the following issue: ']
           ];
           const iconSvgs = {
             sparkle: '<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M9.5 1.75a.75.75 0 0 1 1 0l1.8 1.64c.2.18.31.43.31.7 0 .27-.11.52-.31.7L10.5 6.43a.75.75 0 0 1-1 0L7.7 4.79a.98.98 0 0 1-.31-.7c0-.27.11-.52.31-.7L9.5 1.75zM3.2 9.2a.6.6 0 0 1 .8 0l1.28 1.16c.18.16.28.38.28.62s-.1.46-.28.62L4 12.76a.6.6 0 0 1-.8 0l-1.28-1.16A.86.86 0 0 1 1.64 11c0-.24.1-.46.28-.62L3.2 9.2zm13.6 0a.6.6 0 0 1 .8 0l1.28 1.16c.18.16.28.38.28.62s-.1.46-.28.62L17.6 12.76a.6.6 0 0 1-.8 0l-1.28-1.16a.86.86 0 0 1-.28-.62c0-.24.1-.46.28-.62L16.8 9.2zM8.5 8.75a1 1 0 0 1 3 0l.41 1.25c.14.44.5.8.94.94L14.1 11a1 1 0 0 1 0 2l-1.25.41a1.5 1.5 0 0 0-.94.94L11.5 15a1 1 0 0 1-3 0l-.41-1.25a1.5 1.5 0 0 0-.94-.94L5.9 13a1 1 0 0 1 0-2l1.25-.41c.44-.14.8-.5.94-.94L8.5 8.75z"/></svg>',
@@ -452,13 +450,73 @@
           };
           const rightSvg = '<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M7.25 5.25a.75.75 0 0 1 1.06 0l4 4a.75.75 0 0 1 0 1.06l-4 4a.75.75 0 1 1-1.06-1.06L10.94 10 7.25 6.31a.75.75 0 0 1 0-1.06z"/></svg>';
           const icons = ['sparkle','bug','lifesaver'];
+          // Enhancement inline form container
+          const enhFormWrap = document.createElement('div');
+          enhFormWrap.id = 'enhancement-form';
+          enhFormWrap.style.display = 'none';
+          enhFormWrap.style.marginTop = '6px';
+          enhFormWrap.style.padding = '8px';
+          enhFormWrap.style.border = '1px solid #e2e8f0';
+          enhFormWrap.style.borderRadius = '8px';
+          enhFormWrap.style.background = '#ffffff';
+          enhFormWrap.innerHTML = `
+            <div style="font-weight:600; color:#0f172a; margin-bottom:6px;">Enhancement request</div>
+            <div style="display:grid; gap:8px;">
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span style="color:#475569;">Title</span>
+                <input id="enh-title" placeholder="Short, descriptive title" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span style="color:#475569;">Description</span>
+                <textarea id="enh-desc" rows="4" placeholder="What problem does this solve? What would you like to see?" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;"></textarea>
+              </label>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <label style="display:flex; flex-direction:column; gap:4px;">
+                  <span style="color:#475569;">Priority</span>
+                  <select id="enh-priority" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;">
+                    <option>Low</option>
+                    <option selected>Medium</option>
+                    <option>High</option>
+                  </select>
+                </label>
+                <label style="display:flex; flex-direction:column; gap:4px;">
+                  <span style="color:#475569;">Impact</span>
+                  <input id="enh-impact" placeholder="Who is impacted and how often?" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;" />
+                </label>
+              </div>
+              <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:2px;">
+                <button id="enh-cancel" type="button" style="border:1px solid #cbd5e1; background:#fff; color:#0f172a; padding:6px 10px; border-radius:6px;">Cancel</button>
+                <button id="enh-submit" type="button" style="background:#0f172a; color:#fff; padding:6px 10px; border:none; border-radius:6px;">Add to message</button>
+              </div>
+            </div>
+          `;
+          list.appendChild(enhFormWrap);
+
+          const enhShowForm = () => { enhFormWrap.style.display = 'block'; };
+          const enhHideForm = () => {
+            enhFormWrap.style.display = 'none';
+            try {
+              document.getElementById('enh-title').value = '';
+              document.getElementById('enh-desc').value = '';
+              document.getElementById('enh-priority').value = 'Medium';
+              document.getElementById('enh-impact').value = '';
+            } catch(_) {}
+          };
+
           prompts.forEach(([label, text], idx) => {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'prefill-item';
             btn.innerHTML = `<span class="prefill-left"><span class="prefill-icon">${iconSvgs[icons[idx] || 'sparkle']}</span><span class="prefill-label">${label}</span></span>${rightSvg}`;
             btn.addEventListener('click', async () => {
-              try { await el.setComposerValue({ text }); await el.focusComposer(); } catch (_) {}
+              try {
+                if (label === 'Enhancement request') {
+                  enhShowForm();
+                } else {
+                  await el.setComposerValue({ text });
+                  await el.focusComposer();
+                }
+              } catch (_) {}
             });
             list.appendChild(btn);
           });
@@ -477,6 +535,32 @@
           footer.appendChild(prefillToggle);
           // Disclaimer is shown by ChatKit; avoid duplicating it in the footer
           wrapper.appendChild(footer);
+
+          // Enhancement form wiring
+          footer.addEventListener('click', (e) => {
+            const t = e.target;
+            if (!t) return;
+            const id = t.id || (t.closest && t.closest('#enh-cancel, #enh-submit') && t.closest('#enh-cancel, #enh-submit').id) || '';
+            if (id === 'enh-cancel') {
+              enhHideForm();
+            }
+            if (id === 'enh-submit') {
+              try {
+                const title = String(document.getElementById('enh-title')?.value || '').trim();
+                const desc = String(document.getElementById('enh-desc')?.value || '').trim();
+                const priority = String(document.getElementById('enh-priority')?.value || 'Medium');
+                const impact = String(document.getElementById('enh-impact')?.value || '').trim();
+                const lines = ['I want to request a product enhancement:'];
+                if (title) lines.push(`Title: ${title}`);
+                if (desc) lines.push(`Description: ${desc}`);
+                if (priority) lines.push(`Priority: ${priority}`);
+                if (impact) lines.push(`Impact: ${impact}`);
+                const text = lines.join('\n');
+                if (text) { void el.setComposerValue({ text }); void el.focusComposer(); }
+              } catch(_) {}
+              enhHideForm();
+            }
+          });
 
           // Capture panel (screen recording and screenshot tools)
           const capture = document.createElement('div');

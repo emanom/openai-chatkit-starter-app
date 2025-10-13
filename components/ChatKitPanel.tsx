@@ -67,6 +67,11 @@ export function ChatKitPanel({
   );
   const [widgetInstanceKey, setWidgetInstanceKey] = useState(0);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isEnhancementFormOpen, setIsEnhancementFormOpen] = useState(false);
+  const [enhancementTitle, setEnhancementTitle] = useState("");
+  const [enhancementDescription, setEnhancementDescription] = useState("");
+  const [enhancementPriority, setEnhancementPriority] = useState("Medium");
+  const [enhancementImpact, setEnhancementImpact] = useState("");
 
   const setErrorState = useCallback((updates: Partial<ErrorState>) => {
     setErrors((current) => ({ ...current, ...updates }));
@@ -594,8 +599,12 @@ export function ChatKitPanel({
                   key={p.label}
                   type="button"
                   onClick={() => {
-                    handleQuickPrompt(p.prompt);
-                    setIsDropdownOpen(false); // Close dropdown after selection
+                    if (p.label === "Enhancement request") {
+                      setIsEnhancementFormOpen(true);
+                    } else {
+                      handleQuickPrompt(p.prompt);
+                    }
+                    setIsDropdownOpen(false);
                   }}
                   className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-white hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white"
                 >
@@ -611,6 +620,96 @@ export function ChatKitPanel({
 
         {/* Disclaimer handled by ChatKit UI; no duplicate here */}
       </div>
+      {isEnhancementFormOpen && (
+        <div className="border-t border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-2 font-medium text-slate-700 dark:text-slate-200">Enhancement request</div>
+          <div className="grid grid-cols-1 gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-slate-600 dark:text-slate-400">Title</span>
+              <input
+                value={enhancementTitle}
+                onChange={(e) => setEnhancementTitle(e.target.value)}
+                placeholder="Short, descriptive title"
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-900 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-slate-600 dark:text-slate-400">Description</span>
+              <textarea
+                value={enhancementDescription}
+                onChange={(e) => setEnhancementDescription(e.target.value)}
+                placeholder="What problem does this solve? What would you like to see?"
+                rows={4}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-900 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+              />
+            </label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-600 dark:text-slate-400">Priority</span>
+                <select
+                  value={enhancementPriority}
+                  onChange={(e) => setEnhancementPriority(e.target.value)}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-900 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                >
+                  <option>Low</option>
+                  <option>Medium</option>
+                  <option>High</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-600 dark:text-slate-400">Impact</span>
+                <input
+                  value={enhancementImpact}
+                  onChange={(e) => setEnhancementImpact(e.target.value)}
+                  placeholder="Who is impacted and how often?"
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-900 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </label>
+            </div>
+            <div className="mt-1 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEnhancementFormOpen(false);
+                  setEnhancementTitle("");
+                  setEnhancementDescription("");
+                  setEnhancementPriority("Medium");
+                  setEnhancementImpact("");
+                }}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const lines: string[] = [];
+                  lines.push("I want to request a product enhancement:");
+                  if (enhancementTitle.trim()) lines.push(`Title: ${enhancementTitle.trim()}`);
+                  if (enhancementDescription.trim()) lines.push(`Description: ${enhancementDescription.trim()}`);
+                  if (enhancementPriority) lines.push(`Priority: ${enhancementPriority}`);
+                  if (enhancementImpact.trim()) lines.push(`Impact: ${enhancementImpact.trim()}`);
+                  const text = lines.join("\n");
+                  if (text) {
+                    try {
+                      chatkit.setComposerValue({ text });
+                      chatkit.focusComposer();
+                    } catch {}
+                  }
+                  setIsEnhancementFormOpen(false);
+                  setEnhancementTitle("");
+                  setEnhancementDescription("");
+                  setEnhancementPriority("Medium");
+                  setEnhancementImpact("");
+                }}
+                className="rounded-md bg-slate-900 px-3 py-1.5 text-white hover:bg-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
+              >
+                Add to message
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {blockingError && (
       <ErrorOverlay
         error={blockingError}
