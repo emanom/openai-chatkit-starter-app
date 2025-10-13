@@ -557,7 +557,7 @@ export function ChatKitPanel({
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-white shadow-sm transition-colors dark:bg-slate-900">
       <div className="flex items-center justify-center gap-2 border-b border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-        fyi AI assist
+        fyi AI ASSIST
       </div>
       <ChatKit
         key={widgetInstanceKey}

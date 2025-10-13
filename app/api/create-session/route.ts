@@ -87,15 +87,11 @@ export async function POST(request: Request): Promise<Response> {
       headers["ChatKit-Domain-Key"] = domainKey;
     }
     
-    // Build payload and forward optional scope if provided
+    // Build payload (do not include unsupported fields like custom scope)
     const payload: Record<string, unknown> = {
       workflow: { id: resolvedWorkflowId },
       user: userId,
     };
-    if (parsedBody?.scope && typeof parsedBody.scope === "object") {
-      // Forward as-is; upstream will ignore unknown fields if unsupported
-      (payload as Record<string, unknown>).scope = parsedBody.scope;
-    }
 
     const upstreamResponse = await fetch(url, {
       method: "POST",
@@ -132,9 +128,15 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    // Return the full upstream response to ensure ChatKit gets all session data
+    // Augment upstream response with a client-side app_session_id for S3 namespacing
+    const appSessionId = (typeof crypto.randomUUID === "function"
+      ? `sess_${crypto.randomUUID()}`
+      : `sess_${Math.random().toString(36).slice(2)}`);
+
+    const merged = { ...(upstreamJson ?? {}), app_session_id: appSessionId };
+
     return buildJsonResponse(
-      upstreamJson,
+      merged,
       200,
       { "Content-Type": "application/json" },
       sessionCookie

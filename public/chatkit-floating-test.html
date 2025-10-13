@@ -183,6 +183,7 @@
           throw new Error('Failed to create ChatKit session: ' + (text || response.statusText));
         }
         const data = await response.json();
+        try { window.appSessionId = data.app_session_id || null; } catch (_) {}
         if (!data || !data.client_secret) {
           throw new Error('Missing client_secret in response');
         }
@@ -207,7 +208,7 @@
           const el = document.createElement('openai-chatkit');
           // Compute UI greeting from URL user if present
           const firstForGreeting = getCaseInsensitiveParam('firstname','first','firstName');
-          const uiGreeting = firstForGreeting ? `Hi ${firstForGreeting}! How can I help?` : 'How can I help you today?';
+          const uiGreeting = firstForGreeting ? `Hi ${firstForGreeting}, how can I help?` : 'How can I help you today?';
           // Provide a token fetcher; ChatKit will call this as needed.
           el.setOptions({
             api: { getClientSecret },
@@ -240,6 +241,15 @@
             disclaimer: {
               text: 'AI can make mistakes — See [ Help articles ](https://support.fyi.app/)'
             },
+            composer: {
+              attachments: {
+                enabled: false,
+                accept: {
+                  "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+                  "application/pdf": [".pdf"]
+                }
+              }
+            },
             // Make source items clickable when they include a usable URL.
             entities: {
               onClick: (entity) => {
@@ -264,6 +274,25 @@
                   if (action?.type === 'prefill' && action?.payload?.text) {
                     await el.setComposerValue({ text: String(action.payload.text) });
                     await el.focusComposer();
+                    return;
+                  }
+                  if (action?.type === 'start_recording' || action?.type === 'screen_record') {
+                    await startRecording();
+                    return;
+                  }
+                  if (action?.type === 'stop_recording') {
+                    stopRecording();
+                    return;
+                  }
+                  if (action?.type === 'screenshot') {
+                    await takeScreenshot();
+                    return;
+                  }
+                  if (action?.type === 'attach') {
+                    const input = document.getElementById('ck-file-input');
+                    if (input && typeof input.click === 'function') {
+                      input.click();
+                    }
                     return;
                   }
                   const url = (action && (action.payload?.url || action.payload?.href)) || null;
@@ -307,6 +336,41 @@
           footer.appendChild(list);
           // Disclaimer is shown by ChatKit; avoid duplicating it in the footer
           wrapper.appendChild(footer);
+
+          // Capture panel (screen recording and screenshot tools)
+          const capture = document.createElement('div');
+          capture.id = 'capture-panel';
+          capture.style.marginTop = '8px';
+          capture.style.background = '#ffffff';
+          capture.style.border = '1px solid #e2e8f0';
+          capture.style.borderRadius = '10px';
+          capture.style.padding = '8px';
+          capture.innerHTML = `
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <button id="ck-start-recording" type="button" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; cursor:pointer;">🎥 Start recording</button>
+              <button id="ck-stop-recording" type="button" disabled style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; cursor:pointer;">⏹ Stop</button>
+              <button id="ck-screenshot" type="button" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; cursor:pointer;">📸 Screenshot</button>
+              <label for="ck-file-input" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; cursor:pointer;">📎 Attach file</label>
+              <input id="ck-file-input" type="file" style="display:none" />
+              <span id="ck-recording-indicator" style="display:none; align-items:center; gap:6px; color:#ef4444; font-weight:600;">
+                <span style="width:8px; height:8px; background:#ef4444; border-radius:9999px; display:inline-block;"></span>
+                Recording...
+                <span id="ck-timer" style="color:#64748b; font-weight:500; margin-left:6px;">0:00</span>
+              </span>
+            </div>
+            <div id="ck-video-url" style="display:none; margin-top:6px; font-size:12px; color:#334155;"></div>
+            <div id="ck-video-preview-wrap" style="display:none; margin-top:8px;">
+              <video id="ck-video" controls style="width:100%; max-height:360px; background:#000;"></video>
+              <div id="ck-video-download" style="margin-top:8px;"></div>
+            </div>
+            <div id="ck-shot-url" style="display:none; margin-top:6px; font-size:12px; color:#334155;"></div>
+            <div id="ck-shot-preview-wrap" style="display:none; margin-top:8px;">
+              <img id="ck-shot" alt="Screenshot" style="max-width:100%; border:1px solid #e2e8f0;" />
+              <div id="ck-shot-download" style="margin-top:8px;"></div>
+            </div>
+            <div id="ck-upload-result" style="display:none; margin-top:6px; font-size:12px; color:#334155;"></div>
+          `;
+          wrapper.appendChild(capture);
 
           // Using prefill-only behavior in the app. No custom overlay toolbar here.
 
@@ -362,6 +426,170 @@
           });
 
           // No prompt bar; nothing to bind here.
+
+          // --- Capture helpers ---
+          let mediaRecorder = null;
+          let recordedChunks = [];
+          let recordTimer = 0;
+          let timerId = null;
+
+          const $ = (id) => document.getElementById(id);
+          const btnStart = $('ck-start-recording');
+          const btnStop = $('ck-stop-recording');
+          const btnShot = $('ck-screenshot');
+          const fileInput = $('ck-file-input');
+          const indicator = $('ck-recording-indicator');
+          const timer = $('ck-timer');
+          const videoEl = $('ck-video');
+          const videoWrap = $('ck-video-preview-wrap');
+          const videoDownload = $('ck-video-download');
+          const videoUrlEl = $('ck-video-url');
+          const shotImg = $('ck-shot');
+          const shotWrap = $('ck-shot-preview-wrap');
+          const shotDownload = $('ck-shot-download');
+          const shotUrlEl = $('ck-shot-url');
+          const uploadResult = $('ck-upload-result');
+
+          function formatTime(totalSeconds) {
+            const m = Math.floor(totalSeconds / 60);
+            const s = totalSeconds % 60;
+            return `${m}:${String(s).padStart(2, '0')}`;
+          }
+
+          async function startRecording() {
+            try {
+              videoUrlEl.style.display = 'block';
+              videoUrlEl.textContent = `Page: ${window.location.href}`;
+              videoWrap.style.display = 'none';
+              videoDownload.innerHTML = '';
+
+              const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+                audio: false
+              });
+              const audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true },
+                video: false
+              });
+              const combined = new MediaStream([
+                ...screenStream.getVideoTracks(),
+                ...audioStream.getAudioTracks(),
+              ]);
+
+              const mimeTypes = [
+                'video/webm;codecs=vp9,opus',
+                'video/webm;codecs=vp8,opus',
+                'video/webm;codecs=h264,opus',
+                'video/webm'
+              ];
+              const selected = mimeTypes.find((t) => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+              mediaRecorder = new MediaRecorder(combined, {
+                mimeType: selected,
+                audioBitsPerSecond: 128000,
+                videoBitsPerSecond: 2500000,
+              });
+
+              recordedChunks = [];
+              mediaRecorder.ondataavailable = (e) => { if (e.data?.size > 0) recordedChunks.push(e.data); };
+              mediaRecorder.onstop = async () => {
+                clearInterval(timerId); timerId = null; recordTimer = 0; timer.textContent = '0:00';
+                indicator.style.display = 'none';
+                const blob = new Blob(recordedChunks, { type: selected });
+                const url = URL.createObjectURL(blob);
+                videoEl.src = url; videoWrap.style.display = 'block';
+                const a = document.createElement('a');
+                a.href = url; a.download = 'screen-recording.webm'; a.textContent = '⬇️ Download recording';
+                a.style.cssText = 'display:inline-block;padding:8px 12px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;';
+                videoDownload.innerHTML = '';
+                videoDownload.appendChild(a);
+                try { await el.sendCustomAction({ type: 'capture_event', payload: { kind: 'recording', status: 'stopped', url, page: window.location.href } }); } catch {}
+                try { combined.getTracks().forEach(t => t.stop()); } catch {}
+              };
+
+              mediaRecorder.start(1000);
+              indicator.style.display = 'inline-flex';
+              btnStart.disabled = true; btnStop.disabled = false;
+              recordTimer = 0; timer.textContent = '0:00';
+              timerId = setInterval(() => { recordTimer += 1; timer.textContent = formatTime(recordTimer); }, 1000);
+              try { await el.sendCustomAction({ type: 'capture_event', payload: { kind: 'recording', status: 'started', page: window.location.href } }); } catch {}
+            } catch (err) {
+              alert('Unable to start recording: ' + (err?.message || err));
+            }
+          }
+
+          function stopRecording() {
+            try { mediaRecorder?.stop(); } catch {}
+            btnStart.disabled = false; btnStop.disabled = true;
+          }
+
+          async function takeScreenshot() {
+            try {
+              shotUrlEl.style.display = 'block';
+              shotUrlEl.textContent = `Page: ${window.location.href}`;
+              shotWrap.style.display = 'none';
+              shotDownload.innerHTML = '';
+
+              const stream = await navigator.mediaDevices.getDisplayMedia({
+                video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+              });
+              const video = document.createElement('video');
+              video.srcObject = stream; await video.play();
+              await new Promise((r) => setTimeout(r, 100));
+              const canvas = document.createElement('canvas');
+              canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(video, 0, 0);
+              try { stream.getTracks().forEach(t => t.stop()); } catch {}
+              const blob = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
+              const url = URL.createObjectURL(blob);
+              shotImg.src = url; shotWrap.style.display = 'block';
+              const a = document.createElement('a');
+              a.href = url; a.download = 'screenshot.png'; a.textContent = '⬇️ Download screenshot';
+              a.style.cssText = 'display:inline-block;padding:8px 12px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;';
+              shotDownload.innerHTML = '';
+              shotDownload.appendChild(a);
+              try { await el.sendCustomAction({ type: 'capture_event', payload: { kind: 'screenshot', status: 'captured', url, page: window.location.href } }); } catch {}
+            } catch (err) {
+              alert('Unable to capture screenshot: ' + (err?.message || err));
+            }
+          }
+
+          // Wire local buttons
+          if (btnStart) btnStart.addEventListener('click', startRecording);
+          if (btnStop) btnStop.addEventListener('click', stopRecording);
+          if (btnShot) btnShot.addEventListener('click', takeScreenshot);
+          if (fileInput) fileInput.addEventListener('change', async (e) => {
+            try {
+              const f = (e.target && e.target.files && e.target.files[0]) || null;
+              if (!f) return;
+              const appSessionId = window.appSessionId || null;
+              if (!appSessionId) {
+                alert('Upload unavailable: missing session id');
+                return;
+              }
+              const presignRes = await fetch('/api/attachments/presign', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ appSessionId, filename: f.name, mime: f.type || 'application/octet-stream', size: f.size })
+              });
+              const presign = await presignRes.json();
+              if (!presignRes.ok) throw new Error(presign?.error || 'presign failed');
+              await fetch(presign.url, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': f.type || 'application/octet-stream',
+                  'x-amz-server-side-encryption': 'AES256'
+                },
+                body: f
+              });
+              uploadResult.style.display = 'block';
+              uploadResult.textContent = `Uploaded: ${f.name}`;
+              try { await el.sendCustomAction({ type: 'capture_event', payload: { kind: 'upload', key: presign.key, name: f.name, page: window.location.href } }); } catch {}
+              // reset input
+              try { e.target.value = ''; } catch {}
+            } catch (err) {
+              alert('Upload failed: ' + (err?.message || err));
+            }
+          });
 
           // Expose for console testing
           window.chatkitOpen = openChat;
