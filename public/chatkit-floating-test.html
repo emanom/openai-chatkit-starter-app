@@ -9,7 +9,7 @@
         margin: 0;
         font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
         background: #f8fafc;
-        color: #0f172a;
+        color: #003769;
         min-height: 100vh;
       }
       .content {
@@ -57,15 +57,17 @@
       }
       #chat-wrapper > .chat-header {
         flex: 0 0 auto;
-        background: rgba(255,255,255,0.85);
-        border: 1px solid #e2e8f0; /* slate-200 */
+        background: #003769;
+        border: 1px solid #003769;
         border-bottom: none;
         border-radius: 12px 12px 0 0;
-        padding: 8px 12px;
+        padding: 6px 10px;
         font-weight: 600;
-        color: #64748b; /* slate-500 */
+        color: #ffffff;
         display: flex;
-        justify-content: center;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 5px;
       }
       #chat-wrapper > openai-chatkit {
         flex: 1 1 auto;
@@ -77,6 +79,49 @@
         box-shadow: 0 10px 30px rgba(2, 6, 23, 0.18);
       }
 
+      /* Collapsible panel helpers */
+      .panel-toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        background: transparent;
+        border: 0;
+        color: #64748b;
+        padding: 6px 0 2px 0;
+        cursor: pointer;
+      }
+      .panel-toggle svg { transition: transform 0.15s ease; }
+      .panel-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+      #chat-prefill-footer.collapsed .prefill-list { display: none; }
+      #capture-panel.collapsed > :not(.panel-toggle) { display: none; }
+
+      /* Unified small action buttons */
+      .ck-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border: 1px solid #cbd5e1; /* slate-300 */
+        border-radius: 8px;
+        background: #f8fafc;
+        cursor: pointer;
+        color: #003769;
+        font: inherit;
+        line-height: 1;
+      }
+      .ck-btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+        background: #f3f4f6; /* slate-100 */
+        color: #94a3b8; /* slate-400 */
+      }
+      .ck-btn svg { width: 22px; height: 22px; }
+      .ck-btn span { display: none; }
+
       /* Prefill footer sits below the widget inside wrapper */
       #chat-prefill-footer {
         margin-top: 0;
@@ -87,7 +132,11 @@
         border: 1px solid #e2e8f0; /* slate-200 */
         border-top: none; /* remove seam */
         padding: 6px; /* p-1.5 */
+        font-family: inherit; /* match chat typeface */
+        font-size: 16px; /* align with chat body text */
+        line-height: 1.5;
       }
+      #chat-prefill-footer * { font-family: inherit; }
       #chat-prefill-footer .prefill-item {
         display: flex;
         align-items: center;
@@ -98,16 +147,16 @@
         border-radius: 8px;
         background: #ffffff;
         border: 1px solid transparent;
-        color: #0f172a;
+        color: #0f172ac4;
         cursor: pointer;
       }
       #chat-prefill-footer .prefill-item:hover { background: #f1f5f9; }
       #chat-prefill-footer .prefill-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
       #chat-prefill-footer .prefill-icon {
         width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
-        border-radius: 9999px; background: #f1f5f9; color: #0f172a;
+        border-radius: 9999px; background: #f1f5f9; color: #0f172ac4;
       }
-      #chat-prefill-footer .prefill-label { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #chat-prefill-footer .prefill-label { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #chat-prefill-footer .prefill-disclaimer { text-align: center; font-size: 12px; color: #64748b; margin-top: 6px; }
       #chat-prefill-footer .prefill-disclaimer a { color: inherit; text-decoration: underline; }
       /* No native prompts; custom prefill footer below composer */
@@ -138,7 +187,7 @@
         Make sure your server is running with <code>OPENAI_API_KEY</code>      </p>
     </div>
 
-    <a id="chat-launcher" href="#" aria-controls="chat-wrapper" aria-expanded="false">Support</a>
+    <a id="chat-launcher" href="#" aria-controls="chat-wrapper" aria-expanded="false">Support Request</a>
     <div id="chat-wrapper"></div>
 
     <script>
@@ -203,12 +252,23 @@
           // Header
           const header = document.createElement('div');
           header.className = 'chat-header';
-          header.textContent = 'fyi AI assistant';
+          const logo = document.createElement('img');
+          logo.src = '/fyi-green-envelop-arrow.png';
+          logo.alt = 'logo';
+          logo.width = 45; // 10% smaller
+          logo.height = 61;
+          logo.style.objectFit = 'contain';
+          logo.style.display = 'block';
+          const title = document.createElement('span');
+          title.textContent = 'fyi assistant';
+          header.appendChild(logo);
+          header.appendChild(title);
 
           const el = document.createElement('openai-chatkit');
           // Compute UI greeting from URL user if present
           const firstForGreeting = getCaseInsensitiveParam('firstname','first','firstName');
           const uiGreeting = firstForGreeting ? `Hi ${firstForGreeting}, how can I help?` : 'How can I help you today?';
+          // no blurb in greeting; keep greeting concise
           // Provide a token fetcher; ChatKit will call this as needed.
           el.setOptions({
             api: { getClientSecret },
@@ -219,7 +279,7 @@
             },
             // no client tools currently
             header: {
-              title: 'fyi AI assistantant'
+              title: 'fyi assistantant'
             },
             header: {
               rightAction: {
@@ -242,6 +302,7 @@
               text: 'AI can make mistakes — See [ Help articles ](https://support.fyi.app/)'
             },
             composer: {
+              placeholder: 'Message the assistant',
               attachments: {
                 enabled: false,
                 accept: {
@@ -306,6 +367,74 @@
           wrapper.appendChild(header);
           wrapper.appendChild(el);
 
+          // Collapse agent thinking content to header-only inside the web component
+          (function initThinkingCollapse(){
+            const scrollToBottom = (root) => {
+              try {
+                const els = Array.from(root.querySelectorAll('*'));
+                for (const n of els) {
+                  const cs = getComputedStyle(n);
+                  if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && n.scrollHeight > n.clientHeight) {
+                    n.scrollTop = n.scrollHeight;
+                  }
+                }
+              } catch {}
+            };
+
+            const collapse = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) return;
+                // 1) Attribute-based match (when available)
+                const attrCandidates = root.querySelectorAll('[data-kind="thinking"], [data-message-type="thinking"], [part*="thinking"]');
+                attrCandidates.forEach((n) => {
+                  try {
+                    if (n.style && (n.style.position === 'sticky' || n.style.position === 'fixed')) { n.style.position = 'static'; n.style.top = ''; n.style.bottom = ''; }
+                    const kids = Array.from(n.children);
+                    kids.forEach((k, idx) => { if (idx > 0 && k && k.style) { k.style.display = 'none'; } });
+                  } catch {}
+                });
+
+                // 2) Text-based match (fallback for current builds)
+                const all = root.querySelectorAll('*');
+                all.forEach((elNode) => {
+                  try {
+                    const txt = (elNode.textContent || '').trim();
+                    if (!txt || (!txt.startsWith('Thought for a moment') && !/^Thinking\b/i.test(txt))) return;
+                    // Find a reasonable container (message wrapper)
+                    const container = elNode.closest('[data-message-id], [data-kind], article, li, section, div') || elNode.parentElement;
+                    if (!container) return;
+                    // neutralize sticky on the wrapper to restore auto-scroll
+                    const cs = getComputedStyle(container);
+                    if (cs.position === 'sticky' || cs.position === 'fixed') {
+                      container.style.position = 'static';
+                      container.style.top = '';
+                      container.style.bottom = '';
+                    }
+                    container.style.maxHeight = 'none';
+                    container.style.overflow = 'visible';
+                    // Hide all descendants except the header node
+                    const descendants = container.querySelectorAll('*');
+                    descendants.forEach((d) => { if (d !== elNode && !d.contains(elNode) && d.style) d.style.display = 'none'; });
+                  } catch {}
+                });
+                // ensure scroll sticks to bottom after modifications
+                scrollToBottom(root);
+              } catch {}
+            };
+
+            const tryObserve = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) { requestAnimationFrame(tryObserve); return; }
+                collapse();
+                const mo = new MutationObserver(() => collapse());
+                mo.observe(root, { childList: true, subtree: true });
+              } catch {}
+            };
+            tryObserve();
+          })();
+
           // Prefill footer (under composer area)
           const footer = document.createElement('div');
           footer.id = 'chat-prefill-footer';
@@ -334,6 +463,18 @@
             list.appendChild(btn);
           });
           footer.appendChild(list);
+          // Toggle button
+          const prefillToggle = document.createElement('button');
+          prefillToggle.type = 'button';
+          prefillToggle.className = 'panel-toggle';
+          prefillToggle.setAttribute('aria-expanded', 'true');
+          prefillToggle.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.06l3.71-2.83a.75.75 0 0 1 .92 1.18l-4.17 3.18a.75.75 0 0 1-.92 0L5.25 8.41a.75.75 0 0 1-.02-1.2z"/></svg>';
+          prefillToggle.addEventListener('click', () => {
+            const isOpen = prefillToggle.getAttribute('aria-expanded') === 'true';
+            prefillToggle.setAttribute('aria-expanded', String(!isOpen));
+            footer.classList.toggle('collapsed', isOpen);
+          });
+          footer.appendChild(prefillToggle);
           // Disclaimer is shown by ChatKit; avoid duplicating it in the footer
           wrapper.appendChild(footer);
 
@@ -346,17 +487,32 @@
           capture.style.borderRadius = '10px';
           capture.style.padding = '8px';
           capture.innerHTML = `
+            <div id="ck-cap-body">
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <button id="ck-start-recording" type="button" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; cursor:pointer;">🎥 Start recording</button>
-              <button id="ck-stop-recording" type="button" disabled style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; cursor:pointer;">⏹ Stop</button>
-              <button id="ck-screenshot" type="button" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; cursor:pointer;">📸 Screenshot</button>
-              <label for="ck-file-input" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; cursor:pointer;">📎 Attach file</label>
+              <button id="ck-start-recording" type="button" class="ck-btn" title="Start recording">
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M12 6a2 2 0 0 1 2 2v.586l2.707-2.707A1 1 0 0 1 18 6v8a1 1 0 0 1-1.707.707L14 12.586V13a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h8z"/></svg>
+              </button>
+              <button id="ck-stop-recording" type="button" class="ck-btn" title="Stop" disabled>
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5 5h10v10H5z"/></svg>
+              </button>
+              <button id="ck-screenshot" type="button" class="ck-btn" title="Screenshot">
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6 6h2l1-2h2l1 2h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm4 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+              </button>
+              <label for="ck-file-input" class="ck-btn" style="user-select:none;" title="Attach file">
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7.5 13.5a2.5 2.5 0 0 1 0-3.536l4.95-4.95a2.5 2.5 0 1 1 3.536 3.536l-1.768 1.768-.707-.707 1.768-1.768a1.5 1.5 0 1 0-2.122-2.122l-4.95 4.95a1.5 1.5 0 0 0 2.122 2.122l1.768-1.768.707.707-1.768 1.768a2.5 2.5 0 0 1-3.536 0z"/></svg>
+              </label>
               <input id="ck-file-input" type="file" style="display:none" />
               <span id="ck-recording-indicator" style="display:none; align-items:center; gap:6px; color:#ef4444; font-weight:600;">
                 <span style="width:8px; height:8px; background:#ef4444; border-radius:9999px; display:inline-block;"></span>
                 Recording...
                 <span id="ck-timer" style="color:#64748b; font-weight:500; margin-left:6px;">0:00</span>
               </span>
+            </div>
+            <div id="ck-upload-progress" style="display:none; margin-top:6px;">
+              <div style="height:6px; background:#e5e7eb; border-radius:9999px; overflow:hidden;">
+                <div id="ck-upload-bar" style="width:0%; height:6px; background:#4ccf96;"></div>
+              </div>
+              <div id="ck-upload-text" style="font-size:12px; color:#64748b; margin-top:4px;">0%</div>
             </div>
             <div id="ck-video-url" style="display:none; margin-top:6px; font-size:12px; color:#334155;"></div>
             <div id="ck-video-preview-wrap" style="display:none; margin-top:8px;">
@@ -369,7 +525,22 @@
               <div id="ck-shot-download" style="margin-top:8px;"></div>
             </div>
             <div id="ck-upload-result" style="display:none; margin-top:6px; font-size:12px; color:#334155;"></div>
+            </div>
           `;
+          // Add toggle control to capture panel footer
+          const capToggle = document.createElement('button');
+          capToggle.type = 'button';
+          capToggle.className = 'panel-toggle';
+          capToggle.setAttribute('aria-expanded', 'true');
+          capToggle.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.06l3.71-2.83a.75.75 0 0 1 .92 1.18l-4.17 3.18a.75.75 0 0 1-.92 0L5.25 8.41a.75.75 0 0 1-.02-1.2z"/></svg>';
+          capToggle.addEventListener('click', () => {
+            const isOpen = capToggle.getAttribute('aria-expanded') === 'true';
+            capToggle.setAttribute('aria-expanded', String(!isOpen));
+            // Toggle the body wrapper only, preserve controls and layout
+            const body = document.getElementById('ck-cap-body');
+            if (body) { body.style.display = isOpen ? 'none' : ''; }
+          });
+          capture.appendChild(capToggle);
           wrapper.appendChild(capture);
 
           // Using prefill-only behavior in the app. No custom overlay toolbar here.
@@ -449,6 +620,9 @@
           const shotDownload = $('ck-shot-download');
           const shotUrlEl = $('ck-shot-url');
           const uploadResult = $('ck-upload-result');
+          const uploadProgress = $('ck-upload-progress');
+          const uploadBar = $('ck-upload-bar');
+          const uploadText = $('ck-upload-text');
 
           function formatTime(totalSeconds) {
             const m = Math.floor(totalSeconds / 60);
@@ -543,12 +717,34 @@
               const blob = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
               const url = URL.createObjectURL(blob);
               shotImg.src = url; shotWrap.style.display = 'block';
-              const a = document.createElement('a');
-              a.href = url; a.download = 'screenshot.png'; a.textContent = '⬇️ Download screenshot';
-              a.style.cssText = 'display:inline-block;padding:8px 12px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;';
+              // Replace with Upload button (to S3 via presign)
+              const uploadBtn = document.createElement('button');
+              uploadBtn.type = 'button';
+              uploadBtn.textContent = '⬆️ Upload screenshot';
+              uploadBtn.style.cssText = 'display:inline-block;padding:8px 12px;background:#2563eb;color:#fff;border-radius:8px;border:none;cursor:pointer;';
               shotDownload.innerHTML = '';
-              shotDownload.appendChild(a);
-              try { await el.sendCustomAction({ type: 'capture_event', payload: { kind: 'screenshot', status: 'captured', url, page: window.location.href } }); } catch {}
+              shotDownload.appendChild(uploadBtn);
+              uploadBtn.addEventListener('click', async () => {
+                try {
+                  const appSessionId = window.appSessionId || null;
+                  if (!appSessionId) { alert('Missing session id'); return; }
+                  const presignRes = await fetch('/api/attachments/presign', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appSessionId, filename: 'screenshot.png', mime: 'image/png', size: blob.size })
+                  });
+                  const presign = await presignRes.json();
+                  if (!presignRes.ok) throw new Error(presign?.error || 'presign failed');
+                  await fetch(presign.url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'image/png', 'x-amz-server-side-encryption': 'AES256' },
+                    body: blob
+                  });
+                  uploadBtn.textContent = '✅ Uploaded';
+                  try { await el.sendCustomAction({ type: 'capture_event', payload: { kind: 'screenshot', status: 'uploaded', key: presign.key, page: window.location.href } }); } catch {}
+                } catch (err) {
+                  alert('Upload failed: ' + (err?.message || err));
+                }
+              });
             } catch (err) {
               alert('Unable to capture screenshot: ' + (err?.message || err));
             }
@@ -573,20 +769,40 @@
               });
               const presign = await presignRes.json();
               if (!presignRes.ok) throw new Error(presign?.error || 'presign failed');
-              await fetch(presign.url, {
-                method: 'PUT',
-                headers: {
-                  'Content-Type': f.type || 'application/octet-stream',
-                  'x-amz-server-side-encryption': 'AES256'
-                },
-                body: f
+              // Show progress bar and upload via XHR to get progress events
+              uploadResult.style.display = 'none';
+              uploadProgress.style.display = 'block';
+              uploadBar.style.width = '0%';
+              uploadText.textContent = '0%';
+
+              await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('PUT', presign.url, true);
+                xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
+                xhr.setRequestHeader('x-amz-server-side-encryption', 'AES256');
+                xhr.upload.onprogress = (ev) => {
+                  if (ev.lengthComputable) {
+                    const pct = Math.max(0, Math.min(100, Math.round((ev.loaded / ev.total) * 100)));
+                    uploadBar.style.width = pct + '%';
+                    uploadText.textContent = pct + '%';
+                  }
+                };
+                xhr.onload = () => {
+                  if (xhr.status >= 200 && xhr.status < 300) resolve(undefined);
+                  else reject(new Error('Upload failed with status ' + xhr.status));
+                };
+                xhr.onerror = () => reject(new Error('Network error during upload'));
+                xhr.send(f);
               });
+
+              uploadProgress.style.display = 'none';
               uploadResult.style.display = 'block';
               uploadResult.textContent = `Uploaded: ${f.name}`;
               try { await el.sendCustomAction({ type: 'capture_event', payload: { kind: 'upload', key: presign.key, name: f.name, page: window.location.href } }); } catch {}
               // reset input
               try { e.target.value = ''; } catch {}
             } catch (err) {
+              uploadProgress.style.display = 'none';
               alert('Upload failed: ' + (err?.message || err));
             }
           });
