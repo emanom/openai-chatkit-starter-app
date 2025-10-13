@@ -462,15 +462,7 @@ export function ChatKitPanel({
         return { success: true };
       }
 
-      if (invocation.name === "get_current_date") {
-        const now = new Date();
-        return {
-          nowIso: now.toISOString(),
-          nowHuman: now.toLocaleString(),
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          unixMs: now.getTime(),
-        };
-      }
+      // no-op for get_current_date (removed)
 
       return { success: false };
     },

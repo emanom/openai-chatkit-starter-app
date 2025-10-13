@@ -87,11 +87,15 @@ export async function POST(request: Request): Promise<Response> {
       headers["ChatKit-Domain-Key"] = domainKey;
     }
     
-    // Build payload (scope is not currently supported by hosted sessions)
+    // Build payload and forward optional scope if provided
     const payload: Record<string, unknown> = {
       workflow: { id: resolvedWorkflowId },
       user: userId,
     };
+    if (parsedBody?.scope && typeof parsedBody.scope === "object") {
+      // Forward as-is; upstream will ignore unknown fields if unsupported
+      (payload as Record<string, unknown>).scope = parsedBody.scope;
+    }
 
     const upstreamResponse = await fetch(url, {
       method: "POST",

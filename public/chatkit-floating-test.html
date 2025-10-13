@@ -147,6 +147,19 @@
         const v = url.searchParams.get(name);
         return v ? v.trim() : null;
       }
+      function getCaseInsensitiveParam(...candidates) {
+        const url = new URL(window.location.href);
+        const params = url.searchParams;
+        const keys = Array.from(params.keys());
+        for (const cand of candidates) {
+          const found = keys.find((k) => k.toLowerCase() === String(cand).toLowerCase());
+          if (found) {
+            const v = params.get(found);
+            if (v) { return v.trim(); }
+          }
+        }
+        return null;
+      }
 
       async function getClientSecret(currentSecret) {
         // Always mint on our server; ChatKit may call this again to refresh.
@@ -155,10 +168,17 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             // Pass optional user context to the agent via scope
-            scope: {
-              firstName: getUrlParam('firstName') || getUrlParam('first') || null,
-              email: getUrlParam('email') || null
-            }
+            scope: (function(){
+              const firstname = getCaseInsensitiveParam('firstname','first','firstName');
+              // support alias "@lastname" and case-insensitive keys
+              const lastname = getCaseInsensitiveParam('lastname','last','lastName','@lastname','%40lastname');
+              const email = getCaseInsensitiveParam('email','eMail','Email');
+              const scope = {};
+              if (firstname) scope.firstname = firstname;
+              if (lastname) scope.lastname = lastname;
+              if (email) scope.email = email;
+              return scope;
+            })()
           })
         });
         if (!response.ok) {
@@ -185,7 +205,7 @@
           // Header
           const header = document.createElement('div');
           header.className = 'chat-header';
-          header.textContent = 'fyi - AI Assistant';
+          header.textContent = 'fyi - AI Assist';
 
           const el = document.createElement('openai-chatkit');
           // Provide a token fetcher; ChatKit will call this as needed.
@@ -196,18 +216,7 @@
                 accent: { primary: '#4ccf96', level: 3 },
               }
             },
-            onClientTool: async (invocation) => {
-              if (invocation && invocation.name === 'get_current_date') {
-                const now = new Date();
-                return {
-                  nowIso: now.toISOString(),
-                  nowHuman: now.toLocaleString(),
-                  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                  unixMs: now.getTime(),
-                };
-              }
-              return { success: false };
-            },
+            // no client tools currently
             header: {
               title: 'fyi - AI Assistant'
             },
