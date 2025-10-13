@@ -161,25 +161,22 @@
         return null;
       }
 
+      // Seed global user from URL and broadcast for listeners (hosted app/iframe patterns)
+      (function seedUserFromUrl(){
+        const firstName = getCaseInsensitiveParam('firstname','first','firstName');
+        const lastName  = getCaseInsensitiveParam('lastname','last','lastName');
+        const email     = getCaseInsensitiveParam('email','mail','eMail','Email');
+        const fyiUser = { firstName: firstName || '', lastName: lastName || '', email: email || '' };
+        window.fyiUser = fyiUser;
+        try { window.dispatchEvent(new CustomEvent('fyi-user', { detail: fyiUser })); } catch(_) {}
+      })();
+
       async function getClientSecret(currentSecret) {
         // Always mint on our server; ChatKit may call this again to refresh.
         const response = await fetch('/api/create-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            // Pass optional user context to the agent via scope
-            scope: (function(){
-              const firstname = getCaseInsensitiveParam('firstname','first','firstName');
-              // support alias "@lastname" and case-insensitive keys
-              const lastname = getCaseInsensitiveParam('lastname','last','lastName','@lastname','%40lastname');
-              const email = getCaseInsensitiveParam('email','eMail','Email');
-              const scope = {};
-              if (firstname) scope.firstname = firstname;
-              if (lastname) scope.lastname = lastname;
-              if (email) scope.email = email;
-              return scope;
-            })()
-          })
+          body: JSON.stringify({})
         });
         if (!response.ok) {
           const text = await response.text().catch(() => '');
@@ -205,9 +202,12 @@
           // Header
           const header = document.createElement('div');
           header.className = 'chat-header';
-          header.textContent = 'fyi - AI Assist';
+          header.textContent = 'fyi AI assistant';
 
           const el = document.createElement('openai-chatkit');
+          // Compute UI greeting from URL user if present
+          const firstForGreeting = getCaseInsensitiveParam('firstname','first','firstName');
+          const uiGreeting = firstForGreeting ? `Hi ${firstForGreeting}! How can I help?` : 'How can I help you today?';
           // Provide a token fetcher; ChatKit will call this as needed.
           el.setOptions({
             api: { getClientSecret },
@@ -218,7 +218,7 @@
             },
             // no client tools currently
             header: {
-              title: 'fyi - AI Assistant'
+              title: 'fyi AI assistantant'
             },
             header: {
               rightAction: {
@@ -230,7 +230,7 @@
               }
             },
             startScreen: {
-              greeting: 'How can I help?',
+              greeting: uiGreeting,
               prompts: [
                 { label: 'What can fyi do for me?', prompt: 'What can fyi do for me?', icon: 'sparkle' },
                 { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' },
@@ -320,7 +320,28 @@
               // Kickoff: ask agent to show prefill options widget on first open
               if (!initKickoffSent) {
                 initKickoffSent = true;
-                (async () => { try { await el.sendCustomAction({ type: 'init' }); } catch (_) {} })();
+              // On first open, send one custom action to pass URL state
+              (function scheduleStateSend(){
+                const sendOnce = async () => {
+                  try {
+                    if (scheduleStateSend._sent) return; scheduleStateSend._sent = true;
+                    const firstname = getCaseInsensitiveParam('firstname','first','firstName');
+                    const lastname = getCaseInsensitiveParam('lastname','last','lastName');
+                    const email = getCaseInsensitiveParam('email','eMail','Email');
+                    const state = {};
+                    if (firstname) state.firstname = firstname;
+                    if (lastname) state.lastname = lastname;
+                    if (email) state.email = email;
+                    if (Object.keys(state).length > 0 && el?.sendCustomAction) {
+                      await el.sendCustomAction({ type: 'set_state', payload: state });
+                    }
+                  } catch (_) {}
+                };
+                // Try after a small delay to avoid init loops
+                setTimeout(sendOnce, 800);
+                // Also try on focus to ensure element is ready
+                el.addEventListener?.('focus', () => { void sendOnce(); }, { once: true });
+              })();
               }
             }, 0);
           }
