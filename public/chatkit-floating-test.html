@@ -34,8 +34,14 @@
         height: 821px; /* desktop size */
         z-index: 10000;
         display: none;
+        display: none;
+        /* Layout so footer can sit below the widget */
+        display: none;
       }
       #chat-wrapper.open { display: block; }
+
+      /* Make wrapper a column container when open */
+      #chat-wrapper.open { display: flex; flex-direction: column; }
 
       /* Top-right launcher link */
       #chat-launcher {
@@ -50,48 +56,49 @@
         z-index: 10002;
       }
       #chat-wrapper > openai-chatkit {
-        position: absolute;
-        inset: 0;
+        flex: 1 1 auto;
         width: 100%;
-        height: 100%;
+        height: auto;
         background: #ffffff;
         border-radius: 12px;
         overflow: hidden;
         box-shadow: 0 10px 30px rgba(2, 6, 23, 0.18);
       }
-      /* Prompt toolbar that sits above the widget (desktop only) */
-      #chat-prompt-bar {
-        position: absolute;
-        right: 12px;
-        bottom: 90px; /* sit above the composer */
+
+      /* Prefill footer sits below the widget inside wrapper */
+      #chat-prefill-footer {
+        margin-top: 0;
+        background: #ffffff;
+        border-radius: 10px;
+        border-top-left-radius: 0; /* flush with widget above */
+        border-top-right-radius: 0; /* flush with widget above */
+        border: 1px solid #e2e8f0; /* slate-200 */
+        border-top: none; /* remove seam */
+        padding: 6px; /* p-1.5 */
+      }
+      #chat-prefill-footer .prefill-item {
         display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        z-index: 2;
-      }
-      /* Scrim to hide scrolling content behind the buttons */
-      #chat-bottom-scrim {
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 64px; /* approx top edge of composer */
-        height: 40px; /* fade just up to the prompt buttons */
-        background: linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0));
-        z-index: 1;
-        pointer-events: none; /* do not block interactions */
-        border-bottom-left-radius: 12px;
-        border-bottom-right-radius: 12px;
-      }
-      #chat-prompt-bar button {
-        background: #003769;
-        color: #ffffff;
-        border: none;
-        border-radius: 9999px;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        gap: 12px;
         padding: 8px 12px;
-        font-weight: 600;
+        border-radius: 8px;
+        background: #ffffff;
+        border: 1px solid transparent;
+        color: #0f172a;
         cursor: pointer;
       }
-      #chat-prompt-bar button:hover { background:#004a8f; }
+      #chat-prefill-footer .prefill-item:hover { background: #f1f5f9; }
+      #chat-prefill-footer .prefill-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+      #chat-prefill-footer .prefill-icon {
+        width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 9999px; background: #f1f5f9; color: #0f172a;
+      }
+      #chat-prefill-footer .prefill-label { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #chat-prefill-footer .prefill-disclaimer { text-align: center; font-size: 12px; color: #64748b; margin-top: 6px; }
+      #chat-prefill-footer .prefill-disclaimer a { color: inherit; text-decoration: underline; }
+      /* No native prompts; custom prefill footer below composer */
 
       /* (minimize now uses native header rightAction, no overlay) */
 
@@ -103,7 +110,7 @@
           right: 12px;
           bottom: 12px;
         }
-        #chat-prompt-bar { display: none; }
+        
       }
     </style>
     <!-- Load the ChatKit web component -->
@@ -167,6 +174,11 @@
           // Provide a token fetcher; ChatKit will call this as needed.
           el.setOptions({
             api: { getClientSecret },
+            theme: {
+              color: {
+                accent: { primary: '#4ccf96', level: 3 },
+              }
+            },
             header: {
               rightAction: {
                 icon: 'collapse-small',
@@ -177,7 +189,14 @@
               }
             },
             startScreen: {
-              greeting: 'How can I help you with fyi?'
+              greeting: 'How can I help you with fyi?',
+              prompts: [
+                { label: 'What can fyi do for me?', prompt: 'What can fyi do for me?', icon: 'sparkle' },
+                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' }
+              ]
+            },
+            disclaimer: {
+              text: 'AI can make mistakes — Always check [our Help articles ](https://support.fyi.app/)'
             },
             // Make source items clickable when they include a usable URL.
             entities: {
@@ -199,56 +218,67 @@
             },
             widgets: {
               onAction: async (action) => {
-                const url = (action && (action.payload?.url || action.payload?.href)) || null;
-                if (url && /^https?:\/\//.test(String(url))) {
-                  try { window.open(String(url), '_blank', 'noopener,noreferrer'); } catch (_) {}
-                }
+                try {
+                  if (action?.type === 'prefill' && action?.payload?.text) {
+                    await el.setComposerValue({ text: String(action.payload.text) });
+                    await el.focusComposer();
+                    return;
+                  }
+                  const url = (action && (action.payload?.url || action.payload?.href)) || null;
+                  if (url && /^https?:\/\//.test(String(url))) {
+                    try { window.open(String(url), '_blank', 'noopener,noreferrer'); } catch (_) {}
+                  }
+                } catch (_) {}
               }
             }
           });
           wrapper.appendChild(el);
 
-          // Build a prompt toolbar that PREFILLS (does not send) the composer.
-          const bar = document.createElement('div');
-          bar.id = 'chat-prompt-bar';
+          // Prefill footer (under composer area)
+          const footer = document.createElement('div');
+          footer.id = 'chat-prefill-footer';
+          const list = document.createElement('div');
+          list.className = 'prefill-list';
           const prompts = [
-            ['Enhancement request', 'I want to request a product enhancement: '],
-            ['Report an issue', 'I want to report a bug: '],
-            ['I need help with…', 'I need help with: ']
+            ['Enhancement request', 'I want to request this product enhancement: '],
+            ['Report an issue', 'I want to report the following issue: '],
+            ['I need help with…', 'I need help with: '],
           ];
-          for (const [label, text] of prompts) {
+          const iconSvgs = {
+            sparkle: '<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M9.5 1.75a.75.75 0 0 1 1 0l1.8 1.64c.2.18.31.43.31.7 0 .27-.11.52-.31.7L10.5 6.43a.75.75 0 0 1-1 0L7.7 4.79a.98.98 0 0 1-.31-.7c0-.27.11-.52.31-.7L9.5 1.75zM3.2 9.2a.6.6 0 0 1 .8 0l1.28 1.16c.18.16.28.38.28.62s-.1.46-.28.62L4 12.76a.6.6 0 0 1-.8 0l-1.28-1.16A.86.86 0 0 1 1.64 11c0-.24.1-.46.28-.62L3.2 9.2zm13.6 0a.6.6 0 0 1 .8 0l1.28 1.16c.18.16.28.38.28.62s-.1.46-.28.62L17.6 12.76a.6.6 0 0 1-.8 0l-1.28-1.16a.86.86 0 0 1-.28-.62c0-.24.1-.46.28-.62L16.8 9.2zM8.5 8.75a1 1 0 0 1 3 0l.41 1.25c.14.44.5.8.94.94L14.1 11a1 1 0 0 1 0 2l-1.25.41a1.5 1.5 0 0 0-.94.94L11.5 15a1 1 0 0 1-3 0l-.41-1.25a1.5 1.5 0 0 0-.94-.94L5.9 13a1 1 0 0 1 0-2l1.25-.41c.44-.14.8-.5.94-.94L8.5 8.75z"/></svg>',
+            bug: '<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 2a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v1h-2V7H7v1H5V7a2 2 0 0 1 2-2h1V4a2 2 0 0 1 2-2zM4 10h12v4a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-4z"/></svg>',
+            lifesaver: '<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 3a5 5 0 1 1 0 10A5 5 0 0 1 10 5z"/></svg>'
+          };
+          const rightSvg = '<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M7.25 5.25a.75.75 0 0 1 1.06 0l4 4a.75.75 0 0 1 0 1.06l-4 4a.75.75 0 1 1-1.06-1.06L10.94 10 7.25 6.31a.75.75 0 0 1 0-1.06z"/></svg>';
+          const icons = ['sparkle','bug','lifesaver'];
+          prompts.forEach(([label, text], idx) => {
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.textContent = label;
+            btn.className = 'prefill-item';
+            btn.innerHTML = `<span class="prefill-left"><span class="prefill-icon">${iconSvgs[icons[idx] || 'sparkle']}</span><span class="prefill-label">${label}</span></span>${rightSvg}`;
             btn.addEventListener('click', async () => {
-              try {
-                await el.setComposerValue({ text });
-                await el.focusComposer();
-              } catch (_) {}
+              try { await el.setComposerValue({ text }); await el.focusComposer(); } catch (_) {}
             });
-            bar.appendChild(btn);
-          }
-          wrapper.appendChild(bar);
-
-          // Add a fading scrim behind the buttons to hide scrolling content
-          const scrim = document.createElement('div');
-          scrim.id = 'chat-bottom-scrim';
-          wrapper.appendChild(scrim);
-
-          // Keep scrim aligned with composer height if it changes later
-          const resizeObserver = new ResizeObserver(() => {
-            // no-op placeholder for future composer height adjustments
+            list.appendChild(btn);
           });
-          resizeObserver.observe(wrapper);
+          footer.appendChild(list);
+          // Disclaimer is shown by ChatKit; avoid duplicating it in the footer
+          wrapper.appendChild(footer);
 
-          // Position the toolbar above the widget and update on resize.
+          // Using prefill-only behavior in the app. No custom overlay toolbar here.
 
+          let initKickoffSent = false;
           function openChat() {
             wrapper.classList.add('open');
             launcher.setAttribute('aria-expanded', 'true');
             // Focus composer after opening
             setTimeout(() => {
               try { el.focusComposer(); } catch (_) {}
+              // Kickoff: ask agent to show prefill options widget on first open
+              if (!initKickoffSent) {
+                initKickoffSent = true;
+                (async () => { try { await el.sendCustomAction({ type: 'init' }); } catch (_) {} })();
+              }
             }, 0);
           }
 
@@ -267,10 +297,7 @@
             }
           });
 
-          // Optionally open on first prompt button click
-          bar.addEventListener('click', () => {
-            if (!wrapper.classList.contains('open')) openChat();
-          }, { once: false });
+          // No prompt bar; nothing to bind here.
 
           // Expose for console testing
           window.chatkitOpen = openChat;

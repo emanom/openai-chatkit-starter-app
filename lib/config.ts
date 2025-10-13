@@ -7,21 +7,18 @@ export const CREATE_SESSION_ENDPOINT = "/api/create-session";
 export const STARTER_PROMPTS: StartScreenPrompt[] = [
   {
     label: "Enhancement request",
-    prompt:
-      "I'd like to request an enhancement. Ask me the product area, the problem, and the desired outcome. Then propose next steps.",
+    prompt: "I want to request a product enhancement: ",
     icon: "sparkle",
   },
   {
     label: "Report an issue",
-    prompt:
-      "I need to report an issue. Please collect a concise title, steps to reproduce, expected vs actual behavior, and any relevant IDs or screenshots.",
-    icon: "triangle-exclamation",
+    prompt: "I want to report a bug: ",
+    icon: "bug",
   },
   {
     label: "I need help with...",
-    prompt:
-      "Help me troubleshoot. Start by asking clarifying questions, then suggest the top 3 fixes with step-by-step instructions.",
-    icon: "circle-question",
+    prompt: "I need help with: ",
+    icon: "lifesaver",
   },
 ];
 

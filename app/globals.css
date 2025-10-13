@@ -32,3 +32,5 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* ChatKit accent is now configured in code; no CSS overrides. */

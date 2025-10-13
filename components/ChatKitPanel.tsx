@@ -66,6 +66,7 @@ export function ChatKitPanel({
       : "pending"
   );
   const [widgetInstanceKey, setWidgetInstanceKey] = useState(0);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const setErrorState = useCallback((updates: Partial<ErrorState>) => {
     setErrors((current) => ({ ...current, ...updates }));
@@ -375,17 +376,49 @@ export function ChatKitPanel({
           shade: theme === "dark" ? 1 : 4,
         },
         accent: {
-          primary: theme === "dark" ? "#f1f5f9" : "#0f172a",
-          level: 1,
+          primary: "#4ccf96",
+          level: 3,
         },
+        ...(theme === "dark"
+          ? {}
+          : {
+              surface: {
+                background: "#fafafa",
+                foreground: "#0f172a",
+              },
+            }),
       },
       radius: "round",
     },
     startScreen: {
       greeting: GREETING,
+      prompts: [
+        { label: "What can fyi do for me?", prompt: "What can fyi do for me?", icon: "sparkle" },
+        { label: "Tell me about the subscription plans", prompt: "Tell me about the subscription plans", icon: "circle-question" },
+      ],
     },
     composer: {
       placeholder: PLACEHOLDER_INPUT,
+      attachments: {
+        enabled: true,
+        accept: {
+          "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+          "application/pdf": [".pdf"],
+        },
+      },
+    },
+    widgets: {
+      onAction: async (action) => {
+        try {
+          if (action?.type === "prefill") {
+            const text = String((action as any)?.payload?.text || "");
+            if (text) {
+              await chatkit.setComposerValue({ text });
+              await chatkit.focusComposer();
+            }
+          }
+        } catch {}
+      },
     },
     threadItemActions: {
       feedback: false,
@@ -453,6 +486,39 @@ export function ChatKitPanel({
     [chatkit]
   );
 
+  const PromptIcon = ({ name }: { name?: string }) => {
+    const common = "h-4 w-4";
+    switch (name) {
+      case "sparkle":
+        return (
+          <svg viewBox="0 0 20 20" className={common} aria-hidden="true">
+            <path fill="currentColor" d="M9.5 1.75a.75.75 0 0 1 1 0l1.8 1.64c.2.18.31.43.31.7 0 .27-.11.52-.31.7L10.5 6.43a.75.75 0 0 1-1 0L7.7 4.79a.98.98 0 0 1-.31-.7c0-.27.11-.52.31-.7L9.5 1.75zM3.2 9.2a.6.6 0 0 1 .8 0l1.28 1.16c.18.16.28.38.28.62s-.1.46-.28.62L4 12.76a.6.6 0 0 1-.8 0l-1.28-1.16A.86.86 0 0 1 1.64 11c0-.24.1-.46.28-.62L3.2 9.2zm13.6 0a.6.6 0 0 1 .8 0l1.28 1.16c.18.16.28.38.28.62s-.1.46-.28.62L17.6 12.76a.6.6 0 0 1-.8 0l-1.28-1.16a.86.86 0 0 1-.28-.62c0-.24.1-.46.28-.62L16.8 9.2zM8.5 8.75a1 1 0 0 1 3 0l.41 1.25c.14.44.5.8.94.94L14.1 11a1 1 0 0 1 0 2l-1.25.41a1.5 1.5 0 0 0-.94.94L11.5 15a1 1 0 0 1-3 0l-.41-1.25a1.5 1.5 0 0 0-.94-.94L5.9 13a1 1 0 0 1 0-2l1.25-.41c.44-.14.8-.5.94-.94L8.5 8.75z"/>
+          </svg>
+        );
+      case "bug":
+        return (
+          <svg viewBox="0 0 24 24" className={common} fill="currentColor">
+            <path d="M9.5 13.5C10.3284 13.5 11 12.9404 11 12.25C11 11.5596 10.3284 11 9.5 11C8.67157 11 8 11.5596 8 12.25C8 12.9404 8.67157 13.5 9.5 13.5Z"></path>
+            <path d="M13.5 16.5C13.5 17.6046 12.8284 18.5 12 18.5C11.1716 18.5 10.5 17.6046 10.5 16.5C10.5 15.3954 11.1716 14.5 12 14.5C12.8284 14.5 13.5 15.3954 13.5 16.5Z"></path>
+            <path d="M14.5 13.5C15.3284 13.5 16 12.9404 16 12.25C16 11.5596 15.3284 11 14.5 11C13.6716 11 13 11.5596 13 12.25C13 12.9404 13.6716 13.5 14.5 13.5Z"></path>
+            <path d="M10.1689 5.17703C10.7615 5.0609 11.3741 5 12 5C12.6259 5 13.2385 5.0609 13.8311 5.17703C14.2125 4.34087 14.7295 3.51088 15.3887 2.90913C16.0678 2.2891 16.9848 1.84347 18.0577 2.05199C19.0855 2.25177 19.9991 3.00672 20.8169 4.16677C21.1354 4.61856 21.0278 5.24335 20.5766 5.56226C20.1254 5.88118 19.5014 5.77346 19.183 5.32167C18.5007 4.35394 17.9768 4.07629 17.6766 4.01793C17.4212 3.9683 17.1195 4.03899 16.7362 4.38899C16.3912 4.70395 16.054 5.18667 15.7606 5.77733C18.8328 7.11381 21 10.0398 21 13.5C21 18.2542 16.9088 22 12 22C7.09121 22 3 18.2542 3 13.5C3 10.0398 5.16716 7.11381 8.2394 5.77733C7.946 5.18667 7.60881 4.70395 7.26383 4.38899C6.88046 4.03899 6.57876 3.9683 6.32345 4.01793C6.02318 4.07629 5.49926 4.35394 4.81705 5.32167C4.49855 5.77346 3.87459 5.88118 3.4234 5.56226C2.9722 5.24335 2.86462 4.61856 3.18312 4.16677C4.00091 3.00672 4.91449 2.25177 5.94234 2.05199C7.01515 1.84347 7.9322 2.2891 8.61134 2.90913C9.27045 3.51088 9.78747 4.34087 10.1689 5.17703ZM12 7C11.6011 7 11.2111 7.03063 10.8322 7.08936C10.8946 7.34259 10.9462 7.59208 10.9865 7.83391C11.0773 8.3794 10.7093 8.8953 10.1645 8.98622C9.61971 9.07713 9.10448 8.70863 9.01369 8.16314C8.98674 8.00125 8.95305 7.83368 8.91295 7.6627C6.57573 8.73108 5 10.9719 5 13.5C5 17.03 8.07223 20 12 20C15.9278 20 19 17.03 19 13.5C19 10.9719 17.4243 8.73108 15.0871 7.6627C15.0469 7.83368 15.0133 8.00125 14.9863 8.16314C14.8955 8.70863 14.3803 9.07713 13.8355 8.98622C13.2907 8.8953 12.9227 8.3794 13.0135 7.83391C13.0538 7.59208 13.1054 7.34259 13.1678 7.08936C12.7889 7.03063 12.3989 7 12 7Z"/>
+          </svg>
+        );
+      case "lifesaver":
+        return (
+          <svg viewBox="0 0 20 20" className={common} fill="currentColor">
+            <path d="M10 1.75a8.25 8.25 0 1 0 0 16.5 8.25 8.25 0 0 0 0-16.5zM9 13.5a1 1 0 1 1 2 0 1 1 0 0 1-2 0zm1-8a3 3 0 0 1 3 3c0 1.08-.57 1.8-1.52 2.36-.61.36-.73.55-.73 1.14v.25h-1.5v-.38c0-1.04.36-1.63 1.32-2.2.68-.4.93-.71.93-1.17A1.5 1.5 0 0 0 10 7a1.5 1.5 0 0 0-1.5 1.5H7A3 3 0 0 1 10 5.5z"/>
+          </svg>
+        );
+      default:
+        return (
+          <svg viewBox="0 0 20 20" className={common} aria-hidden="true">
+            <path fill="currentColor" d="M10 15l-4.045 2.128.773-4.508L3.455 9.372l4.527-.658L10 4.5l2.018 4.214 4.527.658-3.273 3.248.773 4.508z"/>
+          </svg>
+        );
+    }
+  };
+
   // Optional dev log
   useEffect(() => {
     if (isDev) {
@@ -484,19 +550,52 @@ export function ChatKitPanel({
         control={chatkit.control}
         className={"flex-1 w-full"}
       />
-      <div className="border-t border-slate-200 bg-white/90 p-2 backdrop-blur supports-[backdrop-filter]:bg-white/70 dark:border-slate-800 dark:bg-slate-900/90">
-        <div className="flex flex-wrap gap-2">
-          {STARTER_PROMPTS.map((p) => (
-            <button
-              key={p.label}
-              type="button"
-              onClick={() => handleQuickPrompt(p.prompt)}
-              className="rounded-full bg-slate-900 px-3 py-1.5 text-sm text-white shadow-sm transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white dark:focus:ring-slate-600"
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+      <div className="relative border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        {/* Dropdown toggle button */}
+        <button
+          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+          className="flex w-full items-center justify-between px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
+        >
+          <span className="flex items-center gap-2">
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M5.5 8a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4.5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4.5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/>
+            </svg>
+            Quick actions
+          </span>
+          <svg 
+            className={`h-4 w-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
+            fill="currentColor" 
+            viewBox="0 0 20 20"
+          >
+            <path d="M5.293 7.293a1 1 0 0 1 1.414 0L10 10.586l3.293-3.293a1 1 0 1 1 1.414 1.414l-4 4a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 0-1.414z"/>
+          </svg>
+        </button>
+
+        {/* Dropdown content */}
+        {isDropdownOpen && (
+          <div className="border-t border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+            <div className="p-2 space-y-1">
+              {STARTER_PROMPTS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => {
+                    handleQuickPrompt(p.prompt);
+                    setIsDropdownOpen(false); // Close dropdown after selection
+                  }}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-white hover:text-slate-900 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white"
+                >
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-slate-600 dark:bg-slate-600 dark:text-slate-300">
+                    <PromptIcon name={(p as any).icon} />
+                  </span>
+                  <span className="font-medium">{p.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Disclaimer handled by ChatKit UI; no duplicate here */}
       </div>
       {blockingError && (
       <ErrorOverlay
