@@ -55,12 +55,24 @@
         cursor: pointer;
         z-index: 10002;
       }
+      #chat-wrapper > .chat-header {
+        flex: 0 0 auto;
+        background: rgba(255,255,255,0.85);
+        border: 1px solid #e2e8f0; /* slate-200 */
+        border-bottom: none;
+        border-radius: 12px 12px 0 0;
+        padding: 8px 12px;
+        font-weight: 600;
+        color: #64748b; /* slate-500 */
+        display: flex;
+        justify-content: center;
+      }
       #chat-wrapper > openai-chatkit {
         flex: 1 1 auto;
         width: 100%;
         height: auto;
         background: #ffffff;
-        border-radius: 12px;
+        border-radius: 0 0 12px 12px; /* mates with header above */
         overflow: hidden;
         box-shadow: 0 10px 30px rgba(2, 6, 23, 0.18);
       }
@@ -170,6 +182,11 @@
         try {
           const wrapper = document.getElementById('chat-wrapper');
           const launcher = document.getElementById('chat-launcher');
+          // Header
+          const header = document.createElement('div');
+          header.className = 'chat-header';
+          header.textContent = 'fyi - AI Assistant';
+
           const el = document.createElement('openai-chatkit');
           // Provide a token fetcher; ChatKit will call this as needed.
           el.setOptions({
@@ -178,6 +195,21 @@
               color: {
                 accent: { primary: '#4ccf96', level: 3 },
               }
+            },
+            onClientTool: async (invocation) => {
+              if (invocation && invocation.name === 'get_current_date') {
+                const now = new Date();
+                return {
+                  nowIso: now.toISOString(),
+                  nowHuman: now.toLocaleString(),
+                  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                  unixMs: now.getTime(),
+                };
+              }
+              return { success: false };
+            },
+            header: {
+              title: 'fyi - AI Assistant'
             },
             header: {
               rightAction: {
@@ -189,14 +221,15 @@
               }
             },
             startScreen: {
-              greeting: 'How can I help you with fyi?',
+              greeting: 'How can I help?',
               prompts: [
                 { label: 'What can fyi do for me?', prompt: 'What can fyi do for me?', icon: 'sparkle' },
-                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' }
+                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' },
+                { label: "What's new with fyi?", prompt: "What's the latest with fyi?", icon: 'sparkle' }
               ]
             },
             disclaimer: {
-              text: 'AI can make mistakes — Always check [our Help articles ](https://support.fyi.app/)'
+              text: 'AI can make mistakes — See [ Help articles ](https://support.fyi.app/)'
             },
             // Make source items clickable when they include a usable URL.
             entities: {
@@ -232,6 +265,7 @@
               }
             }
           });
+          wrapper.appendChild(header);
           wrapper.appendChild(el);
 
           // Prefill footer (under composer area)

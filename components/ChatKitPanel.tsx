@@ -390,11 +390,15 @@ export function ChatKitPanel({
       },
       radius: "round",
     },
+    header: {
+      title: "fyi AI assist",
+    },
     startScreen: {
       greeting: GREETING,
       prompts: [
         { label: "What can fyi do for me?", prompt: "What can fyi do for me?", icon: "sparkle" },
         { label: "Tell me about the subscription plans", prompt: "Tell me about the subscription plans", icon: "circle-question" },
+        { label: "What's new with fyi?", prompt: "What's the latest with fyi?", icon: "sparkle" },
       ],
     },
     composer: {
@@ -459,6 +463,16 @@ export function ChatKitPanel({
           factText: text.replace(/\s+/g, " ").trim(),
         });
         return { success: true };
+      }
+
+      if (invocation.name === "get_current_date") {
+        const now = new Date();
+        return {
+          nowIso: now.toISOString(),
+          nowHuman: now.toLocaleString(),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          unixMs: now.getTime(),
+        };
       }
 
       return { success: false };
@@ -553,6 +567,9 @@ export function ChatKitPanel({
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-white shadow-sm transition-colors dark:bg-slate-900">
+      <div className="flex items-center justify-center gap-2 border-b border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+        fyi AI assist
+      </div>
       <ChatKit
         key={widgetInstanceKey}
         control={chatkit.control}
