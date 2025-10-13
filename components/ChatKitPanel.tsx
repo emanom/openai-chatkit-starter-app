@@ -390,9 +390,6 @@ export function ChatKitPanel({
       },
       radius: "round",
     },
-    header: {
-      title: "fyi AI assist",
-    },
     startScreen: {
       greeting: GREETING,
       prompts: [
