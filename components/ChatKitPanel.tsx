@@ -72,6 +72,9 @@ export function ChatKitPanel({
   const [enhancementDescription, setEnhancementDescription] = useState("");
   const [enhancementPriority, setEnhancementPriority] = useState("Medium");
   const [enhancementImpact, setEnhancementImpact] = useState("");
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
+  const responseStartRef = useRef<number>(0);
+  const responseSeqRef = useRef<number>(0);
 
   const setErrorState = useCallback((updates: Partial<ErrorState>) => {
     setErrors((current) => ({ ...current, ...updates }));
@@ -472,13 +475,25 @@ export function ChatKitPanel({
       return { success: false };
     },
     onResponseEnd: () => {
+      try {
+        const seq = responseSeqRef.current;
+        const start = responseStartRef.current || 0;
+        const dur = start ? Date.now() - start : null;
+        if (isDev) console.info(`[ChatKitPanel] onResponseEnd seq=${seq}${dur !== null ? ` duration=${dur}ms` : ''}`);
+      } catch {}
       onResponseEnd();
     },
     onResponseStart: () => {
       setErrorState({ integration: null, retryable: false });
+      try {
+        responseSeqRef.current += 1;
+        responseStartRef.current = Date.now();
+        if (isDev) console.info(`[ChatKitPanel] onResponseStart seq=${responseSeqRef.current}`);
+      } catch {}
     },
     onThreadChange: () => {
       processedFacts.current.clear();
+      if (isDev) console.info("[ChatKitPanel] onThreadChange (cleared processed facts)");
     },
     onError: ({ error }: { error: unknown }) => {
       // Note that Chatkit UI handles errors for your users.
@@ -494,6 +509,7 @@ export function ChatKitPanel({
     (text: string) => {
       if (!text) return;
       try {
+        if (isDev) console.debug("[ChatKitPanel] handleQuickPrompt", { text });
         chatkit.setComposerValue({ text });
         chatkit.focusComposer();
       } catch {}
@@ -552,6 +568,61 @@ export function ChatKitPanel({
     });
   }, [isInitializingSession, chatkit.control, scriptStatus]);
 
+  // Collapse/hide detailed "Thinking" content inside the web component, keep header only
+  useEffect(() => {
+    const rootNode = chatContainerRef.current;
+    if (!rootNode) return;
+
+    const collapseThinking = () => {
+      try {
+        // Find ChatKit web component inside our container
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) return;
+
+        // Target only explicit thinking message containers
+        const thinkingNodes = shadow.querySelectorAll<HTMLElement>('[data-kind="thinking"], [data-message-type="thinking"]');
+        thinkingNodes.forEach((n, idx) => {
+          try {
+            if (isDev) console.debug('[ChatKitPanel] collapseThinking node', { idx, tag: n.tagName, part: n.getAttribute('part') });
+            // Neutralize sticky so the thread can auto-scroll
+            const cs = getComputedStyle(n);
+            if (cs.position === 'sticky' || cs.position === 'fixed') {
+              n.style.position = 'static';
+              n.style.top = '';
+              n.style.bottom = '';
+            }
+            // Hide all children except the first (header/label)
+            const kids = Array.from(n.children);
+            kids.forEach((k, idx) => {
+              if (idx > 0 && (k as HTMLElement).style) {
+                (k as HTMLElement).style.display = 'none';
+              }
+            });
+          } catch {}
+        });
+      } catch {}
+    };
+
+    // Observe updates in the shadow DOM and apply collapsing
+    let mo: MutationObserver | null = null;
+    const attachObserver = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) { requestAnimationFrame(attachObserver); return; }
+        try { mo?.disconnect(); } catch {}
+        if (isDev) console.debug('[ChatKitPanel] attachObserver (shadow ready)');
+        collapseThinking();
+        mo = new MutationObserver(() => collapseThinking());
+        mo.observe(shadow, { childList: true, subtree: true });
+      } catch {}
+    };
+
+    attachObserver();
+    return () => { try { mo?.disconnect(); } catch {} };
+  }, []);
+
   const activeError = errors.session ?? errors.integration;
   const blockingError = errors.script ?? activeError;
 
@@ -564,11 +635,13 @@ export function ChatKitPanel({
       <div className="flex items-center justify-center gap-2 border-b border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
         fyi AI ASSIST
       </div>
-      <ChatKit
-        key={widgetInstanceKey}
-        control={chatkit.control}
-        className={"flex-1 w-full"}
-      />
+      <div ref={chatContainerRef} className="flex-1 w-full">
+        <ChatKit
+          key={widgetInstanceKey}
+          control={chatkit.control}
+          className={"flex-1 w-full"}
+        />
+      </div>
       <div className="relative border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         {/* Dropdown toggle button */}
         <button

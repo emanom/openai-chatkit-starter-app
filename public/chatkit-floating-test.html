@@ -222,6 +222,7 @@
 
       async function getClientSecret(currentSecret) {
         // Always mint on our server; ChatKit may call this again to refresh.
+        try { console.info('[ck-html] getClientSecret called', { hasCurrent: Boolean(currentSecret) }); } catch(_){ }
         const response = await fetch('/api/create-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -236,6 +237,7 @@
         if (!data || !data.client_secret) {
           throw new Error('Missing client_secret in response');
         }
+        try { console.info('[ck-html] getClientSecret ok'); } catch(_){ }
         return data.client_secret;
       }
 
@@ -331,6 +333,7 @@
             widgets: {
               onAction: async (action) => {
                 try {
+                  console.debug('[ck-html] widgets.onAction', action);
                   if (action?.type === 'prefill' && action?.payload?.text) {
                     await el.setComposerValue({ text: String(action.payload.text) });
                     await el.focusComposer();
@@ -363,11 +366,13 @@
               }
             }
           });
+          try { console.info('[ck-html] chatkit options set'); } catch(_){ }
           wrapper.appendChild(header);
           wrapper.appendChild(el);
 
           // Collapse agent thinking content to header-only inside the web component
           (function initThinkingCollapse(){
+            try { console.info('[ck-html] thinking observer attach init'); } catch(_){ }
             const scrollToBottom = (root) => {
               try {
                 const els = Array.from(root.querySelectorAll('*'));
@@ -386,6 +391,7 @@
                 if (!root) return;
                 // 1) Attribute-based match (when available)
                 const attrCandidates = root.querySelectorAll('[data-kind="thinking"], [data-message-type="thinking"], [part*="thinking"]');
+                try { console.debug('[ck-html] collapseThinking count', attrCandidates.length); } catch(_){ }
                 attrCandidates.forEach((n) => {
                   try {
                     if (n.style && (n.style.position === 'sticky' || n.style.position === 'fixed')) { n.style.position = 'static'; n.style.top = ''; n.style.bottom = ''; }
@@ -396,10 +402,12 @@
 
                 // 2) Text-based match (fallback for current builds)
                 const all = root.querySelectorAll('*');
+                let textMatches = 0;
                 all.forEach((elNode) => {
                   try {
                     const txt = (elNode.textContent || '').trim();
                     if (!txt || (!txt.startsWith('Thought for a moment') && !/^Thinking\b/i.test(txt))) return;
+                    textMatches += 1;
                     // Find a reasonable container (message wrapper)
                     const container = elNode.closest('[data-message-id], [data-kind], article, li, section, div') || elNode.parentElement;
                     if (!container) return;
@@ -417,6 +425,7 @@
                     descendants.forEach((d) => { if (d !== elNode && !d.contains(elNode) && d.style) d.style.display = 'none'; });
                   } catch {}
                 });
+                try { console.debug('[ck-html] collapseThinking textMatches', textMatches); } catch(_){ }
                 // ensure scroll sticks to bottom after modifications
                 scrollToBottom(root);
               } catch {}
@@ -426,10 +435,39 @@
               try {
                 const root = el.shadowRoot;
                 if (!root) { requestAnimationFrame(tryObserve); return; }
+                try { console.info('[ck-html] thinking observer attached'); } catch(_){ }
                 collapse();
-                const mo = new MutationObserver(() => collapse());
+                const mo = new MutationObserver((mutations) => { try { console.debug('[ck-html] thinking mutation', mutations.length); } catch(_){ } collapse(); });
                 mo.observe(root, { childList: true, subtree: true });
               } catch {}
+            };
+            tryObserve();
+          })();
+
+          // Observe assistant message additions for debugging
+          (function initMessageObserver(){
+            const tryObserve = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) { requestAnimationFrame(tryObserve); return; }
+                const logMessages = () => {
+                  try {
+                    const msgs = Array.from(root.querySelectorAll('[data-message-id]'));
+                    const assistant = msgs.filter((m) => /assistant/i.test(m.getAttribute('data-role') || ''));
+                    const last = assistant[assistant.length - 1] || null;
+                    let snippet = '';
+                    if (last) {
+                      const txtNode = last.textContent || '';
+                      snippet = txtNode.trim().slice(0, 120);
+                    }
+                    console.info('[ck-html] message observer', { total: msgs.length, assistant: assistant.length, lastSnippet: snippet });
+                  } catch(_) {}
+                };
+                logMessages();
+                const mo = new MutationObserver(() => logMessages());
+                mo.observe(root, { childList: true, subtree: true });
+                console.info('[ck-html] message observer attached');
+              } catch(_){ }
             };
             tryObserve();
           })();
@@ -631,6 +669,7 @@
 
           let initKickoffSent = false;
           function openChat() {
+            try { console.info('[ck-html] openChat'); } catch(_){ }
             wrapper.classList.add('open');
             launcher.setAttribute('aria-expanded', 'true');
             // Focus composer after opening
@@ -666,6 +705,7 @@
           }
 
           function closeChat() {
+            try { console.info('[ck-html] closeChat'); } catch(_){ }
             wrapper.classList.remove('open');
             launcher.setAttribute('aria-expanded', 'false');
           }
