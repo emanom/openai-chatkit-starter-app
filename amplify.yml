@@ -11,6 +11,11 @@ frontend:
         - echo "OPENAI_PROJECT_ID=${OPENAI_PROJECT_ID}" >> .env.production
         - echo "NEXT_PUBLIC_CHATKIT_WORKFLOW_ID=${NEXT_PUBLIC_CHATKIT_WORKFLOW_ID}" >> .env.production
         - echo "CHATKIT_DOMAIN_KEY=${CHATKIT_DOMAIN_KEY}" >> .env.production
+        - echo "UPLOADS_BUCKET=${UPLOADS_BUCKET}" >> .env.production
+        - echo "AWS_REGION=${AWS_REGION}" >> .env.production
+        - echo "SAWS_REGION=${SAWS_REGION}" >> .env.production
+        - echo "SAWS_ACCESS_KEY_ID=${SAWS_ACCESS_KEY_ID}" >> .env.production
+        - echo "SAWS_SECRET_ACCESS_KEY=${SAWS_SECRET_ACCESS_KEY}" >> .env.production
         - npm run build
   artifacts:
     baseDirectory: .next

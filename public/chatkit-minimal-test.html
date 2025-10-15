@@ -14,14 +14,23 @@
       /* Floating wrapper bottom-right */
       #chat-wrapper {
         position: fixed;
-        bottom: 20px;
+        bottom: 86px;
         right: 20px;
         width: 460px;
         height: 720px;
         z-index: 10000;
-        display: none;
+        display: flex;
+        flex-direction: column;
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(0.95);
+        transition: opacity 0.2s, transform 0.2s;
       }
-      #chat-wrapper.open { display: flex; flex-direction: column; bottom: 86px; }
+      #chat-wrapper.open { 
+        opacity: 1;
+        pointer-events: auto;
+        transform: scale(1);
+      }
       #chat-wrapper > openai-chatkit {
         flex: 1 1 auto;
         width: 100%;
@@ -200,30 +209,31 @@
               greeting: uiGreeting,
               prompts: [
                 { label: "What's new with fyi?", prompt: "What's the latest with fyi?", icon: 'sparkle' },
-                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' },
-                { label: 'Enhancement request', prompt: ENH_TEXT, icon: 'sparkle' },
-                { label: 'Report an issue', prompt: 'I want to report the following issue: ', icon: 'bug' }
+                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' }
               ]
             },
             disclaimer: { text: 'AI can make mistakes — See [ Help articles ](https://support.fyi.app/)' },
             composer: {
-              placeholder: 'Your message to the assistant...',
-              attachments: { enabled: false }
+              placeholder: 'Message the assistant',
+              attachments: {
+                enabled: false,
+                accept: {
+                  "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+                  "application/pdf": [".pdf"]
+                }
+              }
             },
             widgets: {
               onAction: async (action) => {
-                if (action?.type === 'prefill') {
-                  const text = action.payload?.text || '';
-                  // Enhancement -> show form
-                  if (text.toLowerCase().startsWith('i want to request this product enhancement')) {
-                    showForm();
+                try {
+                  console.debug('[minimal] widgets.onAction', action);
+                  if (action?.type === 'prefill' && action?.payload?.text) {
+                    await el.setComposerValue({ text: String(action.payload.text) });
+                    await el.focusComposer();
                     return;
                   }
-                  // Report issue -> prefill only
-                  if (text) {
-                    await el.setComposerValue({ text });
-                    await el.focusComposer();
-                  }
+                } catch(err) {
+                  console.error('[minimal] widgets.onAction error:', err);
                 }
               }
             }
@@ -252,10 +262,28 @@
                 if (attempts < 100) requestAnimationFrame(inject);
                 return;
               }
-              const composer = root.querySelector('[data-kind="composer"]');
-              console.log('[S3] Attempt:', attempts, 'hasComposer:', !!composer, 'totalElements:', root.querySelectorAll('*').length);
+              // Try multiple selectors for composer
+              let composer = root.querySelector('[data-kind="composer"]');
+              if (!composer) composer = root.querySelector('[role="textbox"]');
+              if (!composer) composer = root.querySelector('textarea, [contenteditable="true"]');
               if (!composer) {
-                if (attempts < 100) requestAnimationFrame(inject);
+                // Find a composer-like container
+                composer = Array.from(root.querySelectorAll('*')).find(el => {
+                  const text = el.textContent || '';
+                  return text.includes('Message') || text.includes('Type');
+                })?.closest('[data-kind]') || null;
+              }
+              
+              const allKinds = Array.from(root.querySelectorAll('[data-kind]')).map(el => el.getAttribute('data-kind'));
+              const allRoles = Array.from(root.querySelectorAll('[role]')).map(el => el.getAttribute('role'));
+              console.log('[S3] Attempt:', attempts, 'hasComposer:', !!composer, 'totalElements:', root.querySelectorAll('*').length, 'kinds:', allKinds, 'roles:', allRoles);
+              
+              if (!composer) {
+                if (attempts < 300) {
+                  // Use longer delays for later attempts
+                  const delay = attempts < 50 ? 16 : attempts < 100 ? 100 : 500;
+                  setTimeout(inject, delay);
+                }
                 return;
               }
               if (composer.querySelector('[data-fyi-plus]')) {
@@ -340,7 +368,102 @@
               });
             };
             injectS3Button = inject;
-            requestAnimationFrame(inject);
+            // Start injection attempts after a short delay
+            setTimeout(inject, 500);
+          })();
+
+          // Inject custom prompts (Enhancement request, Report an issue)
+          (function injectCustomPrompts(){
+            const prompts = [
+              { label: 'Enhancement request', icon: 'sparkle', action: () => showForm() },
+              { label: 'Report an issue', icon: 'bug', action: async () => {
+                await el.setComposerValue({ text: 'I want to report the following issue: ' });
+                await el.focusComposer();
+              }}
+            ];
+            
+            const sparkleIcon = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0c.552 0 1 .448 1 1v1c0 .552-.448 1-1 1s-1-.448-1-1V1c0-.552.448-1 1-1zm0 13c.552 0 1 .448 1 1v1c0 .552-.448 1-1 1s-1-.448-1-1v-1c0-.552.448-1 1-1zM3.05 3.05c.39-.39 1.024-.39 1.414 0l.707.707c.39.39.39 1.024 0 1.414-.39.39-1.024.39-1.414 0l-.707-.707c-.39-.39-.39-1.024 0-1.414zm8.9 8.9c.39-.39 1.024-.39 1.414 0l.707.707c.39.39.39 1.024 0 1.414-.39.39-1.024.39-1.414 0l-.707-.707c-.39-.39-.39-1.024 0-1.414zM0 8c0-.552.448-1 1-1h1c.552 0 1 .448 1 1s-.448 1-1 1H1c-.552 0-1-.448-1-1zm13 0c0-.552.448-1 1-1h1c.552 0 1 .448 1 1s-.448 1-1 1h-1c-.552 0-1-.448-1-1zM3.05 12.95c.39.39.39 1.024 0 1.414l-.707.707c-.39.39-1.024.39-1.414 0-.39-.39-.39-1.024 0-1.414l.707-.707c.39-.39 1.024-.39 1.414 0zm8.9-8.9c.39.39.39 1.024 0 1.414l-.707.707c-.39.39-1.024.39-1.414 0-.39-.39-.39-1.024 0-1.414l.707-.707c.39-.39 1.024-.39 1.414 0z"/></svg>`;
+            const bugIcon = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3.825 9h-.65a.175.175 0 0 1-.175-.175v-.35a.175.175 0 0 1 .175-.175h.65V6.337C3.825 5.416 4.617 4.625 5.538 4.625h.962V3.55h-.65a.175.175 0 0 1-.175-.175v-.35a.175.175 0 0 1 .175-.175h.65V1.175c0-.097.079-.175.175-.175h2.65c.096 0 .175.078.175.175V2.85h.65a.175.175 0 0 1 .175.175v.35a.175.175 0 0 1-.175.175h-.65v1.075h.962c.92 0 1.713.791 1.713 1.712V8.3h.65a.175.175 0 0 1 .175.175v.35a.175.175 0 0 1-.175.175h-.65v1.35c0 .92-.792 1.712-1.713 1.712h-.962v1.788c0 .096-.078.175-.175.175h-2.65a.175.175 0 0 1-.175-.175v-1.788h-.962A1.728 1.728 0 0 1 3.825 10.35V9z"/></svg>`;
+            const rightArrow = `<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M7.21 14.77a.75.75 0 0 1 .02-1.06L10.06 11 7.23 8.29a.75.75 0 0 1 1.04-1.08l3.5 3.25a.75.75 0 0 1 0 1.08l-3.5 3.25a.75.75 0 0 1-1.06-.02z"/></svg>`;
+            
+            let attempts = 0;
+            const inject = () => {
+              attempts++;
+              const root = el.shadowRoot;
+              if (!root) { 
+                if (attempts < 300) setTimeout(inject, 100);
+                return; 
+              }
+              
+              // Find the start screen prompts container
+              const startScreen = root.querySelector('[data-kind="start-screen"], [data-part="start-screen"]');
+              if (!startScreen) { 
+                if (attempts % 20 === 0 || attempts < 10) {
+                  console.log('[CustomPrompts] Attempt', attempts, 'No start screen found yet, totalElements:', root.querySelectorAll('*').length);
+                }
+                if (attempts < 300) {
+                  const delay = attempts < 50 ? 16 : attempts < 100 ? 100 : 500;
+                  setTimeout(inject, delay);
+                }
+                return; 
+              }
+              
+              // Find the prompts list
+              const promptsList = startScreen.querySelector('[role="list"], .prompts-list, [data-prompts]') || 
+                                  Array.from(startScreen.querySelectorAll('*')).find(el => el.children.length >= 2 && 
+                                    Array.from(el.children).every(c => c.tagName === 'BUTTON'));
+              
+              if (!promptsList) {
+                console.log('[CustomPrompts] Start screen found but no prompts list');
+                if (attempts < 300) setTimeout(inject, 100);
+                return;
+              }
+              
+              // Check if already injected
+              if (promptsList.querySelector('[data-fyi-custom-prompt]')) {
+                console.log('[CustomPrompts] Already injected');
+                return;
+              }
+              
+              // Get a sample native button for styling
+              const sampleBtn = promptsList.querySelector('button');
+              if (!sampleBtn) {
+                console.log('[CustomPrompts] Prompts list found but no buttons yet');
+                if (attempts < 300) setTimeout(inject, 100);
+                return;
+              }
+              
+              console.log('[CustomPrompts] Injecting custom prompts');
+              
+              prompts.forEach(({ label, icon, action }) => {
+                const btn = sampleBtn.cloneNode(true);
+                btn.setAttribute('data-fyi-custom-prompt', '1');
+                
+                // Update the text content
+                const labelSpan = btn.querySelector('[data-part*="label"], .label, span:last-of-type');
+                if (labelSpan) labelSpan.textContent = label;
+                
+                // Update the icon
+                const iconSpan = btn.querySelector('[data-part*="icon"], .icon, span:first-of-type');
+                if (iconSpan) {
+                  iconSpan.innerHTML = icon === 'bug' ? bugIcon : sparkleIcon;
+                }
+                
+                // Wire up the action
+                btn.addEventListener('click', (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  action();
+                });
+                
+                promptsList.appendChild(btn);
+              });
+              
+              console.log('[CustomPrompts] Injection complete');
+            };
+            
+            // Start injection attempts after a short delay
+            setTimeout(inject, 500);
           })();
 
           // Force white user text
@@ -410,14 +533,14 @@
           })();
 
           function openChat() {
+            console.log('[minimal] openChat called');
             wrapper.classList.add('open');
             launcher.setAttribute('aria-expanded', 'true');
-            // Trigger injection after opening (ChatKit renders composer when visible)
+            // Focus composer when opened
             setTimeout(() => {
-              for (let i = 0; i < 20; i++) {
-                setTimeout(() => { if (injectS3Button) injectS3Button(); }, i * 50);
+              try { el.focusComposer(); } catch(err) {
+                console.log('[minimal] Could not focus composer:', err);
               }
-              try { el.focusComposer(); } catch(_){}
             }, 100);
           }
 
