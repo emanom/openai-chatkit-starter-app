@@ -233,6 +233,7 @@
           wrapper.appendChild(form);
 
           // S3 Upload injection
+          let injectS3Button;
           (function injectS3Upload(){
             const PROGRESS_HTML = `
               <div id="s3-progress" style="display:none; position:absolute; left:12px; right:12px; bottom:56px; z-index:101;">
@@ -338,6 +339,7 @@
                 }
               });
             };
+            injectS3Button = inject;
             requestAnimationFrame(inject);
           })();
 
@@ -410,7 +412,13 @@
           function openChat() {
             wrapper.classList.add('open');
             launcher.setAttribute('aria-expanded', 'true');
-            setTimeout(() => { try { el.focusComposer(); } catch(_){} }, 100);
+            // Trigger injection after opening (ChatKit renders composer when visible)
+            setTimeout(() => {
+              for (let i = 0; i < 20; i++) {
+                setTimeout(() => { if (injectS3Button) injectS3Button(); }, i * 50);
+              }
+              try { el.focusComposer(); } catch(_){}
+            }, 100);
           }
 
           function closeChat() {
