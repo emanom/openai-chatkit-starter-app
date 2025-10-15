@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatKit Minimal Test</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      /* Floating wrapper bottom-right */
+      #chat-wrapper {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 460px;
+        height: 720px;
+        z-index: 10000;
+        visibility: hidden;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, visibility 0s 0.2s;
+      }
+      #chat-wrapper.open {
+        visibility: visible;
+        opacity: 1;
+        pointer-events: auto;
+        bottom: 86px;
+        transition: opacity 0.2s ease, visibility 0s 0s;
+      }
+      #chat-wrapper > openai-chatkit {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(2, 6, 23, 0.18);
+        overflow: hidden;
+        font-size: 14px; /* reduce base font size */
+        line-height: 1.4;
+        /* Customize ChatKit CSS variables */
+        --user-message-text-color: #ffffff;
+        --font-text-md-size: 0.9rem;
+        /* Ensure inverse color (used by theme) is white so var() resolves to white */
+        --accent-color-primary-inverse: #ffffff;
+        /* Heading size used by start screen greeting (and others) */
+        --font-heading-lg-size: 1.3rem;
+      }
+
+      /* Extra specificity in case the component sets [data-accent="3"] variables */
+      #chat-wrapper > openai-chatkit[data-accent="3"] {
+        --user-message-text-color: #ffffff;
+      }
+      /* Round launcher button */
+      #chat-launcher {
+        position: fixed;
+        bottom: 22px;
+        right: 22px;
+        width: 56px;
+        height: 56px;
+        border-radius: 9999px;
+        background: #0f172a;
+        color: #ffffff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        box-shadow: 0 8px 24px rgba(2, 6, 23, 0.2);
+        z-index: 10001;
+      }
+      #chat-launcher:hover { filter: brightness(1.05); }
+    </style>
+    <script
+      src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
+      async
+    ></script>
+  </head>
+  <body>
+    <a id="chat-launcher" href="#" aria-controls="chat-wrapper" aria-expanded="false" title="Chat">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M12 3C6.477 3 2 6.91 2 11.727c0 2.34 1.17 4.45 3.04 5.967-.09 1.07-.5 2.34-1.44 3.41-.22.25-.06.65.27.64 1.71-.06 3.22-.94 4.2-1.62.06-.04.13-.08.2-.12 1.1.36 2.29.56 3.53.56 5.523 0 10-3.91 10-8.727C22 6.91 17.523 3 12 3z"/></svg>
+    </a>
+    <div id="chat-wrapper" class="open" style="pointer-events:none;">
+      <openai-chatkit id="ck"></openai-chatkit>
+    </div>
+
+    <script>
+      function getCaseInsensitiveParam(...candidates) {
+        const url = new URL(window.location.href);
+        const params = url.searchParams;
+        const keys = Array.from(params.keys());
+        for (const cand of candidates) {
+          const found = keys.find((k) => k.toLowerCase() === String(cand).toLowerCase());
+          if (found) {
+            const v = params.get(found);
+            if (v) { return v.trim(); }
+          }
+        }
+        return null;
+      }
+
+      async function getClientSecret(currentSecret) {
+        try { console.info('[minimal] getClientSecret', { hasCurrent: Boolean(currentSecret) }); } catch(_){}
+        const res = await fetch('/api/create-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error('Failed to create ChatKit session: ' + (t || res.statusText));
+        }
+        const data = await res.json();
+        try { window.appSessionId = data.app_session_id || null; } catch(_) {}
+        if (!data || !data.client_secret) throw new Error('Missing client_secret in response');
+        try { console.info('[minimal] getClientSecret ok'); } catch(_){}
+        return data.client_secret;
+      }
+
+      (function initWhenReady(){
+        if (!(window.customElements && window.customElements.get('openai-chatkit'))) {
+          requestAnimationFrame(initWhenReady);
+          return;
+        }
+        try {
+          const el = document.getElementById('ck');
+          const wrapper = document.getElementById('chat-wrapper');
+          const launcher = document.getElementById('chat-launcher');
+          const firstForGreeting = getCaseInsensitiveParam('firstname','first','firstName');
+          const uiGreeting = firstForGreeting ? `Hi ${firstForGreeting}, how can I help?` : 'How can I help you today?';
+
+          // Injection triggers (called after opening chat)
+          window.fyiInjectCustomPrompts = null;
+          window.fyiInjectUploadButton = null;
+
+          const openChat = () => {
+            wrapper.classList.add('open');
+            launcher.setAttribute('aria-expanded', 'true');
+            try { console.info('[minimal] openChat - triggering injections'); } catch(_){}
+            // Give ChatKit a moment to render, then trigger our injections multiple times
+            for (let i = 0; i < 10; i++) {
+              setTimeout(() => {
+                try {
+                  if (window.fyiInjectCustomPrompts) window.fyiInjectCustomPrompts();
+                  if (window.fyiInjectUploadButton) window.fyiInjectUploadButton();
+                } catch(_){}
+              }, 100 + (i * 100));
+            }
+            setTimeout(() => {
+              try { el.focusComposer(); } catch(_){}
+            }, 200);
+          };
+          const closeChat = () => { wrapper.classList.remove('open'); launcher.setAttribute('aria-expanded', 'false'); };
+
+          // Build enhancement form overlay (available to widgets.onAction)
+          const ENH_TEXT = 'I want to request this product enhancement: ';
+          const form = document.createElement('div');
+          form.id = 'enh2-form';
+          form.style.cssText = 'display:none; position:absolute; left:8px; right:8px; bottom:8px; z-index:100; background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:10px; box-shadow:0 6px 16px rgba(2,6,23,.15);';
+          form.innerHTML = `
+            <div style="font-weight:600; color:#0f172a; margin-bottom:6px;">Enhancement request</div>
+            <div style="display:grid; gap:8px;">
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span style="color:#475569;">Title</span>
+                <input id="enh2-title" placeholder="Short, descriptive title" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span style="color:#475569;">Description</span>
+                <textarea id="enh2-desc" rows="4" placeholder="What problem does this solve? What would you like to see?" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;"></textarea>
+              </label>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <label style="display:flex; flex-direction:column; gap:4px;">
+                  <span style="color:#475569;">Priority</span>
+                  <select id="enh2-priority" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;">
+                    <option>Low</option>
+                    <option selected>Medium</option>
+                    <option>High</option>
+                  </select>
+                </label>
+                <label style="display:flex; flex-direction:column; gap:4px;">
+                  <span style="color:#475569;">Impact</span>
+                  <input id="enh2-impact" placeholder="Who is impacted and how often?" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;" />
+                </label>
+              </div>
+              <div style="display:flex; justify-content:flex-end; gap:8px;">
+                <button id="enh2-cancel" type="button" style="border:1px solid #cbd5e1; background:#fff; color:#0f172a; padding:6px 10px; border-radius:6px;">Cancel</button>
+                <button id="enh2-submit" type="button" style="background:#0f172a; color:#fff; padding:6px 10px; border:none; border-radius:6px;">Add to message</button>
+              </div>
+            </div>
+          `;
+          wrapper.appendChild(form);
+          const showForm = () => { try { console.info('[minimal] showForm called'); } catch(_){} form.style.display = 'block'; };
+          const hideForm = () => {
+            form.style.display = 'none';
+            try {
+              document.getElementById('enh2-title').value = '';
+              document.getElementById('enh2-desc').value = '';
+              document.getElementById('enh2-priority').value = 'Medium';
+              document.getElementById('enh2-impact').value = '';
+            } catch(_){}
+          };
+          form.addEventListener('click', async (e) => {
+            const t = e.target && (e.target.id || (e.target.closest && e.target.closest('#enh2-cancel, #enh2-submit') && e.target.closest('#enh2-cancel, #enh2-submit').id) || '');
+            if (t === 'enh2-cancel') { hideForm(); return; }
+            if (t === 'enh2-submit') {
+              try {
+                const title = String(document.getElementById('enh2-title').value || '').trim();
+                const desc = String(document.getElementById('enh2-desc').value || '').trim();
+                const priority = String(document.getElementById('enh2-priority').value || 'Medium');
+                const impact = String(document.getElementById('enh2-impact').value || '').trim();
+                const lines = ['I want to request a product enhancement:'];
+                if (title) lines.push(`Title: ${title}`);
+                if (desc) lines.push(`Description: ${desc}`);
+                if (priority) lines.push(`Priority: ${priority}`);
+                if (impact) lines.push(`Impact: ${impact}`);
+                const text = lines.join('\n');
+                if (text) { await el.setComposerValue({ text }); await el.focusComposer(); }
+              } catch(_) {}
+              hideForm();
+            }
+          });
+
+          el.setOptions({
+            api: { getClientSecret },
+            theme: {
+              color: { accent: { primary: '#4ccf96', level: 3 } }
+            },
+            header: {
+              rightAction: {
+                icon: 'collapse-small',
+                onClick: () => { try { closeChat(); } catch(_){} }
+              }
+            },
+            startScreen: {
+              greeting: uiGreeting,
+              prompts: [
+                { label: "What's new with fyi?", prompt: "What's the latest with fyi?", icon: 'sparkle' },
+                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' }
+              ]
+            },
+            disclaimer: { text: 'AI can make mistakes — See [ Help articles ](https://support.fyi.app/)' },
+            composer: {
+              placeholder: 'Your message to the assistant...',
+              // Use S3 uploads via our own button
+              attachments: { enabled: false }
+            },
+            widgets: {
+              onAction: async (action) => {
+                try {
+                  if (action && action.type === 'prefill') {
+                    var text = (action.payload && action.payload.text) ? String(action.payload.text) : '';
+                    if (text && text.toLowerCase().indexOf(ENH_TEXT.toLowerCase()) === 0) { showForm(); return; }
+                    if (text) { await el.setComposerValue({ text: text }); await el.focusComposer(); }
+                    return;
+                  }
+                } catch(_) {}
+              }
+            }
+          });
+
+          // Force a delayed injection after ChatKit should have initialized
+          // Also close the chat initially (it starts open for rendering but hidden with pointer-events:none)
+          setTimeout(() => {
+            try {
+              console.info('[minimal] Delayed init injection trigger');
+              if (window.fyiInjectCustomPrompts) window.fyiInjectCustomPrompts();
+              if (window.fyiInjectUploadButton) window.fyiInjectUploadButton();
+              // Now close it properly for user
+              wrapper.classList.remove('open');
+              wrapper.style.pointerEvents = '';
+            } catch(_){}
+          }, 2000);
+
+          // Force white user text inside shadow DOM using a style tag with !important
+          (function forceUserTextWhite(){
+            const tryInject = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) { requestAnimationFrame(tryInject); return; }
+                // Avoid duplicate injection
+                if (root.querySelector('style[data-fyi-user-white]')) return;
+                const style = document.createElement('style');
+                style.setAttribute('data-fyi-user-white', '1');
+                style.textContent = `
+                  [data-message-role="user"],
+                  [data-role="user"],
+                  [data-author="user"],
+                  [data-kind="user-message"] {
+                    --user-message-text-color: #ffffff !important;
+                    color: #ffffff !important;
+                  }
+                  [data-message-role="user"] *,
+                  [data-role="user"] *,
+                  [data-author="user"] *,
+                  [data-kind="user-message"] * {
+                    color: #ffffff !important;
+                  }
+                `;
+                root.appendChild(style);
+              } catch { requestAnimationFrame(tryInject); }
+            };
+            tryInject();
+          })();
+
+          // Remove any previous floating attach button (cleanup)
+          (function removeOldAttach(){ try { const old = document.getElementById('fyi-attach'); if (old) old.remove(); } catch(_) {} })();
+
+          // Prevent ChatKit internal uploads via paste/drag-drop
+          try {
+            el.addEventListener('drop', (ev) => { try { ev.preventDefault(); ev.stopPropagation(); } catch(_) {} }, true);
+            el.addEventListener('paste', (ev) => {
+              try {
+                const items = (ev.clipboardData && ev.clipboardData.items) ? Array.from(ev.clipboardData.items) : [];
+                if (items.some((it) => it && it.kind === 'file')) { ev.preventDefault(); ev.stopPropagation(); }
+              } catch(_) {}
+            }, true);
+          } catch(_) {}
+
+          // Hide any built-in attach within the shadow composer
+          (function hideNativeAttach(){
+            const tryInject = () => {
+              try {
+                const root = el.shadowRoot; if (!root) { requestAnimationFrame(tryInject); return; }
+                if (root.querySelector('style[data-fyi-hide-attach]')) return;
+                const s = document.createElement('style'); s.setAttribute('data-fyi-hide-attach','1');
+                s.textContent = `
+                  [data-kind="composer"] [aria-label*="Attach" i],
+                  [data-kind="composer"] [part*="attach" i] { display: none !important; }
+                `;
+                root.appendChild(s);
+              } catch(_) { requestAnimationFrame(tryInject); }
+            };
+            tryInject();
+          })();
+
+          // S3 Upload: inject a '+' button inside the composer and use S3 with progress bar
+          (function injectComposerAttach(){
+            const PROGRESS_HTML = `
+              <div id="s3-upload-progress" style="display:none; position:absolute; left:12px; right:12px; bottom:56px; z-index:101;">
+                <div style="height:6px; background:#e5e7eb; border-radius:9999px; overflow:hidden;">
+                  <div id="s3-upload-bar" style="width:0%; height:6px; background:#4ccf96;"></div>
+                </div>
+                <div id="s3-upload-text" style="font-size:12px; color:#64748b; margin-top:4px;">0%</div>
+              </div>`;
+            const tryInject = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) return false;
+                const composerHost = root.querySelector('[data-kind="composer"]');
+                try { console.debug('[minimal] S3 upload tryInject', { hasComposer: !!composerHost }); } catch(_){}
+                if (!composerHost) return false;
+
+                // Progress UI once
+                if (!document.getElementById('s3-upload-progress')) {
+                  const wrap = document.createElement('div'); wrap.innerHTML = PROGRESS_HTML; const first = wrap.firstElementChild; if (first) wrapper.appendChild(first);
+                }
+
+                // Plus already added
+                if (composerHost.querySelector('[data-fyi-plus]')) return true;
+
+                const hostEl = composerHost;
+                try { if (hostEl && getComputedStyle(hostEl).position === 'static') { hostEl.style.position = 'relative'; } } catch(_) {}
+
+                // Hidden input
+                let input = document.getElementById('fyi-file');
+                if (!input) {
+                  const created = document.createElement('input'); created.type = 'file'; created.id = 'fyi-file'; created.accept = 'image/*,application/pdf'; created.style.display = 'none'; wrapper.appendChild(created);
+                  input = created;
+                }
+
+                const plus = document.createElement('button');
+                plus.setAttribute('data-fyi-plus','1'); plus.type = 'button'; plus.title = 'Attach file'; plus.textContent = '+';
+                plus.style.cssText = 'position:absolute; right:8px; bottom:8px; width:32px; height:32px; border-radius:9999px; border:1px solid #cbd5e1; background:#4ccf96; color:#0f172a; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; z-index:999;';
+                hostEl.appendChild(plus);
+                try { console.info('[minimal] S3 upload button injected', { host: hostEl.tagName, position: getComputedStyle(hostEl).position }); } catch(_){}
+
+                plus.addEventListener('click', () => { try { if (input && typeof (input).click === 'function') (input).click(); } catch(_){} });
+                if (input && (input).addEventListener) {
+                  (input).addEventListener('change', async function(e){
+                    try {
+                      var target = e && e.target ? e.target : null;
+                      var files = target && target.files ? target.files : null;
+                      var f = files && files[0] ? files[0] : null; if (!f) return;
+                      var appSessionId = (window)['appSessionId'] || null; if (!appSessionId) { alert('Upload unavailable: missing session id'); return; }
+                      var progress = document.getElementById('s3-upload-progress'); var bar = document.getElementById('s3-upload-bar'); var text = document.getElementById('s3-upload-text');
+                      if (progress && bar && text) { progress.style.display = 'block'; bar.style.width = '0%'; text.textContent = '0%'; }
+                      var presignRes = await fetch('/api/attachments/presign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ appSessionId, filename: f.name, mime: f.type || 'application/octet-stream', size: f.size }) });
+                      var presign = await presignRes.json(); if (!presignRes.ok) throw new Error((presign && presign.error) || 'presign failed');
+                      await new Promise(function(resolve,reject){ var xhr=new XMLHttpRequest(); xhr.open('PUT', presign.url, true); xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream'); xhr.setRequestHeader('x-amz-server-side-encryption','AES256'); xhr.upload.onprogress=function(ev){ if (ev.lengthComputable && bar && text){ var pct=Math.max(0,Math.min(100,Math.round((ev.loaded/ev.total)*100))); bar.style.width=pct+'%'; text.textContent=pct+'%'; } }; xhr.onload=function(){ if (xhr.status>=200 && xhr.status<300) resolve(undefined); else reject(new Error('Upload failed: '+xhr.status)); }; xhr.onerror=function(){ reject(new Error('Network error during upload')); }; xhr.send(f); });
+                      if (progress) progress.style.display='none';
+                      try { if ((el)['sendCustomAction']) { await (el)['sendCustomAction']({ type:'upload', payload:{ name:f.name, key: (presign && presign.key) || null } }); } } catch(_) {}
+                      try { if (target) target.value=''; } catch(_){ }
+                    } catch(err) {
+                      var progress2 = document.getElementById('s3-upload-progress'); if (progress2) progress2.style.display='none'; var msg=''; try { msg = err && err.message ? err.message : String(err); } catch(_) { msg = String(err); }                       alert('Upload failed: '+msg);
+                    }
+                  });
+                }
+                return true;
+              } catch(err) {
+                try { console.error('[minimal] S3 upload error', err); } catch(_){}
+                return false;
+              }
+            };
+
+            const tryObserve = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) { requestAnimationFrame(tryObserve); return; }
+                const mo = new MutationObserver(function(){
+                  tryInject();
+                });
+                mo.observe(root, { childList: true, subtree: true });
+                try { console.info('[minimal] S3 upload observer attached'); } catch(_){}
+                // Also try immediately in case DOM is already there
+                tryInject();
+              } catch {}
+            };
+            tryObserve();
+            // Expose for manual triggering after chat opens
+            window.fyiInjectUploadButton = tryInject;
+          })();
+
+          // Force user message text to white via host CSS vars and shadow enforcement
+          try {
+            el.style.setProperty('--user-message-text-color', '#ffffff');
+            el.style.setProperty('--accent-color-primary-inverse', '#ffffff');
+          } catch(_) {}
+
+          (function enforceUserMessageColor(){
+            const tryApply = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) { requestAnimationFrame(tryApply); return; }
+                const apply = () => {
+                  try {
+                    // Force variables at the accent container level where ChatKit defines them
+                    const accentNodes = root.querySelectorAll('[data-accent]');
+                    accentNodes.forEach((an) => {
+                      try {
+                        an.style.setProperty('--user-message-text-color', '#ffffff');
+                        an.style.setProperty('--accent-color-primary-inverse', '#ffffff');
+                      } catch(_) {}
+                    });
+                    const nodes = root.querySelectorAll('[data-role="user"], [data-message-role="user"], [data-author="user"], [data-kind="user-message"]');
+                    nodes.forEach((n) => {
+                      try {
+                        n.style.color = '#ffffff';
+                        const inner = n.querySelectorAll('*');
+                        inner.forEach((m) => { try { m.style.color = '#ffffff'; } catch(_) {} });
+                      } catch(_) {}
+                    });
+                  } catch(_) {}
+                };
+                apply();
+                const mo = new MutationObserver(() => apply());
+                mo.observe(root, { childList: true, subtree: true });
+              } catch(_) { requestAnimationFrame(tryApply); }
+            };
+            tryApply();
+          })();
+
+          // Launcher open/close behavior
+          (function initLauncher(){
+            launcher.addEventListener('click', (e) => { e.preventDefault(); if (wrapper.classList.contains('open')) closeChat(); else openChat(); });
+          })();
+
+          // Hide ChatKit's internal header for a cleaner bubble
+          (function hideHeader(){
+            const tryHide = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) { requestAnimationFrame(tryHide); return; }
+                const hide = () => {
+                  try {
+                    const headers = root.querySelectorAll('[part*="header"], [data-kind="header"], header');
+                    headers.forEach((h) => {
+                      try {
+                        // Keep the rightAction (minimize) visible; hide other children (title, avatar, etc.)
+                        const kids = Array.from(h.children);
+                        kids.forEach((c) => {
+                          const isAction = (c.getAttribute('part') || '').includes('rightAction') || c.getAttribute('aria-label');
+                          if (!isAction) { try { c.style.display = 'none'; } catch(_){} }
+                        });
+                        try { h.style.background = 'transparent'; } catch(_){}
+                        try { h.style.border = 'none'; } catch(_){}
+                      } catch(_) {}
+                    });
+                  } catch {}
+                };
+                hide();
+                const mo = new MutationObserver(() => hide());
+                mo.observe(root, { childList: true, subtree: true });
+              } catch {}
+            };
+            tryHide();
+          })();
+
+          // Inject two custom start-screen tiles (reliable, no auto-send)
+          // Wait for actual DOM mutations since ChatKit lazy-renders when opened
+          (function injectCustomStartPrompts(){
+            const LABELS = [
+              ['Enhancement request', ENH_TEXT],
+              ['Report an issue', 'I want to report the following issue: ']
+            ];
+            const tryInject = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) return false;
+                
+                // Find start screen container or prompt list
+                const allButtons = Array.from(root.querySelectorAll('button, a'));
+                try { console.debug('[minimal] Custom prompts tryInject', { buttonsCount: allButtons.length, texts: allButtons.slice(0,5).map(b => (b.textContent || '').trim().slice(0,40)) }); } catch(_){}
+                
+                const nativeBtn = allButtons.find((n) => {
+                  const txt = (n.textContent || '').trim();
+                  return /What\'s new with fyi\?|Tell me about the subscription plans/i.test(txt);
+                });
+                const container = (nativeBtn && nativeBtn.parentElement) || null;
+                
+                if (!container || container.querySelector('[data-fyi-custom="prompt"]')) return false;
+
+                try { console.info('[minimal] Injecting custom start prompts', { container: container.tagName, buttonsFound: allButtons.length }); } catch(_){}
+                LABELS.forEach(function(item){
+                  const label = item[0];
+                  const text = item[1];
+                  const btn = document.createElement('button');
+                  btn.type = 'button';
+                  btn.setAttribute('data-fyi-custom', 'prompt');
+                  btn.textContent = String(label);
+                  btn.style.cssText = 'margin:6px 0; padding:8px 10px; border-radius:8px; border:1px solid rgba(203,213,225,0.8); background:#ffffff; cursor:pointer; display:block; width:100%; text-align:left;';
+                  btn.addEventListener('click', async function(){
+                    try { console.info('[minimal] Custom prompt clicked', { label: label }); } catch(_){}
+                    if (String(label).toLowerCase().indexOf('enhancement') >= 0) { showForm(); return; }
+                    try { await el.setComposerValue({ text: String(text) }); await el.focusComposer(); } catch(_) {}
+                  });
+                  if (container) { container.appendChild(btn); }
+                });
+                return true;
+              } catch(err) {
+                try { console.error('[minimal] Custom prompts error', err); } catch(_){}
+                return false;
+              }
+            };
+
+            const tryObserve = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) { requestAnimationFrame(tryObserve); return; }
+                const mo = new MutationObserver(function(){
+                  tryInject();
+                });
+                mo.observe(root, { childList: true, subtree: true });
+                try { console.info('[minimal] Custom prompts observer attached'); } catch(_){}
+                // Also try immediately in case DOM is already there
+                tryInject();
+              } catch {}
+            };
+            tryObserve();
+            // Expose for manual triggering after chat opens
+            window.fyiInjectCustomPrompts = tryInject;
+          })();
+        } catch (e) {
+          console.error('[minimal-test] init failed', e);
+        }
+      })();
+    </script>
+  </body>
+  </html>
+
+
