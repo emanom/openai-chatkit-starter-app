@@ -699,7 +699,8 @@ export function ChatKitPanel({
                 let depth = 0;
                 while (current && depth < 5) {
                   // Look for containers that have multiple children (status + content)
-                  if (current.children.length > 1 && current !== shadow) {
+                  // Avoid comparing with shadow root - just check if we have a valid element
+                  if (current.children.length > 1 && current.tagName !== 'OPENAI-CHATKIT') {
                     container = current;
                     break;
                   }
