@@ -7,13 +7,9 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
-  // Optimize for Amplify/CloudFront CDN
-  compress: true,
-  poweredByHeader: false,
-  // Enable experimental features for better performance
-  experimental: {
-    optimizeCss: true,
-  },
+        // Optimize for Amplify/CloudFront CDN
+        compress: true,
+        poweredByHeader: false,
   // Headers for caching static assets (Amplify uses CloudFront)
   async headers() {
     return [
