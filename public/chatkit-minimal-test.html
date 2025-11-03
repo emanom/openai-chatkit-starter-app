@@ -532,6 +532,116 @@
             requestAnimationFrame(hide);
           })();
 
+          // Collapse thinking content to show only status (CSS-based for performance)
+          (function hideThinkingDetails(){
+            const injectCSS = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) {
+                  requestAnimationFrame(injectCSS);
+                  return;
+                }
+                if (root.querySelector('style[data-fyi-thinking]')) return;
+                
+                const style = document.createElement('style');
+                style.setAttribute('data-fyi-thinking', '1');
+                style.textContent = `
+                  /* Hide all detailed thinking content - show only status header */
+                  [data-kind="thinking"] > *:not(:first-child),
+                  [data-message-type="thinking"] > *:not(:first-child),
+                  [part*="thinking"] > *:not(:first-child),
+                  /* Hide bullet points and detailed lists */
+                  [data-kind="thinking"] ul,
+                  [data-kind="thinking"] ol,
+                  [data-kind="thinking"] li:not(:first-child),
+                  [data-message-type="thinking"] ul,
+                  [data-message-type="thinking"] ol,
+                  [data-message-type="thinking"] li:not(:first-child),
+                  [part*="thinking"] ul,
+                  [part*="thinking"] ol,
+                  [part*="thinking"] li:not(:first-child),
+                  /* Hide paragraphs and detailed content */
+                  [data-kind="thinking"] p:not(:first-child),
+                  [data-message-type="thinking"] p:not(:first-child),
+                  [part*="thinking"] p:not(:first-child) {
+                    display: none !important;
+                  }
+                  /* Simplify thinking header appearance */
+                  [data-kind="thinking"] :first-child,
+                  [data-message-type="thinking"] :first-child,
+                  [part*="thinking"] :first-child {
+                    font-size: 0.875rem !important;
+                    color: #64748b !important;
+                    font-weight: 500 !important;
+                  }
+                `;
+                root.appendChild(style);
+              } catch (e) {
+                console.debug('[hideThinkingDetails] CSS injection error:', e);
+              }
+            };
+            
+            const simplifyThinkingText = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) return;
+                
+                // Find and simplify thinking headers by text content
+                const allElements = root.querySelectorAll('*');
+                allElements.forEach((node) => {
+                  try {
+                    const text = (node.textContent || '').trim();
+                    // Match "Thought for Xs" pattern
+                    if (text && text.includes('Thought for')) {
+                      const match = text.match(/Thought for (\d+s)/i);
+                      if (match && node.textContent.length > 30) {
+                        // Simplify to just show time status
+                        node.textContent = 'Thinking for ' + match[1] + '...';
+                      }
+                    } else if (text && /^Thinking\b/i.test(text) && text.length > 20) {
+                      // Simplify generic "Thinking" headers
+                      node.textContent = 'Thinking...';
+                    }
+                  } catch (e) {
+                    // Continue silently
+                  }
+                });
+              } catch (e) {
+                console.debug('[hideThinkingDetails] text simplification error:', e);
+              }
+            };
+
+            const collapse = () => {
+              simplifyThinkingText();
+            };
+
+            // Inject CSS first, then set up observer for text simplification
+            const tryObserve = () => {
+              try {
+                const root = el.shadowRoot;
+                if (!root) {
+                  requestAnimationFrame(tryObserve);
+                  return;
+                }
+                injectCSS();
+                collapse();
+                // Use MutationObserver with minimal options for better performance
+                const observer = new MutationObserver(() => {
+                  collapse();
+                });
+                observer.observe(root, {
+                  childList: true,
+                  subtree: true,
+                  characterData: false,
+                  attributes: false
+                });
+              } catch (e) {
+                console.debug('[hideThinkingDetails] observer error:', e);
+              }
+            };
+            tryObserve();
+          })();
+
           function openChat() {
             console.log('[minimal] openChat called');
             wrapper.classList.add('open');

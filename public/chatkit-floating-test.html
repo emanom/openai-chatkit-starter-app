@@ -34,14 +34,11 @@
         height: 821px; /* desktop size */
         z-index: 10000;
         display: none;
-        display: none;
-        /* Layout so footer can sit below the widget */
-        display: none;
       }
-      #chat-wrapper.open { display: block; }
-
-      /* Make wrapper a column container when open */
-      #chat-wrapper.open { display: flex; flex-direction: column; }
+      #chat-wrapper.open { 
+        display: flex; 
+        flex-direction: column;
+      }
 
       /* Top-right launcher link */
       #chat-launcher {
@@ -160,6 +157,81 @@
       #chat-prefill-footer .prefill-disclaimer { text-align: center; font-size: 12px; color: #64748b; margin-top: 6px; }
       #chat-prefill-footer .prefill-disclaimer a { color: inherit; text-decoration: underline; }
       /* No native prompts; custom prefill footer below composer */
+
+      /* File upload preview container */
+      #file-preview-container {
+        flex: 0 0 auto;
+        max-height: 150px;
+        overflow-y: auto;
+        background: #ffffff;
+        border: 1px solid #003769;
+        border-top: none;
+        padding: 12px;
+        gap: 8px;
+        display: none;
+        flex-wrap: wrap;
+      }
+      #file-preview-container.has-files {
+        display: flex;
+      }
+      .file-preview-item {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #f8fafc;
+        border: 2px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .file-preview-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .file-preview-item .file-icon {
+        width: 40px;
+        height: 40px;
+        color: #64748b;
+      }
+      .file-preview-item .remove-btn {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #ef4444;
+        color: white;
+        border: 2px solid white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: bold;
+        line-height: 1;
+        padding: 0;
+        transition: background 0.15s;
+      }
+      .file-preview-item .remove-btn:hover {
+        background: #dc2626;
+      }
+      .file-preview-item .file-name {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        font-size: 10px;
+        padding: 2px 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
 
       /* (minimize now uses native header rightAction, no overlay) */
 
@@ -305,7 +377,7 @@
             composer: {
               placeholder: 'Message the assistant',
               attachments: {
-                enabled: false,
+                enabled: true,
                 accept: {
                   "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"],
                   "application/pdf": [".pdf"]
@@ -368,7 +440,287 @@
           });
           try { console.info('[ck-html] chatkit options set'); } catch(_){ }
           wrapper.appendChild(header);
+          
+          // Add file preview container
+          const filePreviewContainer = document.createElement('div');
+          filePreviewContainer.id = 'file-preview-container';
+          wrapper.appendChild(filePreviewContainer);
+          
           wrapper.appendChild(el);
+
+          // File attachment tracking and preview UI
+          (function initFilePreviewUI() {
+            const uploadedFiles = new Map(); // Track uploaded files: Map<fileKey, { file, thumbnailUrl }>
+            let fileInputMonitorInterval = null;
+            
+            const renderFilePreviews = () => {
+              filePreviewContainer.innerHTML = '';
+              if (uploadedFiles.size === 0) {
+                filePreviewContainer.classList.remove('has-files');
+                return;
+              }
+              
+              filePreviewContainer.classList.add('has-files');
+              uploadedFiles.forEach((fileData, fileKey) => {
+                const { file, thumbnailUrl } = fileData;
+                const item = document.createElement('div');
+                item.className = 'file-preview-item';
+                item.dataset.fileKey = fileKey;
+                
+                // Create thumbnail
+                if (file.type.startsWith('image/')) {
+                  const img = document.createElement('img');
+                  img.src = thumbnailUrl || URL.createObjectURL(file);
+                  img.alt = file.name;
+                  item.appendChild(img);
+                } else {
+                  // PDF or other file icon
+                  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                  icon.setAttribute('class', 'file-icon');
+                  icon.setAttribute('viewBox', '0 0 24 24');
+                  icon.setAttribute('fill', 'currentColor');
+                  icon.innerHTML = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>';
+                  item.appendChild(icon);
+                }
+                
+                // Add file name label
+                const nameLabel = document.createElement('div');
+                nameLabel.className = 'file-name';
+                nameLabel.textContent = file.name;
+                item.appendChild(nameLabel);
+                
+                // Add remove button
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-btn';
+                removeBtn.innerHTML = '×';
+                removeBtn.title = 'Remove file';
+                removeBtn.onclick = () => {
+                  uploadedFiles.delete(fileKey);
+                  renderFilePreviews();
+                  
+                  // Try to remove the attachment chip from ChatKit's shadow DOM
+                  try {
+                    const shadow = el.shadowRoot;
+                    if (shadow) {
+                      const chips = shadow.querySelectorAll('[data-attachment-name], [part*="attachment"]');
+                      chips.forEach(chip => {
+                        const chipText = chip.textContent || chip.getAttribute('data-attachment-name') || '';
+                        if (chipText.includes(file.name)) {
+                          // Find and click the remove button within the chip
+                          const chipRemoveBtn = chip.querySelector('button, [role="button"]');
+                          if (chipRemoveBtn) chipRemoveBtn.click();
+                        }
+                      });
+                    }
+                  } catch (err) {
+                    console.debug('[file-preview] Could not remove attachment from ChatKit:', err);
+                  }
+                };
+                item.appendChild(removeBtn);
+                
+                filePreviewContainer.appendChild(item);
+              });
+            };
+            
+            // Monitor for file attachments by looking for visual attachment chips/pills
+            let hasLoggedElements = false;
+            const monitorAttachments = () => {
+              try {
+                const shadow = el.shadowRoot;
+                if (!shadow) return;
+                
+                // Look for ANY elements that look like attachment chips
+                const allElements = Array.from(shadow.querySelectorAll('*'));
+                const fileNamePattern = /\.(png|jpg|jpeg|gif|webp|pdf)$/i;
+                const uploadedPattern = /Uploaded:|Screenshot|\.png|\.jpg|\.jpeg|\.pdf|\.gif|\.webp/i;
+                const currentAttachmentNames = new Set();
+                
+                // Debug: Log elements that might contain upload info (only once to avoid spam)
+                if (!hasLoggedElements) {
+                  const potentialElements = allElements.filter(elem => {
+                    const text = (elem.textContent || '').trim();
+                    return uploadedPattern.test(text) && text.length < 200; // Reasonable length
+                  });
+                  
+                  if (potentialElements.length > 0) {
+                    console.info('[file-preview] 🔍 Found potential attachment elements:', potentialElements.length);
+                    potentialElements.slice(0, 5).forEach((elem, idx) => {
+                      console.info(`[file-preview] Element ${idx}:`, {
+                        tag: elem.tagName,
+                        text: elem.textContent?.trim().substring(0, 100),
+                        class: elem.className,
+                        ariaLabel: elem.getAttribute('aria-label'),
+                      });
+                    });
+                    hasLoggedElements = true;
+                  }
+                }
+                
+                // Find elements that display file names
+                allElements.forEach(elem => {
+                  const text = (elem.textContent || '').trim();
+                  const ariaLabel = elem.getAttribute('aria-label') || '';
+                  const title = elem.getAttribute('title') || '';
+                  const dataFile = elem.getAttribute('data-file') || '';
+                  
+                  // Check if this looks like a file name or upload message
+                  const candidate = text || ariaLabel || title || dataFile;
+                  
+                  // More flexible matching
+                  if (fileNamePattern.test(candidate) || (uploadedPattern.test(candidate) && candidate.length < 200)) {
+                    const fileName = candidate.match(/[^/\\]*\.(png|jpg|jpeg|gif|webp|pdf)$/i)?.[0];
+                    if (fileName) {
+                      currentAttachmentNames.add(fileName);
+                      console.info('[file-preview] 📎 Detected attachment in DOM:', fileName);
+                    } else if (uploadedPattern.test(candidate)) {
+                      // Try to extract filename from "Uploaded: filename.png" format
+                      const match = candidate.match(/(?:Uploaded:\s*)?([^/\\]+\.(png|jpg|jpeg|gif|webp|pdf))/i);
+                      if (match && match[1]) {
+                        currentAttachmentNames.add(match[1]);
+                        console.info('[file-preview] 📎 Detected attachment from text:', match[1]);
+                      }
+                    }
+                  }
+                });
+                
+                // If we found new attachment names, try to create previews
+                if (currentAttachmentNames.size > 0) {
+                  currentAttachmentNames.forEach(fileName => {
+                    // Check if we already have this file
+                    const existingKey = Array.from(uploadedFiles.keys()).find(k => k.includes(fileName));
+                    if (!existingKey) {
+                      // Create a placeholder entry
+                      const key = `${fileName}-${Date.now()}`;
+                      console.info('[file-preview] Creating preview for:', fileName);
+                      
+                      // Try to get the actual file object if available
+                      const fileInputs = shadow.querySelectorAll('input[type="file"]');
+                      let actualFile = null;
+                      
+                      fileInputs.forEach(input => {
+                        if (input.files) {
+                          Array.from(input.files).forEach(file => {
+                            if (file.name === fileName) {
+                              actualFile = file;
+                            }
+                          });
+                        }
+                      });
+                      
+                      if (actualFile) {
+                        uploadedFiles.set(key, {
+                          file: actualFile,
+                          thumbnailUrl: actualFile.type.startsWith('image/') ? URL.createObjectURL(actualFile) : null
+                        });
+                        console.info('[file-preview] ✅ Added real file:', fileName);
+                      } else {
+                        // Create a mock file object for preview purposes
+                        const extension = fileName.split('.').pop().toLowerCase();
+                        const mimeType = extension === 'pdf' ? 'application/pdf' : `image/${extension}`;
+                        const mockFile = new File([], fileName, { type: mimeType });
+                        uploadedFiles.set(key, {
+                          file: mockFile,
+                          thumbnailUrl: null
+                        });
+                        console.info('[file-preview] ⚠️ Added placeholder for:', fileName);
+                      }
+                      
+                      renderFilePreviews();
+                    }
+                  });
+                }
+                
+                // Clear our preview if ChatKit's UI shows no attachments
+                if (uploadedFiles.size > 0 && currentAttachmentNames.size === 0) {
+                  console.info('[file-preview] No attachments in DOM, clearing preview');
+                  uploadedFiles.clear();
+                  renderFilePreviews();
+                }
+              } catch (err) {
+                console.debug('[file-preview] Monitor error:', err);
+              }
+            };
+            
+            // Attach change listener to file inputs
+            let lastInputCount = -1;
+            const attachFileInputListener = () => {
+              try {
+                const shadow = el.shadowRoot;
+                if (!shadow) return;
+                
+                const fileInputs = shadow.querySelectorAll('input[type="file"]');
+                
+                // Only log if input count changed
+                if (fileInputs.length !== lastInputCount) {
+                  console.info('[file-preview] File inputs found:', fileInputs.length);
+                  lastInputCount = fileInputs.length;
+                }
+                
+                fileInputs.forEach((input, idx) => {
+                  if (input.dataset.filePreviewListener) return; // Already attached
+                  
+                  input.dataset.filePreviewListener = 'true';
+                  console.info('[file-preview] ✅ Attached listener to file input', idx);
+                  
+                  input.addEventListener('change', (event) => {
+                    const files = event.target.files;
+                    console.info('[file-preview] 📎 File input changed, files:', files?.length || 0);
+                    
+                    if (files && files.length > 0) {
+                      Array.from(files).forEach(file => {
+                        const key = `${file.name}-${file.size}-${file.lastModified}`;
+                        if (!uploadedFiles.has(key)) {
+                          uploadedFiles.set(key, { 
+                            file, 
+                            thumbnailUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null 
+                          });
+                          renderFilePreviews();
+                          console.info('[file-preview] ✅ Added file from change event:', file.name);
+                        }
+                      });
+                    }
+                  }, { capture: true });
+                });
+              } catch (err) {
+                console.error('[file-preview] Error attaching listener:', err);
+              }
+            };
+            
+            // Start monitoring after shadow DOM is ready
+            const startMonitoring = () => {
+              const shadow = el.shadowRoot;
+              if (!shadow) {
+                setTimeout(startMonitoring, 100);
+                return;
+              }
+              
+              console.info('[file-preview] Starting attachment monitoring');
+              console.info('[file-preview] Shadow DOM ready:', shadow);
+              
+              // Initial attachment of listeners
+              setTimeout(() => {
+                attachFileInputListener();
+                console.info('[file-preview] Initial listener attachment complete');
+              }, 500);
+              
+              // Poll every 1 second for attachment changes and new file inputs
+              fileInputMonitorInterval = setInterval(() => {
+                monitorAttachments();
+                attachFileInputListener();
+              }, 1000);
+              
+              // Also use MutationObserver on shadow DOM
+              const observer = new MutationObserver(() => {
+                monitorAttachments();
+                attachFileInputListener();
+              });
+              observer.observe(shadow, { childList: true, subtree: true, attributes: true });
+              
+              console.info('[file-preview] Monitoring and observers fully set up');
+            };
+            
+            startMonitoring();
+          })();
 
           // Collapse agent thinking content to header-only inside the web component
           (function initThinkingCollapse(){
