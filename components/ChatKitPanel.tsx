@@ -593,11 +593,12 @@ export function ChatKitPanel({
           style.setAttribute('data-fyi-hide-thinking', '1');
           style.textContent = `
             /* Hide all thinking paragraphs - they contain detailed explanations */
-            /* Hide paragraphs in .fYdWH that are longer than short status updates */
             .fYdWH p,
             .fYdWH.text-sm p,
             .fYdWH div p,
             .fYdWH > p,
+            div.fYdWH p,
+            div.fYdWH.text-sm p,
             [data-kind="thinking"] p,
             [data-message-type="thinking"] p,
             [part*="thinking"] p,
@@ -647,11 +648,32 @@ export function ChatKitPanel({
         });
 
         // Hide ALL .fYdWH paragraphs everywhere - status updates are in divs, not paragraphs
-        const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, .fYdWH > p');
+        const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, .fYdWH > p, div.fYdWH p, div.fYdWH.text-sm p');
         allThinkingParas.forEach((el) => {
           // Always hide all paragraphs - they contain detailed thinking
-          // Status updates like "Done" and "Clarifying envelope types" are in divs, not paragraphs
+          // Status updates like "Done" are in divs, not paragraphs
           (el as HTMLElement).style.display = 'none';
+          // Also hide parent div if it only contains paragraphs
+          const parent = (el as HTMLElement).parentElement;
+          if (parent && parent.classList.contains('fYdWH')) {
+            const hasOnlyParagraphs = Array.from(parent.children).every(child => 
+              child.tagName === 'P' || child.querySelector('p')
+            );
+            if (hasOnlyParagraphs) {
+              parent.style.display = 'none';
+            }
+          }
+        });
+        
+        // Also hide entire .fYdWH divs that contain only paragraphs
+        const allThinkingDivs = shadow.querySelectorAll('.fYdWH, .fYdWH.text-sm');
+        allThinkingDivs.forEach((div) => {
+          const paras = div.querySelectorAll('p');
+          const otherContent = Array.from(div.children).filter(child => child.tagName !== 'P' && !child.querySelector('p'));
+          // If div contains paragraphs and little else, hide the whole div
+          if (paras.length > 0 && otherContent.length === 0) {
+            (div as HTMLElement).style.display = 'none';
+          }
         });
       } catch {}
     };
