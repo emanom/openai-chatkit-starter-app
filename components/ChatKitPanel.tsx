@@ -9,6 +9,7 @@ import {
   GREETING,
   CREATE_SESSION_ENDPOINT,
   WORKFLOW_ID,
+  getThemeConfig,
 } from "@/lib/config";
 import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";
@@ -299,6 +300,12 @@ export function ChatKitPanel({
           },
           body: JSON.stringify({
             workflow: { id: WORKFLOW_ID },
+            chatkit_configuration: {
+              // enable attachments
+              file_upload: {
+                enabled: true,
+              },
+            },
           }),
         });
 
@@ -631,6 +638,7 @@ export function ChatKitPanel({
   }
 
   return (
+<<<<<<< HEAD
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-white shadow-sm transition-colors dark:bg-slate-900">
       <div className="flex items-center justify-center gap-2 border-b border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
         fyi AI ASSIST
@@ -784,12 +792,12 @@ export function ChatKitPanel({
         </div>
       )}
       {blockingError && (
-      <ErrorOverlay
-        error={blockingError}
+        <ErrorOverlay
+          error={blockingError}
           fallbackMessage={null}
           onRetry={handleResetChat}
-        retryLabel="Restart chat"
-      />
+          retryLabel="Restart chat"
+        />
       )}
       {isInitializingSession && !blockingError && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80">
