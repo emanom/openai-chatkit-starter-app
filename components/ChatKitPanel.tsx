@@ -655,8 +655,8 @@ export function ChatKitPanel({
         allElements.forEach((el) => {
           try {
             const text = (el as HTMLElement).textContent?.trim() || '';
-            // Match status updates like "Executing a web search", "Formatting response guidelines", "Using web.run"
-            const isStatusUpdate = text.match(/^(Executing|Formatting|Searching|Checking|Analyzing|Processing|Using|Reading|Writing|Calling)/i);
+            // Match status updates like "Executing a web search", "Formatting response guidelines", "Using web.run", "Deciding on info sources"
+            const isStatusUpdate = text.match(/^(Executing|Formatting|Searching|Checking|Analyzing|Processing|Using|Reading|Writing|Calling|Deciding|Preparing|Generating|Building|Creating|Updating|Reviewing)/i);
             
             if (isStatusUpdate) {
               // Check if this element itself contains both status and detailed thinking
@@ -681,7 +681,15 @@ export function ChatKitPanel({
                       nodeText.includes('instructions') ||
                       nodeText.includes('it seems') ||
                       nodeText.includes('follow the') ||
-                      nodeText.includes('In some cases')
+                      nodeText.includes('In some cases') ||
+                      nodeText.includes('stick to') ||
+                      nodeText.includes('constraints') ||
+                      nodeText.includes('special case') ||
+                      nodeText.includes('I need to stick') ||
+                      nodeText.includes('only use results') ||
+                      nodeText.includes('must get') ||
+                      nodeText.includes('make sure to use') ||
+                      nodeText.includes('Alright, let\'s')
                     )) {
                       // Hide this text node by wrapping or removing
                       const parent = node.parentElement;
@@ -710,7 +718,15 @@ export function ChatKitPanel({
                   siblingText.includes('Since the') ||
                   siblingText.includes('In some cases') ||
                   siblingText.includes('limit my search') ||
-                  siblingText.includes('So, I\'ll')
+                  siblingText.includes('So, I\'ll') ||
+                  siblingText.includes('stick to') ||
+                  siblingText.includes('constraints') ||
+                  siblingText.includes('special case') ||
+                  siblingText.includes('I need to stick') ||
+                  siblingText.includes('only use results') ||
+                  siblingText.includes('must get') ||
+                  siblingText.includes('make sure to use') ||
+                  siblingText.includes('Alright, let\'s')
                 )) {
                   (sibling as HTMLElement).style.display = 'none';
                 }
@@ -721,7 +737,7 @@ export function ChatKitPanel({
               const children = Array.from(el.children);
               children.forEach((child) => {
                 const childText = (child as HTMLElement).textContent || '';
-                if (childText.length > 50 && !childText.match(/^(Executing|Formatting|Searching|Checking|Done|Using|Reading|Writing)/i)) {
+                if (childText.length > 50 && !childText.match(/^(Executing|Formatting|Searching|Checking|Done|Using|Reading|Writing|Deciding|Preparing|Generating)/i)) {
                   (child as HTMLElement).style.display = 'none';
                 }
               });
@@ -731,7 +747,7 @@ export function ChatKitPanel({
               nestedDetailed.forEach((nestedEl) => {
                 const nestedText = (nestedEl as HTMLElement).textContent || '';
                 // Hide if it's detailed reasoning (not just the status)
-                if (nestedText.length > 50 && !nestedText.match(/^(Executing|Formatting|Searching|Checking|Done|Using|Reading|Writing)/i) && (
+                if (nestedText.length > 50 && !nestedText.match(/^(Executing|Formatting|Searching|Checking|Done|Using|Reading|Writing|Deciding|Preparing|Generating)/i) && (
                   nestedText.includes('need to') ||
                   nestedText.includes('I should') ||
                   nestedText.includes('I think') ||
@@ -746,7 +762,16 @@ export function ChatKitPanel({
                   nestedText.includes('So, I') ||
                   nestedText.includes('web.run') ||
                   nestedText.includes('file search') ||
-                  nestedText.includes('specified domains')
+                  nestedText.includes('specified domains') ||
+                  nestedText.includes('stick to') ||
+                  nestedText.includes('constraints') ||
+                  nestedText.includes('special case') ||
+                  nestedText.includes('I need to stick') ||
+                  nestedText.includes('only use results') ||
+                  nestedText.includes('must get') ||
+                  nestedText.includes('make sure to use') ||
+                  nestedText.includes('Alright, let\'s') ||
+                  nestedText.includes('search_query limited')
                 )) {
                   (nestedEl as HTMLElement).style.display = 'none';
                 }
@@ -754,8 +779,8 @@ export function ChatKitPanel({
             }
             
             // Also check for elements that start with status but contain detailed thinking
-            // Handle case where "Using web.run for search" is followed by detailed text in same element
-            if (text.includes('Using') || text.includes('Executing') || text.includes('Formatting')) {
+            // Handle case where "Using web.run for search" or "Deciding on info sources" is followed by detailed text
+            if (text.includes('Using') || text.includes('Executing') || text.includes('Formatting') || text.includes('Deciding')) {
               // Check if this element has detailed thinking mixed in
               const hasDetailedThinking = (
                 text.includes('I need to follow') ||
@@ -765,7 +790,11 @@ export function ChatKitPanel({
                 text.includes('Since') ||
                 text.includes('In some cases') ||
                 text.includes('limit my') ||
-                text.includes('So, I')
+                text.includes('So, I') ||
+                text.includes('stick to') ||
+                text.includes('constraints') ||
+                text.includes('special case') ||
+                text.includes('I need to stick')
               );
               
               if (hasDetailedThinking && text.length > 100) {
