@@ -587,29 +587,26 @@ export function ChatKitPanel({
         const shadow = wc?.shadowRoot;
         if (!shadow) return;
 
-        // Inject CSS to hide detailed thinking content (more efficient)
+        // Inject CSS to hide all thinking paragraphs (simple approach)
         if (!shadow.querySelector('style[data-fyi-hide-thinking]')) {
           const style = document.createElement('style');
           style.setAttribute('data-fyi-hide-thinking', '1');
           style.textContent = `
-            /* Hide detailed thinking paragraphs while keeping status updates */
+            /* Hide all thinking paragraphs - they contain detailed explanations */
+            .fYdWH p,
+            .fYdWH.text-sm p,
+            .fYdWH div p,
+            .fYdWH > p,
             [data-kind="thinking"] p,
             [data-message-type="thinking"] p,
             [part*="thinking"] p,
-            /* Hide detailed text content that's not a status header */
-            [data-kind="thinking"] div:not(:first-child),
-            [data-message-type="thinking"] div:not(:first-child),
-            [part*="thinking"] div:not(:first-child),
             /* Hide list items and bullets with detailed reasoning */
             [data-kind="thinking"] ul,
             [data-kind="thinking"] ol,
             [data-kind="thinking"] li,
             [data-message-type="thinking"] ul,
             [data-message-type="thinking"] ol,
-            [data-message-type="thinking"] li,
-            /* Hide any element containing detailed reasoning text (paragraphs of explanation) */
-            [data-kind="thinking"] *:not(:first-child):not([data-part*="icon"]):not([data-part*="status"]),
-            [data-message-type="thinking"] *:not(:first-child):not([data-part*="icon"]):not([data-part*="status"]) {
+            [data-message-type="thinking"] li {
               display: none !important;
             }
           `;
@@ -638,185 +635,33 @@ export function ChatKitPanel({
               }
             });
 
-            // Hide detailed paragraphs and explanatory text within the thinking section
-            const detailedContent = n.querySelectorAll('p, div:not(:first-child), ul, ol');
-            detailedContent.forEach((el) => {
-              const text = (el as HTMLElement).textContent || '';
-              // Hide if it's a paragraph of explanation (longer than a simple status)
-              if (text.length > 50 || text.includes('need to') || text.includes('I should') || text.includes('I think')) {
-                (el as HTMLElement).style.display = 'none';
-              }
+            // Hide all thinking paragraphs - simple approach, no content detection needed
+            const allThinkingParas = n.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, [data-kind="thinking"] p, [data-message-type="thinking"] p');
+            allThinkingParas.forEach((el) => {
+              (el as HTMLElement).style.display = 'none';
             });
           } catch {}
         });
 
-        // Also target by text content - find status items with detailed thinking below them
-        const allElements = shadow.querySelectorAll('*');
-        allElements.forEach((el) => {
-          try {
-            const text = (el as HTMLElement).textContent?.trim() || '';
-            // Match status updates like "Executing a web search", "Formatting response guidelines", "Using web.run", "Deciding on info sources"
-            const isStatusUpdate = text.match(/^(Executing|Formatting|Searching|Checking|Analyzing|Processing|Using|Reading|Writing|Calling|Deciding|Preparing|Generating|Building|Creating|Updating|Reviewing)/i);
-            
-            if (isStatusUpdate) {
-              // Check if this element itself contains both status and detailed thinking
-              const fullText = text;
-              // If the text contains status but also has detailed explanation after it
-              if (fullText.length > 100) {
-                // Split by status update - everything after the status is likely detailed thinking
-                const statusMatch = fullText.match(/^(.*?)(\s+(I need|I should|I think|Since|But|However|In some cases|it seems|follow|developer|instructions|guidance).*)/i);
-                if (statusMatch && statusMatch[2].length > 30) {
-                  // This element contains detailed thinking - we'll need to hide parts of it
-                  // Find text nodes and hide the detailed portion
-                  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
-                  let node: Node | null;
-                  while ((node = walker.nextNode())) {
-                    const nodeText = node.textContent || '';
-                    if (nodeText.length > 50 && (
-                      nodeText.includes('I need to') ||
-                      nodeText.includes('I should') ||
-                      nodeText.includes('I think') ||
-                      nodeText.includes('developer') ||
-                      nodeText.includes('guidance') ||
-                      nodeText.includes('instructions') ||
-                      nodeText.includes('it seems') ||
-                      nodeText.includes('follow the') ||
-                      nodeText.includes('In some cases') ||
-                      nodeText.includes('stick to') ||
-                      nodeText.includes('constraints') ||
-                      nodeText.includes('special case') ||
-                      nodeText.includes('I need to stick') ||
-                      nodeText.includes('only use results') ||
-                      nodeText.includes('must get') ||
-                      nodeText.includes('make sure to use') ||
-                      nodeText.includes('Alright, let\'s')
-                    )) {
-                      // Hide this text node by wrapping or removing
-                      const parent = node.parentElement;
-                      if (parent && parent.tagName !== 'SCRIPT' && parent.tagName !== 'STYLE') {
-                        parent.style.display = 'none';
-                      }
-                    }
-                  }
-                }
-              }
-
-              // Find the next sibling that contains detailed thinking
-              let sibling = el.nextElementSibling;
-              while (sibling) {
-                const siblingText = (sibling as HTMLElement).textContent || '';
-                // Hide if it looks like detailed reasoning (long paragraph explaining the process)
-                if (siblingText.length > 50 && (
-                  siblingText.includes('need to') || 
-                  siblingText.includes('I should') || 
-                  siblingText.includes('I think') ||
-                  siblingText.includes('developer') ||
-                  siblingText.includes('guidance') ||
-                  siblingText.includes('instructions') ||
-                  siblingText.includes('follow the') ||
-                  siblingText.includes('it seems') ||
-                  siblingText.includes('Since the') ||
-                  siblingText.includes('In some cases') ||
-                  siblingText.includes('limit my search') ||
-                  siblingText.includes('So, I\'ll') ||
-                  siblingText.includes('stick to') ||
-                  siblingText.includes('constraints') ||
-                  siblingText.includes('special case') ||
-                  siblingText.includes('I need to stick') ||
-                  siblingText.includes('only use results') ||
-                  siblingText.includes('must get') ||
-                  siblingText.includes('make sure to use') ||
-                  siblingText.includes('Alright, let\'s')
-                )) {
-                  (sibling as HTMLElement).style.display = 'none';
-                }
-                sibling = sibling.nextElementSibling;
-              }
-              
-              // Also hide within the same element if it contains both status and details
-              const children = Array.from(el.children);
-              children.forEach((child) => {
-                const childText = (child as HTMLElement).textContent || '';
-                if (childText.length > 50 && !childText.match(/^(Executing|Formatting|Searching|Checking|Done|Using|Reading|Writing|Deciding|Preparing|Generating)/i)) {
-                  (child as HTMLElement).style.display = 'none';
-                }
-              });
-
-              // Look for nested elements containing detailed thinking
-              const nestedDetailed = el.querySelectorAll('p, div, span, section, article');
-              nestedDetailed.forEach((nestedEl) => {
-                const nestedText = (nestedEl as HTMLElement).textContent || '';
-                // Hide if it's detailed reasoning (not just the status)
-                if (nestedText.length > 50 && !nestedText.match(/^(Executing|Formatting|Searching|Checking|Done|Using|Reading|Writing|Deciding|Preparing|Generating)/i) && (
-                  nestedText.includes('need to') ||
-                  nestedText.includes('I should') ||
-                  nestedText.includes('I think') ||
-                  nestedText.includes('developer') ||
-                  nestedText.includes('guidance') ||
-                  nestedText.includes('instructions') ||
-                  nestedText.includes('follow the') ||
-                  nestedText.includes('it seems') ||
-                  nestedText.includes('Since') ||
-                  nestedText.includes('In some cases') ||
-                  nestedText.includes('limit my') ||
-                  nestedText.includes('So, I') ||
-                  nestedText.includes('web.run') ||
-                  nestedText.includes('file search') ||
-                  nestedText.includes('specified domains') ||
-                  nestedText.includes('stick to') ||
-                  nestedText.includes('constraints') ||
-                  nestedText.includes('special case') ||
-                  nestedText.includes('I need to stick') ||
-                  nestedText.includes('only use results') ||
-                  nestedText.includes('must get') ||
-                  nestedText.includes('make sure to use') ||
-                  nestedText.includes('Alright, let\'s') ||
-                  nestedText.includes('search_query limited')
-                )) {
-                  (nestedEl as HTMLElement).style.display = 'none';
-                }
-              });
+        // Hide all .fYdWH paragraphs everywhere (simple - no content detection)
+        const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, .fYdWH > p');
+        allThinkingParas.forEach((el) => {
+          (el as HTMLElement).style.display = 'none';
+        });
+        
+        // Also hide .fYdWH divs that contain paragraphs (they're the detailed thinking containers)
+        const allThinkingDivs = shadow.querySelectorAll('.fYdWH');
+        allThinkingDivs.forEach((div) => {
+          // Check if this div contains paragraphs (detailed thinking) vs just status
+          const hasParas = (div as HTMLElement).querySelector('p');
+          if (hasParas) {
+            // Hide the paragraph-containing divs (they're detailed explanations)
+            const divText = (div as HTMLElement).textContent || '';
+            // Keep only if it's a very short status (like "Done")
+            if (divText.length > 10) {
+              (div as HTMLElement).style.display = 'none';
             }
-            
-            // Also check for elements that start with status but contain detailed thinking
-            // Handle case where "Using web.run for search" or "Deciding on info sources" is followed by detailed text
-            if (text.includes('Using') || text.includes('Executing') || text.includes('Formatting') || text.includes('Deciding')) {
-              // Check if this element has detailed thinking mixed in
-              const hasDetailedThinking = (
-                text.includes('I need to follow') ||
-                text.includes('developer') ||
-                text.includes('instructions') ||
-                text.includes('it seems') ||
-                text.includes('Since') ||
-                text.includes('In some cases') ||
-                text.includes('limit my') ||
-                text.includes('So, I') ||
-                text.includes('stick to') ||
-                text.includes('constraints') ||
-                text.includes('special case') ||
-                text.includes('I need to stick')
-              );
-              
-              if (hasDetailedThinking && text.length > 100) {
-                // This element contains both status and detailed thinking
-                // Try to hide just the detailed portion by hiding child elements
-                const children = Array.from(el.children);
-                children.forEach((child) => {
-                  const childText = (child as HTMLElement).textContent || '';
-                  if (childText.length > 30 && (
-                    childText.includes('I need') ||
-                    childText.includes('developer') ||
-                    childText.includes('instructions') ||
-                    childText.includes('it seems') ||
-                    childText.includes('Since') ||
-                    childText.includes('follow the')
-                  )) {
-                    (child as HTMLElement).style.display = 'none';
-                  }
-                });
-              }
-            }
-          } catch {}
+          }
         });
       } catch {}
     };
