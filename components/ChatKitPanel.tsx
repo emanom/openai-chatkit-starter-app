@@ -678,23 +678,77 @@ export function ChatKitPanel({
           } catch {}
         });
 
-        // Additional safety: Find thinking containers by structure (even if data attributes change)
-        // Look for articles with "Thought for Xs" pattern in their status headers
-        const allArticles = shadow.querySelectorAll<HTMLElement>('article[data-thread-turn="assistant"]');
-        allArticles.forEach((article) => {
+        // Aggressive content-based detection: Find "Thought for" / "Thinking" status headers
+        // Then hide all paragraphs in the same container/section
+        const allStatusElements = shadow.querySelectorAll<HTMLElement>('*');
+        allStatusElements.forEach((element) => {
           try {
-            // Check if this article contains a "Thought for" status (indicates thinking)
-            const articleText = article.textContent || '';
-            const hasThinkingStatus = /Thought for \d+s/i.test(articleText) || 
-                                     /\bThinking\b/i.test(articleText) ||
-                                     article.querySelector('[data-thread-item="workflow"]');
+            const text = element.textContent || '';
+            const hasThinkingStatus = /Thought for \d+s/i.test(text) || 
+                                     (/\bThinking\b/i.test(text) && text.length < 50); // Short status text only
             
             if (hasThinkingStatus) {
-              // Find all paragraphs that are NOT in assistant-message containers
-              const workflowContainer = article.querySelector('[data-thread-item="workflow"]');
-              if (workflowContainer) {
-                const thinkingParas = workflowContainer.querySelectorAll('p');
-                thinkingParas.forEach((para) => {
+              // Find the parent container that holds both status and thinking content
+              let container = element.closest('[data-thread-item="workflow"]') || 
+                             element.closest('article') ||
+                             element.parentElement?.parentElement?.parentElement;
+              
+              // If no clear container, walk up the DOM to find a common ancestor
+              if (!container || container === shadow) {
+                let current: HTMLElement | null = element.parentElement;
+                let depth = 0;
+                while (current && depth < 5 && current !== shadow) {
+                  // Look for containers that have multiple children (status + content)
+                  if (current.children.length > 1) {
+                    container = current;
+                    break;
+                  }
+                  current = current.parentElement;
+                  depth++;
+                }
+              }
+              
+              if (container && container !== shadow) {
+                // Hide ALL paragraphs in this container (they're all thinking content)
+                const allParas = container.querySelectorAll('p');
+                allParas.forEach((para) => {
+                  // Skip if this paragraph is the status header itself (it's short)
+                  const paraText = para.textContent || '';
+                  if (paraText.length > 100 || /Hmm|I need to|I've found|It seems/i.test(paraText)) {
+                    const htmlPara = para as HTMLElement;
+                    htmlPara.style.setProperty('display', 'none', 'important');
+                    htmlPara.style.setProperty('visibility', 'hidden', 'important');
+                    htmlPara.style.setProperty('opacity', '0', 'important');
+                    htmlPara.style.setProperty('height', '0', 'important');
+                    htmlPara.style.setProperty('max-height', '0', 'important');
+                    htmlPara.style.setProperty('min-height', '0', 'important');
+                    htmlPara.style.setProperty('overflow', 'hidden', 'important');
+                    htmlPara.style.setProperty('margin', '0', 'important');
+                    htmlPara.style.setProperty('padding', '0', 'important');
+                  }
+                });
+              }
+            }
+          } catch {}
+        });
+
+        // Fallback: Hide all paragraphs in sections that contain "Thought for" anywhere
+        const allSectionsWithThinking = Array.from(shadow.querySelectorAll<HTMLElement>('*')).filter(el => {
+          const text = el.textContent || '';
+          return /Thought for \d+s/i.test(text) || (/\bThinking\b/i.test(text) && text.length < 100);
+        });
+        
+        allSectionsWithThinking.forEach((section) => {
+          try {
+            // Find the closest article or major container
+            const container = section.closest('article') || section.closest('div[class*="iVXrX"]') || section.parentElement;
+            if (container) {
+              const allParas = container.querySelectorAll('p');
+              allParas.forEach((para) => {
+                const paraText = para.textContent || '';
+                // Hide paragraphs that are clearly thinking (long or start with thinking patterns)
+                if (paraText.length > 80 || 
+                    /^(Hmm|I need to|I've found|It seems|I should|Let's|I can|I'll|I'm)/i.test(paraText.trim())) {
                   const htmlPara = para as HTMLElement;
                   htmlPara.style.setProperty('display', 'none', 'important');
                   htmlPara.style.setProperty('visibility', 'hidden', 'important');
@@ -703,8 +757,8 @@ export function ChatKitPanel({
                   htmlPara.style.setProperty('max-height', '0', 'important');
                   htmlPara.style.setProperty('min-height', '0', 'important');
                   htmlPara.style.setProperty('overflow', 'hidden', 'important');
-                });
-              }
+                }
+              });
             }
           } catch {}
         });
