@@ -655,8 +655,44 @@ export function ChatKitPanel({
         allElements.forEach((el) => {
           try {
             const text = (el as HTMLElement).textContent?.trim() || '';
-            // Match status updates like "Executing a web search", "Formatting response guidelines"
-            if (text.match(/^(Executing|Formatting|Searching|Checking|Analyzing|Processing)/i)) {
+            // Match status updates like "Executing a web search", "Formatting response guidelines", "Using web.run"
+            const isStatusUpdate = text.match(/^(Executing|Formatting|Searching|Checking|Analyzing|Processing|Using|Reading|Writing|Calling)/i);
+            
+            if (isStatusUpdate) {
+              // Check if this element itself contains both status and detailed thinking
+              const fullText = text;
+              // If the text contains status but also has detailed explanation after it
+              if (fullText.length > 100) {
+                // Split by status update - everything after the status is likely detailed thinking
+                const statusMatch = fullText.match(/^(.*?)(\s+(I need|I should|I think|Since|But|However|In some cases|it seems|follow|developer|instructions|guidance).*)/i);
+                if (statusMatch && statusMatch[2].length > 30) {
+                  // This element contains detailed thinking - we'll need to hide parts of it
+                  // Find text nodes and hide the detailed portion
+                  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+                  let node: Node | null;
+                  while ((node = walker.nextNode())) {
+                    const nodeText = node.textContent || '';
+                    if (nodeText.length > 50 && (
+                      nodeText.includes('I need to') ||
+                      nodeText.includes('I should') ||
+                      nodeText.includes('I think') ||
+                      nodeText.includes('developer') ||
+                      nodeText.includes('guidance') ||
+                      nodeText.includes('instructions') ||
+                      nodeText.includes('it seems') ||
+                      nodeText.includes('follow the') ||
+                      nodeText.includes('In some cases')
+                    )) {
+                      // Hide this text node by wrapping or removing
+                      const parent = node.parentElement;
+                      if (parent && parent.tagName !== 'SCRIPT' && parent.tagName !== 'STYLE') {
+                        parent.style.display = 'none';
+                      }
+                    }
+                  }
+                }
+              }
+
               // Find the next sibling that contains detailed thinking
               let sibling = el.nextElementSibling;
               while (sibling) {
@@ -667,7 +703,14 @@ export function ChatKitPanel({
                   siblingText.includes('I should') || 
                   siblingText.includes('I think') ||
                   siblingText.includes('developer') ||
-                  siblingText.includes('guidance')
+                  siblingText.includes('guidance') ||
+                  siblingText.includes('instructions') ||
+                  siblingText.includes('follow the') ||
+                  siblingText.includes('it seems') ||
+                  siblingText.includes('Since the') ||
+                  siblingText.includes('In some cases') ||
+                  siblingText.includes('limit my search') ||
+                  siblingText.includes('So, I\'ll')
                 )) {
                   (sibling as HTMLElement).style.display = 'none';
                 }
@@ -678,10 +721,71 @@ export function ChatKitPanel({
               const children = Array.from(el.children);
               children.forEach((child) => {
                 const childText = (child as HTMLElement).textContent || '';
-                if (childText.length > 50 && !childText.match(/^(Executing|Formatting|Searching|Checking|Done)/i)) {
+                if (childText.length > 50 && !childText.match(/^(Executing|Formatting|Searching|Checking|Done|Using|Reading|Writing)/i)) {
                   (child as HTMLElement).style.display = 'none';
                 }
               });
+
+              // Look for nested elements containing detailed thinking
+              const nestedDetailed = el.querySelectorAll('p, div, span, section, article');
+              nestedDetailed.forEach((nestedEl) => {
+                const nestedText = (nestedEl as HTMLElement).textContent || '';
+                // Hide if it's detailed reasoning (not just the status)
+                if (nestedText.length > 50 && !nestedText.match(/^(Executing|Formatting|Searching|Checking|Done|Using|Reading|Writing)/i) && (
+                  nestedText.includes('need to') ||
+                  nestedText.includes('I should') ||
+                  nestedText.includes('I think') ||
+                  nestedText.includes('developer') ||
+                  nestedText.includes('guidance') ||
+                  nestedText.includes('instructions') ||
+                  nestedText.includes('follow the') ||
+                  nestedText.includes('it seems') ||
+                  nestedText.includes('Since') ||
+                  nestedText.includes('In some cases') ||
+                  nestedText.includes('limit my') ||
+                  nestedText.includes('So, I') ||
+                  nestedText.includes('web.run') ||
+                  nestedText.includes('file search') ||
+                  nestedText.includes('specified domains')
+                )) {
+                  (nestedEl as HTMLElement).style.display = 'none';
+                }
+              });
+            }
+            
+            // Also check for elements that start with status but contain detailed thinking
+            // Handle case where "Using web.run for search" is followed by detailed text in same element
+            if (text.includes('Using') || text.includes('Executing') || text.includes('Formatting')) {
+              // Check if this element has detailed thinking mixed in
+              const hasDetailedThinking = (
+                text.includes('I need to follow') ||
+                text.includes('developer') ||
+                text.includes('instructions') ||
+                text.includes('it seems') ||
+                text.includes('Since') ||
+                text.includes('In some cases') ||
+                text.includes('limit my') ||
+                text.includes('So, I')
+              );
+              
+              if (hasDetailedThinking && text.length > 100) {
+                // This element contains both status and detailed thinking
+                // Try to hide just the detailed portion by hiding child elements
+                const children = Array.from(el.children);
+                children.forEach((child) => {
+                  const childText = (child as HTMLElement).textContent || '';
+                  if (childText.length > 30 && (
+                    childText.includes('I need') ||
+                    childText.includes('developer') ||
+                    childText.includes('instructions') ||
+                    childText.includes('it seems') ||
+                    childText.includes('Since') ||
+                    childText.includes('follow the')
+                  )) {
+                    (child as HTMLElement).style.display = 'none';
+                  }
+                });
+              }
             }
           } catch {}
         });
