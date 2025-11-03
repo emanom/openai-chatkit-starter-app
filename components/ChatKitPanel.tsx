@@ -575,7 +575,7 @@ export function ChatKitPanel({
     });
   }, [isInitializingSession, chatkit.control, scriptStatus]);
 
-  // Collapse/hide detailed "Thinking" content inside the web component, keep header only
+  // Collapse/hide detailed "Thinking" content inside the web component, keep only status updates
   useEffect(() => {
     const rootNode = chatContainerRef.current;
     if (!rootNode) return;
@@ -587,11 +587,41 @@ export function ChatKitPanel({
         const shadow = wc?.shadowRoot;
         if (!shadow) return;
 
-        // Target only explicit thinking message containers
+        // Inject CSS to hide detailed thinking content (more efficient)
+        if (!shadow.querySelector('style[data-fyi-hide-thinking]')) {
+          const style = document.createElement('style');
+          style.setAttribute('data-fyi-hide-thinking', '1');
+          style.textContent = `
+            /* Hide detailed thinking paragraphs while keeping status updates */
+            [data-kind="thinking"] p,
+            [data-message-type="thinking"] p,
+            [part*="thinking"] p,
+            /* Hide detailed text content that's not a status header */
+            [data-kind="thinking"] div:not(:first-child),
+            [data-message-type="thinking"] div:not(:first-child),
+            [part*="thinking"] div:not(:first-child),
+            /* Hide list items and bullets with detailed reasoning */
+            [data-kind="thinking"] ul,
+            [data-kind="thinking"] ol,
+            [data-kind="thinking"] li,
+            [data-message-type="thinking"] ul,
+            [data-message-type="thinking"] ol,
+            [data-message-type="thinking"] li,
+            /* Hide any element containing detailed reasoning text (paragraphs of explanation) */
+            [data-kind="thinking"] *:not(:first-child):not([data-part*="icon"]):not([data-part*="status"]),
+            [data-message-type="thinking"] *:not(:first-child):not([data-part*="icon"]):not([data-part*="status"]) {
+              display: none !important;
+            }
+          `;
+          shadow.appendChild(style);
+        }
+
+        // Target explicit thinking message containers
         const thinkingNodes = shadow.querySelectorAll<HTMLElement>('[data-kind="thinking"], [data-message-type="thinking"]');
         thinkingNodes.forEach((n, idx) => {
           try {
             if (isDev) console.debug('[ChatKitPanel] collapseThinking node', { idx, tag: n.tagName, part: n.getAttribute('part') });
+            
             // Neutralize sticky so the thread can auto-scroll
             const cs = getComputedStyle(n);
             if (cs.position === 'sticky' || cs.position === 'fixed') {
@@ -599,13 +629,60 @@ export function ChatKitPanel({
               n.style.top = '';
               n.style.bottom = '';
             }
-            // Hide all children except the first (header/label)
+
+            // Hide all children except the first (status header)
             const kids = Array.from(n.children);
             kids.forEach((k, idx) => {
               if (idx > 0 && (k as HTMLElement).style) {
                 (k as HTMLElement).style.display = 'none';
               }
             });
+
+            // Hide detailed paragraphs and explanatory text within the thinking section
+            const detailedContent = n.querySelectorAll('p, div:not(:first-child), ul, ol');
+            detailedContent.forEach((el) => {
+              const text = (el as HTMLElement).textContent || '';
+              // Hide if it's a paragraph of explanation (longer than a simple status)
+              if (text.length > 50 || text.includes('need to') || text.includes('I should') || text.includes('I think')) {
+                (el as HTMLElement).style.display = 'none';
+              }
+            });
+          } catch {}
+        });
+
+        // Also target by text content - find status items with detailed thinking below them
+        const allElements = shadow.querySelectorAll('*');
+        allElements.forEach((el) => {
+          try {
+            const text = (el as HTMLElement).textContent?.trim() || '';
+            // Match status updates like "Executing a web search", "Formatting response guidelines"
+            if (text.match(/^(Executing|Formatting|Searching|Checking|Analyzing|Processing)/i)) {
+              // Find the next sibling that contains detailed thinking
+              let sibling = el.nextElementSibling;
+              while (sibling) {
+                const siblingText = (sibling as HTMLElement).textContent || '';
+                // Hide if it looks like detailed reasoning (long paragraph explaining the process)
+                if (siblingText.length > 50 && (
+                  siblingText.includes('need to') || 
+                  siblingText.includes('I should') || 
+                  siblingText.includes('I think') ||
+                  siblingText.includes('developer') ||
+                  siblingText.includes('guidance')
+                )) {
+                  (sibling as HTMLElement).style.display = 'none';
+                }
+                sibling = sibling.nextElementSibling;
+              }
+              
+              // Also hide within the same element if it contains both status and details
+              const children = Array.from(el.children);
+              children.forEach((child) => {
+                const childText = (child as HTMLElement).textContent || '';
+                if (childText.length > 50 && !childText.match(/^(Executing|Formatting|Searching|Checking|Done)/i)) {
+                  (child as HTMLElement).style.display = 'none';
+                }
+              });
+            }
           } catch {}
         });
       } catch {}
@@ -622,7 +699,12 @@ export function ChatKitPanel({
         if (isDev) console.debug('[ChatKitPanel] attachObserver (shadow ready)');
         collapseThinking();
         mo = new MutationObserver(() => collapseThinking());
-        mo.observe(shadow, { childList: true, subtree: true });
+        mo.observe(shadow, { 
+          childList: true, 
+          subtree: true,
+          characterData: false, // Skip text changes for performance
+          attributes: false // Skip attribute changes for performance
+        });
       } catch {}
     };
 
