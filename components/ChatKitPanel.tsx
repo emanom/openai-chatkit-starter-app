@@ -689,17 +689,17 @@ export function ChatKitPanel({
             
             if (hasThinkingStatus) {
               // Find the parent container that holds both status and thinking content
-              let container = element.closest('[data-thread-item="workflow"]') || 
+              let container: Element | null = element.closest('[data-thread-item="workflow"]') || 
                              element.closest('article') ||
-                             element.parentElement?.parentElement?.parentElement;
+                             (element.parentElement?.parentElement?.parentElement as Element | null);
               
               // If no clear container, walk up the DOM to find a common ancestor
-              if (!container || container === shadow) {
+              if (!container) {
                 let current: HTMLElement | null = element.parentElement;
                 let depth = 0;
-                while (current && depth < 5 && current !== shadow) {
+                while (current && depth < 5) {
                   // Look for containers that have multiple children (status + content)
-                  if (current.children.length > 1) {
+                  if (current.children.length > 1 && current !== shadow) {
                     container = current;
                     break;
                   }
@@ -708,7 +708,7 @@ export function ChatKitPanel({
                 }
               }
               
-              if (container && container !== shadow) {
+              if (container) {
                 // Hide ALL paragraphs in this container (they're all thinking content)
                 const allParas = container.querySelectorAll('p');
                 allParas.forEach((para) => {
