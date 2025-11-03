@@ -587,35 +587,28 @@ export function ChatKitPanel({
         const shadow = wc?.shadowRoot;
         if (!shadow) return;
 
-        // Inject CSS to hide all thinking paragraphs (simple approach)
+        // Inject CSS to hide all thinking paragraphs using stable data attributes
+        // Uses data-thread-item="workflow" which is stable, not hashed class names
         if (!shadow.querySelector('style[data-fyi-hide-thinking]')) {
           const style = document.createElement('style');
           style.setAttribute('data-fyi-hide-thinking', '1');
           style.textContent = `
-            /* Hide all thinking paragraphs - they contain detailed explanations */
-            /* Use most specific selectors to override any inline styles */
-            .fYdWH p,
-            .fYdWH.text-sm p,
-            .fYdWH.poBAH p,
-            .fYdWH.poBAH.text-sm p,
-            .fYdWH p.rBxfw,
-            .fYdWH.text-sm p.rBxfw,
-            .fYdWH.poBAH p.rBxfw,
-            .fYdWH div p,
-            .fYdWH > p,
-            div.fYdWH p,
-            div.fYdWH.text-sm p,
-            div.fYdWH.text-sm > p,
-            div.fYdWH.poBAH p,
-            div.fYdWH.poBAH.text-sm p,
-            div.fYdWH p strong,
-            div.fYdWH.text-sm p strong,
-            .fYdWH p span,
-            .fYdWH.poBAH p span,
+            /* Hide thinking paragraphs using stable data attributes - not hashed class names */
+            /* Primary: Use data-thread-item="workflow" for thinking containers */
+            [data-thread-item="workflow"] p,
+            [data-thread-item="workflow"] div p,
+            [data-thread-item="workflow"] > * p,
+            article[data-thread-turn="assistant"] [data-thread-item="workflow"] p,
+            /* Fallback: Other thinking-related attributes */
             [data-kind="thinking"] p,
             [data-message-type="thinking"] p,
             [part*="thinking"] p,
-            /* Hide list items and bullets with detailed reasoning */
+            /* Fallback: Structural selectors for thinking content (class names may change) */
+            article[data-thread-turn="assistant"] > div > div[data-thread-item="workflow"] p,
+            /* Hide list items in thinking containers */
+            [data-thread-item="workflow"] ul,
+            [data-thread-item="workflow"] ol,
+            [data-thread-item="workflow"] li,
             [data-kind="thinking"] ul,
             [data-kind="thinking"] ol,
             [data-kind="thinking"] li,
@@ -636,77 +629,84 @@ export function ChatKitPanel({
           shadow.appendChild(style);
         }
 
-        // Target explicit thinking message containers
-        const thinkingNodes = shadow.querySelectorAll<HTMLElement>('[data-kind="thinking"], [data-message-type="thinking"]');
-        thinkingNodes.forEach((n, idx) => {
+        // Primary: Use stable data attributes instead of hashed class names
+        // Target thinking containers by data-thread-item="workflow" (stable attribute)
+        const thinkingContainers = shadow.querySelectorAll<HTMLElement>('[data-thread-item="workflow"]');
+        thinkingContainers.forEach((container) => {
           try {
-            if (isDev) console.debug('[ChatKitPanel] collapseThinking node', { idx, tag: n.tagName, part: n.getAttribute('part') });
-            
-            // Neutralize sticky so the thread can auto-scroll
-            const cs = getComputedStyle(n);
+            // Neutralize sticky positioning so thread can auto-scroll
+            const cs = getComputedStyle(container);
             if (cs.position === 'sticky' || cs.position === 'fixed') {
-              n.style.position = 'static';
-              n.style.top = '';
-              n.style.bottom = '';
+              container.style.position = 'static';
+              container.style.top = '';
+              container.style.bottom = '';
             }
 
-            // Hide all children except the first (status header)
-            const kids = Array.from(n.children);
-            kids.forEach((k, idx) => {
-              if (idx > 0 && (k as HTMLElement).style) {
-                (k as HTMLElement).style.display = 'none';
-              }
-            });
-
-            // Hide ALL thinking paragraphs - status updates are in divs, not paragraphs
-            const allThinkingParas = n.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, [data-kind="thinking"] p, [data-message-type="thinking"] p');
-            allThinkingParas.forEach((el) => {
-              // Always hide all paragraphs - they're all detailed thinking
-              // Status updates appear in divs, not paragraphs
-              (el as HTMLElement).style.display = 'none';
+            // Hide ALL paragraphs within thinking containers - they contain detailed explanations
+            // Status updates appear in spans/divs, not paragraphs
+            const allParas = container.querySelectorAll('p');
+            allParas.forEach((para) => {
+              const htmlPara = para as HTMLElement;
+              htmlPara.style.setProperty('display', 'none', 'important');
+              htmlPara.style.setProperty('visibility', 'hidden', 'important');
+              htmlPara.style.setProperty('opacity', '0', 'important');
+              htmlPara.style.setProperty('height', '0', 'important');
+              htmlPara.style.setProperty('max-height', '0', 'important');
+              htmlPara.style.setProperty('min-height', '0', 'important');
+              htmlPara.style.setProperty('overflow', 'hidden', 'important');
+              htmlPara.style.setProperty('margin', '0', 'important');
+              htmlPara.style.setProperty('padding', '0', 'important');
             });
           } catch {}
         });
 
-        // Hide ALL .fYdWH paragraphs everywhere - status updates are in divs, not paragraphs
-        const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH.poBAH p, .fYdWH.poBAH.text-sm p, .fYdWH p.rBxfw, .fYdWH.text-sm p.rBxfw, .fYdWH.poBAH p.rBxfw, .fYdWH div p, .fYdWH > p, div.fYdWH p, div.fYdWH.text-sm p, div.fYdWH.text-sm > p, div.fYdWH.poBAH p');
-        allThinkingParas.forEach((el) => {
-          // Always hide all paragraphs - they contain detailed thinking
-          // Status updates like "Done" are in divs, not paragraphs
-          const htmlEl = el as HTMLElement;
-          // Override any inline styles with !important-level values
-          htmlEl.style.setProperty('display', 'none', 'important');
-          htmlEl.style.setProperty('visibility', 'hidden', 'important');
-          htmlEl.style.setProperty('opacity', '0', 'important');
-          htmlEl.style.setProperty('height', '0', 'important');
-          htmlEl.style.setProperty('max-height', '0', 'important');
-          htmlEl.style.setProperty('min-height', '0', 'important');
-          htmlEl.style.setProperty('overflow', 'hidden', 'important');
-          htmlEl.style.setProperty('margin', '0', 'important');
-          htmlEl.style.setProperty('padding', '0', 'important');
+        // Fallback: Target other thinking-related attributes (for compatibility)
+        const fallbackThinkingNodes = shadow.querySelectorAll<HTMLElement>('[data-kind="thinking"], [data-message-type="thinking"]');
+        fallbackThinkingNodes.forEach((n) => {
+          try {
+            const allParas = n.querySelectorAll('p');
+            allParas.forEach((para) => {
+              const htmlPara = para as HTMLElement;
+              htmlPara.style.setProperty('display', 'none', 'important');
+              htmlPara.style.setProperty('visibility', 'hidden', 'important');
+              htmlPara.style.setProperty('opacity', '0', 'important');
+              htmlPara.style.setProperty('height', '0', 'important');
+              htmlPara.style.setProperty('max-height', '0', 'important');
+              htmlPara.style.setProperty('min-height', '0', 'important');
+              htmlPara.style.setProperty('overflow', 'hidden', 'important');
+            });
+          } catch {}
         });
-        
-        // Hide entire .fYdWH divs that contain ONLY paragraphs (no other content)
-        const allThinkingDivs = shadow.querySelectorAll('.fYdWH, .fYdWH.text-sm, .fYdWH.poBAH, .fYdWH.poBAH.text-sm');
-        allThinkingDivs.forEach((div) => {
-          const htmlDiv = div as HTMLElement;
-          const paras = htmlDiv.querySelectorAll('p');
-          // Check if div has only paragraph children (no status divs)
-          const nonParaChildren = Array.from(htmlDiv.children).filter(child => 
-            child.tagName !== 'P' && !child.querySelector('p')
-          );
-          // If div contains paragraphs and no other meaningful content, hide it
-          if (paras.length > 0 && nonParaChildren.length === 0) {
-            htmlDiv.style.setProperty('display', 'none', 'important');
-            htmlDiv.style.setProperty('visibility', 'hidden', 'important');
-            htmlDiv.style.setProperty('opacity', '0', 'important');
-            htmlDiv.style.setProperty('height', '0', 'important');
-            htmlDiv.style.setProperty('max-height', '0', 'important');
-            htmlDiv.style.setProperty('min-height', '0', 'important');
-            htmlDiv.style.setProperty('overflow', 'hidden', 'important');
-            htmlDiv.style.setProperty('margin', '0', 'important');
-            htmlDiv.style.setProperty('padding', '0', 'important');
-          }
+
+        // Additional safety: Find thinking containers by structure (even if data attributes change)
+        // Look for articles with "Thought for Xs" pattern in their status headers
+        const allArticles = shadow.querySelectorAll<HTMLElement>('article[data-thread-turn="assistant"]');
+        allArticles.forEach((article) => {
+          try {
+            // Check if this article contains a "Thought for" status (indicates thinking)
+            const articleText = article.textContent || '';
+            const hasThinkingStatus = /Thought for \d+s/i.test(articleText) || 
+                                     /\bThinking\b/i.test(articleText) ||
+                                     article.querySelector('[data-thread-item="workflow"]');
+            
+            if (hasThinkingStatus) {
+              // Find all paragraphs that are NOT in assistant-message containers
+              const workflowContainer = article.querySelector('[data-thread-item="workflow"]');
+              if (workflowContainer) {
+                const thinkingParas = workflowContainer.querySelectorAll('p');
+                thinkingParas.forEach((para) => {
+                  const htmlPara = para as HTMLElement;
+                  htmlPara.style.setProperty('display', 'none', 'important');
+                  htmlPara.style.setProperty('visibility', 'hidden', 'important');
+                  htmlPara.style.setProperty('opacity', '0', 'important');
+                  htmlPara.style.setProperty('height', '0', 'important');
+                  htmlPara.style.setProperty('max-height', '0', 'important');
+                  htmlPara.style.setProperty('min-height', '0', 'important');
+                  htmlPara.style.setProperty('overflow', 'hidden', 'important');
+                });
+              }
+            }
+          } catch {}
         });
       } catch {}
     };
