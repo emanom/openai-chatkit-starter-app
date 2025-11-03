@@ -596,13 +596,22 @@ export function ChatKitPanel({
             /* Use most specific selectors to override any inline styles */
             .fYdWH p,
             .fYdWH.text-sm p,
+            .fYdWH.poBAH p,
+            .fYdWH.poBAH.text-sm p,
+            .fYdWH p.rBxfw,
+            .fYdWH.text-sm p.rBxfw,
+            .fYdWH.poBAH p.rBxfw,
             .fYdWH div p,
             .fYdWH > p,
             div.fYdWH p,
             div.fYdWH.text-sm p,
             div.fYdWH.text-sm > p,
+            div.fYdWH.poBAH p,
+            div.fYdWH.poBAH.text-sm p,
             div.fYdWH p strong,
             div.fYdWH.text-sm p strong,
+            .fYdWH p span,
+            .fYdWH.poBAH p span,
             [data-kind="thinking"] p,
             [data-message-type="thinking"] p,
             [part*="thinking"] p,
@@ -617,7 +626,11 @@ export function ChatKitPanel({
               visibility: hidden !important;
               opacity: 0 !important;
               height: 0 !important;
+              max-height: 0 !important;
+              min-height: 0 !important;
               overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
             }
           `;
           shadow.appendChild(style);
@@ -656,20 +669,25 @@ export function ChatKitPanel({
         });
 
         // Hide ALL .fYdWH paragraphs everywhere - status updates are in divs, not paragraphs
-        const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, .fYdWH > p, div.fYdWH p, div.fYdWH.text-sm p, div.fYdWH.text-sm > p');
+        const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH.poBAH p, .fYdWH.poBAH.text-sm p, .fYdWH p.rBxfw, .fYdWH.text-sm p.rBxfw, .fYdWH.poBAH p.rBxfw, .fYdWH div p, .fYdWH > p, div.fYdWH p, div.fYdWH.text-sm p, div.fYdWH.text-sm > p, div.fYdWH.poBAH p');
         allThinkingParas.forEach((el) => {
           // Always hide all paragraphs - they contain detailed thinking
           // Status updates like "Done" are in divs, not paragraphs
           const htmlEl = el as HTMLElement;
-          htmlEl.style.display = 'none';
-          htmlEl.style.visibility = 'hidden';
-          htmlEl.style.opacity = '0';
-          htmlEl.style.height = '0';
-          htmlEl.style.overflow = 'hidden';
+          // Override any inline styles with !important-level values
+          htmlEl.style.setProperty('display', 'none', 'important');
+          htmlEl.style.setProperty('visibility', 'hidden', 'important');
+          htmlEl.style.setProperty('opacity', '0', 'important');
+          htmlEl.style.setProperty('height', '0', 'important');
+          htmlEl.style.setProperty('max-height', '0', 'important');
+          htmlEl.style.setProperty('min-height', '0', 'important');
+          htmlEl.style.setProperty('overflow', 'hidden', 'important');
+          htmlEl.style.setProperty('margin', '0', 'important');
+          htmlEl.style.setProperty('padding', '0', 'important');
         });
         
         // Hide entire .fYdWH divs that contain ONLY paragraphs (no other content)
-        const allThinkingDivs = shadow.querySelectorAll('.fYdWH, .fYdWH.text-sm');
+        const allThinkingDivs = shadow.querySelectorAll('.fYdWH, .fYdWH.text-sm, .fYdWH.poBAH, .fYdWH.poBAH.text-sm');
         allThinkingDivs.forEach((div) => {
           const htmlDiv = div as HTMLElement;
           const paras = htmlDiv.querySelectorAll('p');
@@ -679,11 +697,15 @@ export function ChatKitPanel({
           );
           // If div contains paragraphs and no other meaningful content, hide it
           if (paras.length > 0 && nonParaChildren.length === 0) {
-            htmlDiv.style.display = 'none';
-            htmlDiv.style.visibility = 'hidden';
-            htmlDiv.style.opacity = '0';
-            htmlDiv.style.height = '0';
-            htmlDiv.style.overflow = 'hidden';
+            htmlDiv.style.setProperty('display', 'none', 'important');
+            htmlDiv.style.setProperty('visibility', 'hidden', 'important');
+            htmlDiv.style.setProperty('opacity', '0', 'important');
+            htmlDiv.style.setProperty('height', '0', 'important');
+            htmlDiv.style.setProperty('max-height', '0', 'important');
+            htmlDiv.style.setProperty('min-height', '0', 'important');
+            htmlDiv.style.setProperty('overflow', 'hidden', 'important');
+            htmlDiv.style.setProperty('margin', '0', 'important');
+            htmlDiv.style.setProperty('padding', '0', 'important');
           }
         });
       } catch {}
