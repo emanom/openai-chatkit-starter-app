@@ -593,12 +593,16 @@ export function ChatKitPanel({
           style.setAttribute('data-fyi-hide-thinking', '1');
           style.textContent = `
             /* Hide all thinking paragraphs - they contain detailed explanations */
+            /* Use most specific selectors to override any inline styles */
             .fYdWH p,
             .fYdWH.text-sm p,
             .fYdWH div p,
             .fYdWH > p,
             div.fYdWH p,
             div.fYdWH.text-sm p,
+            div.fYdWH.text-sm > p,
+            div.fYdWH p strong,
+            div.fYdWH.text-sm p strong,
             [data-kind="thinking"] p,
             [data-message-type="thinking"] p,
             [part*="thinking"] p,
@@ -610,6 +614,10 @@ export function ChatKitPanel({
             [data-message-type="thinking"] ol,
             [data-message-type="thinking"] li {
               display: none !important;
+              visibility: hidden !important;
+              opacity: 0 !important;
+              height: 0 !important;
+              overflow: hidden !important;
             }
           `;
           shadow.appendChild(style);
@@ -648,31 +656,34 @@ export function ChatKitPanel({
         });
 
         // Hide ALL .fYdWH paragraphs everywhere - status updates are in divs, not paragraphs
-        const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, .fYdWH > p, div.fYdWH p, div.fYdWH.text-sm p');
+        const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, .fYdWH > p, div.fYdWH p, div.fYdWH.text-sm p, div.fYdWH.text-sm > p');
         allThinkingParas.forEach((el) => {
           // Always hide all paragraphs - they contain detailed thinking
           // Status updates like "Done" are in divs, not paragraphs
-          (el as HTMLElement).style.display = 'none';
-          // Also hide parent div if it only contains paragraphs
-          const parent = (el as HTMLElement).parentElement;
-          if (parent && parent.classList.contains('fYdWH')) {
-            const hasOnlyParagraphs = Array.from(parent.children).every(child => 
-              child.tagName === 'P' || child.querySelector('p')
-            );
-            if (hasOnlyParagraphs) {
-              parent.style.display = 'none';
-            }
-          }
+          const htmlEl = el as HTMLElement;
+          htmlEl.style.display = 'none';
+          htmlEl.style.visibility = 'hidden';
+          htmlEl.style.opacity = '0';
+          htmlEl.style.height = '0';
+          htmlEl.style.overflow = 'hidden';
         });
         
-        // Also hide entire .fYdWH divs that contain only paragraphs
+        // Hide entire .fYdWH divs that contain ONLY paragraphs (no other content)
         const allThinkingDivs = shadow.querySelectorAll('.fYdWH, .fYdWH.text-sm');
         allThinkingDivs.forEach((div) => {
-          const paras = div.querySelectorAll('p');
-          const otherContent = Array.from(div.children).filter(child => child.tagName !== 'P' && !child.querySelector('p'));
-          // If div contains paragraphs and little else, hide the whole div
-          if (paras.length > 0 && otherContent.length === 0) {
-            (div as HTMLElement).style.display = 'none';
+          const htmlDiv = div as HTMLElement;
+          const paras = htmlDiv.querySelectorAll('p');
+          // Check if div has only paragraph children (no status divs)
+          const nonParaChildren = Array.from(htmlDiv.children).filter(child => 
+            child.tagName !== 'P' && !child.querySelector('p')
+          );
+          // If div contains paragraphs and no other meaningful content, hide it
+          if (paras.length > 0 && nonParaChildren.length === 0) {
+            htmlDiv.style.display = 'none';
+            htmlDiv.style.visibility = 'hidden';
+            htmlDiv.style.opacity = '0';
+            htmlDiv.style.height = '0';
+            htmlDiv.style.overflow = 'hidden';
           }
         });
       } catch {}
