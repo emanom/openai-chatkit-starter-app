@@ -593,6 +593,7 @@ export function ChatKitPanel({
           style.setAttribute('data-fyi-hide-thinking', '1');
           style.textContent = `
             /* Hide all thinking paragraphs - they contain detailed explanations */
+            /* Hide paragraphs in .fYdWH that are longer than short status updates */
             .fYdWH p,
             .fYdWH.text-sm p,
             .fYdWH div p,
@@ -635,33 +636,22 @@ export function ChatKitPanel({
               }
             });
 
-            // Hide all thinking paragraphs - simple approach, no content detection needed
+            // Hide ALL thinking paragraphs - status updates are in divs, not paragraphs
             const allThinkingParas = n.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, [data-kind="thinking"] p, [data-message-type="thinking"] p');
             allThinkingParas.forEach((el) => {
+              // Always hide all paragraphs - they're all detailed thinking
+              // Status updates appear in divs, not paragraphs
               (el as HTMLElement).style.display = 'none';
             });
           } catch {}
         });
 
-        // Hide all .fYdWH paragraphs everywhere (simple - no content detection)
+        // Hide ALL .fYdWH paragraphs everywhere - status updates are in divs, not paragraphs
         const allThinkingParas = shadow.querySelectorAll('.fYdWH p, .fYdWH.text-sm p, .fYdWH div p, .fYdWH > p');
         allThinkingParas.forEach((el) => {
+          // Always hide all paragraphs - they contain detailed thinking
+          // Status updates like "Done" and "Clarifying envelope types" are in divs, not paragraphs
           (el as HTMLElement).style.display = 'none';
-        });
-        
-        // Also hide .fYdWH divs that contain paragraphs (they're the detailed thinking containers)
-        const allThinkingDivs = shadow.querySelectorAll('.fYdWH');
-        allThinkingDivs.forEach((div) => {
-          // Check if this div contains paragraphs (detailed thinking) vs just status
-          const hasParas = (div as HTMLElement).querySelector('p');
-          if (hasParas) {
-            // Hide the paragraph-containing divs (they're detailed explanations)
-            const divText = (div as HTMLElement).textContent || '';
-            // Keep only if it's a very short status (like "Done")
-            if (divText.length > 10) {
-              (div as HTMLElement).style.display = 'none';
-            }
-          }
         });
       } catch {}
     };
