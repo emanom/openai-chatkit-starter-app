@@ -260,6 +260,31 @@
           wrapper.appendChild(el);
           wrapper.appendChild(form);
 
+          // Wait for ChatKit to be fully initialized before injecting
+          // Check if ChatKit has actual UI elements (not just loading state)
+          function isChatKitReady(element) {
+            const root = element.shadowRoot;
+            if (!root) return false;
+            
+            // Check for actual UI elements - if we only have a few elements with no data-kind,
+            // ChatKit is likely still loading or in an error state
+            const totalElements = root.querySelectorAll('*').length;
+            const hasDataKindElements = root.querySelectorAll('[data-kind]').length > 0;
+            const hasComposer = root.querySelector('[data-kind="composer"], [role="textbox"], textarea, [contenteditable="true"]');
+            const hasStartScreen = root.querySelector('[data-kind="start-screen"], [data-part="start-screen"]');
+            
+            // ChatKit is ready if:
+            // 1. Has a reasonable number of elements (more than just a loading spinner)
+            // 2. Has data-kind elements OR has a composer OR has a start screen
+            const isReady = totalElements > 10 && (hasDataKindElements || hasComposer || hasStartScreen);
+            
+            if (isReady) {
+              console.log('[ChatKit] Ready! totalElements:', totalElements, 'hasDataKind:', hasDataKindElements, 'hasComposer:', !!hasComposer, 'hasStartScreen:', !!hasStartScreen);
+            }
+            
+            return isReady;
+          }
+
           // S3 Upload injection
           let injectS3Button;
           (function injectS3Upload(){
@@ -276,10 +301,28 @@
               attempts++;
               const root = el.shadowRoot;
               if (!root) {
-                console.log('[S3] No shadowRoot, attempt:', attempts);
-                if (attempts < 100) requestAnimationFrame(inject);
+                if (attempts < 100) {
+                  requestAnimationFrame(inject);
+                }
                 return;
               }
+              
+              // Wait for ChatKit to be fully ready before trying to find composer
+              if (!isChatKitReady(el)) {
+                if (attempts <= 5 || attempts % 20 === 0) {
+                  const totalElements = root.querySelectorAll('*').length;
+                  const allKinds = Array.from(root.querySelectorAll('[data-kind]')).map(el => el.getAttribute('data-kind'));
+                  console.log('[S3] Waiting for ChatKit to initialize... Attempt:', attempts, 'totalElements:', totalElements, 'kinds:', allKinds);
+                }
+                if (attempts < 200) {
+                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
+                  setTimeout(inject, delay);
+                } else {
+                  console.warn('[S3] ChatKit not ready after 200 attempts - may be stuck in loading or error state');
+                }
+                return;
+              }
+              
               // Try multiple selectors for composer
               let composer = root.querySelector('[data-kind="composer"]');
               if (!composer) composer = root.querySelector('[role="textbox"]');
@@ -292,21 +335,10 @@
                 })?.closest('[data-kind]') || null;
               }
               
-              // Only log every 20 attempts to reduce noise, or on first few attempts
-              if (attempts <= 5 || attempts % 20 === 0) {
-                const allKinds = Array.from(root.querySelectorAll('[data-kind]')).map(el => el.getAttribute('data-kind'));
-                const allRoles = Array.from(root.querySelectorAll('[role]')).map(el => el.getAttribute('role'));
-                console.log('[S3] Attempt:', attempts, 'hasComposer:', !!composer, 'totalElements:', root.querySelectorAll('*').length, 'kinds:', allKinds, 'roles:', allRoles);
-              }
-              
               if (!composer) {
-                if (attempts < 200) {
-                  // Use longer delays for later attempts
-                  const delay = attempts < 30 ? 50 : attempts < 80 ? 200 : 1000;
-                  setTimeout(inject, delay);
-                } else {
-                  // After 200 attempts, give up silently
-                  console.warn('[S3] Composer not found after 200 attempts - ChatKit may not be fully initialized');
+                console.warn('[S3] ChatKit appears ready but composer not found');
+                if (attempts < 250) {
+                  setTimeout(inject, 500);
                 }
                 return;
               }
@@ -419,19 +451,32 @@
                 return; 
               }
               
+              // Wait for ChatKit to be fully ready before trying to find start screen
+              if (!isChatKitReady(el)) {
+                if (attempts <= 5 || attempts % 20 === 0) {
+                  const totalElements = root.querySelectorAll('*').length;
+                  console.log('[CustomPrompts] Waiting for ChatKit to initialize... Attempt', attempts, 'totalElements:', totalElements);
+                }
+                if (attempts < 200) {
+                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
+                  setTimeout(inject, delay);
+                } else {
+                  console.warn('[CustomPrompts] ChatKit not ready after 200 attempts - may be stuck in loading or error state');
+                }
+                return;
+              }
+              
               // Find the start screen prompts container
               const startScreen = root.querySelector('[data-kind="start-screen"], [data-part="start-screen"]');
               if (!startScreen) { 
-                // Only log every 20 attempts to reduce noise, or on first few attempts
                 if (attempts <= 5 || attempts % 20 === 0) {
                   console.log('[CustomPrompts] Attempt', attempts, 'No start screen found yet, totalElements:', root.querySelectorAll('*').length);
                 }
-                if (attempts < 200) {
-                  const delay = attempts < 30 ? 50 : attempts < 80 ? 200 : 1000;
+                if (attempts < 250) {
+                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
                   setTimeout(inject, delay);
                 } else {
-                  // After 200 attempts, give up silently
-                  console.warn('[CustomPrompts] Start screen not found after 200 attempts - ChatKit may not be fully initialized');
+                  console.warn('[CustomPrompts] Start screen not found after 250 attempts');
                 }
                 return; 
               }
