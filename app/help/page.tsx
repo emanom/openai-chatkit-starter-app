@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef, Suspense } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useColorScheme } from "@/hooks/useColorScheme";
@@ -133,28 +132,36 @@ function HelpPageContent() {
     };
   }, [chatkit.control]);
 
-  // Hide ChatKit UI completely
+  // Hide ChatKit UI completely but keep it functional
   useEffect(() => {
     const style = document.createElement("style");
     style.textContent = `
       openai-chatkit {
-        display: none !important;
-        visibility: hidden !important;
-        position: absolute !important;
-        height: 0 !important;
-        width: 0 !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 1px !important;
+        height: 1px !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
         overflow: hidden !important;
+        z-index: -1 !important;
       }
     `;
     document.head.appendChild(style);
     return () => {
-      document.head.removeChild(style);
+      if (document.head.contains(style)) {
+        document.head.removeChild(style);
+      }
     };
   }, []);
 
   // Handle sending messages
   const handleSendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || !chatkit.control) return;
+    if (!text.trim() || !chatkit.control) {
+      console.warn("Cannot send message: no control or empty text", { hasControl: !!chatkit.control, text });
+      return;
+    }
 
     // Add user message to UI immediately
     const userMessage: Message = {
@@ -167,14 +174,26 @@ function HelpPageContent() {
     setIsLoading(true);
 
     try {
+      // Wait a bit for ChatKit to be ready
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Send message via ChatKit
       await chatkit.setComposerValue({ text: text.trim() });
-      // Submit the message
+      
+      // Wait a bit more then submit
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Submit the message by finding the composer and triggering submit
       const wc = document.querySelector<HTMLElement>("openai-chatkit");
       const shadow = wc?.shadowRoot;
       if (shadow) {
-        const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]') as HTMLElement;
+        // Try multiple ways to find and submit
+        const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"], textarea, input') as HTMLElement;
         if (composer) {
+          // Focus first
+          composer.focus();
+          
+          // Try Enter key
           const enterEvent = new KeyboardEvent("keydown", {
             key: "Enter",
             code: "Enter",
@@ -184,7 +203,18 @@ function HelpPageContent() {
             cancelable: true,
           });
           composer.dispatchEvent(enterEvent);
+          
+          // Also try form submit
+          const form = composer.closest("form");
+          if (form) {
+            const submitEvent = new Event("submit", { bubbles: true, cancelable: true });
+            form.dispatchEvent(submitEvent);
+          }
+        } else {
+          console.warn("Could not find composer element in ChatKit shadow DOM");
         }
+      } else {
+        console.warn("ChatKit shadow root not found");
       }
     } catch (error) {
       console.error("Failed to send message:", error);
@@ -228,6 +258,46 @@ function HelpPageContent() {
           <h1 className="text-center text-3xl font-semibold text-gray-900">
             How can I help you today?
           </h1>
+
+          {/* Custom Chat Messages Display - Above Input */}
+          {messages.length > 0 && (
+            <div className="border-t border-gray-200 overflow-hidden">
+              <div
+                ref={chatContainerRef}
+                className="max-h-[400px] overflow-y-auto px-4 py-6"
+              >
+                <div className="space-y-4">
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                          message.role === "user"
+                            ? "bg-gray-900 text-white"
+                            : "bg-gray-100 text-gray-900"
+                        }`}
+                      >
+                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {isLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-gray-100 rounded-lg px-4 py-3">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Chat Input Area */}
           <form onSubmit={handleSubmit} className="relative">
@@ -308,62 +378,17 @@ function HelpPageContent() {
         </div>
       </div>
 
-      {/* Custom Chat Messages Display */}
-      {messages.length > 0 && (
-        <div className="flex-1 border-t border-gray-200 overflow-hidden">
-          <div
-            ref={chatContainerRef}
-            className="h-[calc(100vh-500px)] min-h-[400px] max-h-[600px] overflow-y-auto px-4 py-6"
-          >
-            <div className="w-full max-w-2xl mx-auto space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg px-4 py-3 ${
-                      message.role === "user"
-                        ? "bg-gray-900 text-white"
-                        : "bg-gray-100 text-gray-900"
-                    }`}
-                  >
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  </div>
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-100 rounded-lg px-4 py-3">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Hidden ChatKit component for API access only */}
-      {chatkit.control && (
-        <div style={{ position: "absolute", visibility: "hidden", height: 0, overflow: "hidden" }}>
-          <ChatKit control={chatkit.control} />
-        </div>
-      )}
+      {/* Hidden ChatKit component for API access only - must be rendered for API to work */}
+      <div style={{ position: "fixed", top: 0, left: 0, width: "1px", height: "1px", overflow: "hidden", opacity: 0, pointerEvents: "none", zIndex: -1 }}>
+        {chatkit.control && <ChatKit control={chatkit.control} />}
+      </div>
 
       {/* Bottom Information Cards - Always visible */}
       <div className="flex flex-col items-center px-4 pb-12">
         <div className="w-full max-w-2xl">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {/* Submit a Support Request Card */}
-            <Link
-              href="/support"
-              className="group flex flex-col rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md"
-            >
+            <div className="group flex flex-col rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md cursor-pointer">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">
                   Submit a Support Request
@@ -387,13 +412,10 @@ function HelpPageContent() {
                 This form allows to submit a request and attach files or
                 screenshots.
               </p>
-            </Link>
+            </div>
 
             {/* Help Centre articles Card */}
-            <Link
-              href="/help-centre"
-              className="group flex flex-col rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md"
-            >
+            <div className="group flex flex-col rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md cursor-pointer">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">
                   Help Centre articles
@@ -416,7 +438,7 @@ function HelpPageContent() {
               <p className="mt-2 text-sm text-gray-500">
                 Consult our help articles.
               </p>
-            </Link>
+            </div>
           </div>
         </div>
       </div>
