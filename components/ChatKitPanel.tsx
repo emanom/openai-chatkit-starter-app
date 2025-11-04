@@ -14,6 +14,25 @@ import {
 import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";
 
+// Component to auto-hide loading overlay after timeout
+function LoadingTimeoutHandler({ 
+  isActive, 
+  onTimeout 
+}: { 
+  isActive: boolean; 
+  onTimeout: () => void;
+}) {
+  useEffect(() => {
+    if (!isActive) return;
+    const timeout = setTimeout(() => {
+      console.warn("[ChatKitPanel] Loading timeout - clearing initialization state");
+      onTimeout();
+    }, 10000); // 10 second timeout
+    return () => clearTimeout(timeout);
+  }, [isActive, onTimeout]);
+  return null;
+}
+
 export type FactAction = {
   type: "save";
   factId: string;
@@ -491,7 +510,9 @@ export function ChatKitPanel({
       onResponseEnd();
     },
     onResponseStart: () => {
-      setErrorState({ integration: null, retryable: false });
+      setErrorState({ integration: null, retryable: false, session: null });
+      setIsInitializingSession(false); // Ensure loading overlay is cleared when response starts
+      isInitializingRef.current = false;
       try {
         responseSeqRef.current += 1;
         responseStartRef.current = Date.now();
@@ -507,10 +528,29 @@ export function ChatKitPanel({
       // Thus, your app code doesn't need to display errors on UI.
       console.error("❌ [ChatKitPanel] ChatKit error:", error);
       console.error("❌ [ChatKitPanel] Error details:", JSON.stringify(error, null, 2));
+      // Clear any session errors when ChatKit handles the error internally
+      // This prevents the white overlay from appearing
+      if (isMountedRef.current) {
+        setErrorState({ session: null, integration: null });
+        setIsInitializingSession(false);
+        isInitializingRef.current = false;
+      }
     },
   };
   
   const chatkit = useChatKit(chatkitConfig);
+
+  // Ensure initialization state is cleared when ChatKit is ready
+  useEffect(() => {
+    if (chatkit && chatkit.control && !isInitializingSession) {
+      // ChatKit is ready and initialized - ensure no stuck states
+      if (isInitializingRef.current) {
+        isInitializingRef.current = false;
+        setIsInitializingSession(false);
+        setErrorState({ session: null, integration: null });
+      }
+    }
+  }, [chatkit, isInitializingSession, setErrorState]);
 
   const handleQuickPrompt = useCallback(
     (text: string) => {
@@ -959,9 +999,21 @@ export function ChatKitPanel({
         />
       )}
       {isInitializingSession && !blockingError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-slate-900/80">
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 dark:bg-slate-900/80">
           <div className="text-slate-600 dark:text-slate-400">Loading assistant session...</div>
         </div>
+      )}
+      {/* Auto-hide loading overlay after timeout to prevent stuck UI */}
+      {isInitializingSession && !blockingError && (
+        <LoadingTimeoutHandler 
+          isActive={isInitializingSession} 
+          onTimeout={() => {
+            if (isMountedRef.current) {
+              setIsInitializingSession(false);
+              isInitializingRef.current = false;
+            }
+          }} 
+        />
       )}
     </div>
   );
