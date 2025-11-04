@@ -53,21 +53,50 @@ function HelpPageContent() {
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
-      {!showChat ? (
-        // Initial landing view
-        <div className="flex min-h-screen flex-col items-center justify-center px-4 py-12">
-          <div className="w-full max-w-2xl space-y-8">
-            {/* Main Title */}
-            <h1 className="text-center text-3xl font-semibold text-gray-900">
-              How can I help you today?
-            </h1>
+      {/* Header Section - Always Visible */}
+      <div className="flex flex-col items-center px-4 pt-12 pb-8">
+        <div className="w-full max-w-2xl space-y-8">
+          {/* Main Title */}
+          <h1 className="text-center text-3xl font-semibold text-gray-900">
+            How can I help you today?
+          </h1>
 
-            {/* Chat Input Area */}
-            <form onSubmit={handleSubmit} className="relative">
-              <div className="relative flex items-center rounded-2xl border border-gray-300 bg-white px-4 py-4 shadow-sm transition-shadow focus-within:border-gray-400 focus-within:shadow-md">
-                {/* Smiley Icon */}
+          {/* Chat Input Area */}
+          <form onSubmit={handleSubmit} className="relative">
+            <div className="relative flex items-center rounded-2xl border border-gray-300 bg-white px-4 py-4 shadow-sm transition-shadow focus-within:border-gray-400 focus-within:shadow-md">
+              {/* Smiley Icon */}
+              <svg
+                className="mr-3 h-5 w-5 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+
+              {/* Input Field */}
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Ask me anything about FYI..."
+                className="flex-1 border-none bg-transparent text-gray-900 placeholder-gray-400 outline-none"
+              />
+
+              {/* Send Button */}
+              <button
+                type="submit"
+                className="ml-3 flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white transition-colors hover:bg-gray-800"
+                aria-label="Send message"
+              >
                 <svg
-                  className="mr-3 h-5 w-5 text-gray-400"
+                  className="h-4 w-4"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -77,66 +106,56 @@ function HelpPageContent() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    d="M5 10l7-7m0 0l7 7m-7-7v18"
                   />
                 </svg>
-
-                {/* Input Field */}
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Ask me anything about FYI..."
-                  className="flex-1 border-none bg-transparent text-gray-900 placeholder-gray-400 outline-none"
-                />
-
-                {/* Send Button */}
-                <button
-                  type="submit"
-                  className="ml-3 flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white transition-colors hover:bg-gray-800"
-                  aria-label="Send message"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 10l7-7m0 0l7 7m-7-7v18"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Gradient Strip */}
-              <div className="mt-2 h-1 w-full overflow-hidden rounded-full">
-                <div className="h-full w-full bg-gradient-to-r from-purple-300 via-purple-200 to-green-200 opacity-50"></div>
-              </div>
-            </form>
-
-            {/* Suggestion Buttons */}
-            <div className="flex flex-wrap justify-center gap-3">
-              {[
-                "Help with feature",
-                "Enhancement idea",
-                "Something's not working",
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:border-gray-300"
-                >
-                  {suggestion}
-                </button>
-              ))}
+              </button>
             </div>
 
-            {/* Bottom Information Cards */}
+            {/* Gradient Strip */}
+            <div className="mt-2 h-1 w-full overflow-hidden rounded-full">
+              <div className="h-full w-full bg-gradient-to-r from-purple-300 via-purple-200 to-green-200 opacity-50"></div>
+            </div>
+          </form>
+
+          {/* Suggestion Buttons */}
+          <div className="flex flex-wrap justify-center gap-3">
+            {[
+              "Help with feature",
+              "Enhancement idea",
+              "Something's not working",
+            ].map((suggestion) => (
+              <button
+                key={suggestion}
+                onClick={() => handleSuggestionClick(suggestion)}
+                className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:border-gray-300"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ChatKit Section - Appears below when activated */}
+      {showChat && (
+        <div className="flex-1 border-t border-gray-200">
+          <div className="h-[calc(100vh-400px)] min-h-[600px] w-full">
+            <ChatKitPanel
+              theme={scheme}
+              onWidgetAction={handleWidgetAction}
+              onResponseEnd={handleResponseEnd}
+              onThemeRequest={setScheme}
+              initialQuery={initialQuery}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Information Cards - Show when chat is not active or at bottom */}
+      {!showChat && (
+        <div className="flex flex-col items-center px-4 pb-12">
+          <div className="w-full max-w-2xl">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {/* Submit a Support Request Card */}
               <Link
@@ -197,19 +216,6 @@ function HelpPageContent() {
                 </p>
               </Link>
             </div>
-          </div>
-        </div>
-      ) : (
-        // Chat view - embedded inline
-        <div className="flex h-screen flex-col">
-          <div className="h-full w-full">
-            <ChatKitPanel
-              theme={scheme}
-              onWidgetAction={handleWidgetAction}
-              onResponseEnd={handleResponseEnd}
-              onThemeRequest={setScheme}
-              initialQuery={initialQuery}
-            />
           </div>
         </div>
       )}
