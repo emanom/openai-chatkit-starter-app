@@ -262,23 +262,29 @@
             }
           });
 
-          // Monitor ChatKit initialization
+          // Monitor ChatKit initialization (only log if there's an issue)
           let initCheckAttempts = 0;
           const checkInit = setInterval(() => {
             initCheckAttempts++;
             const root = el.shadowRoot;
             if (root) {
-              const totalElements = root.querySelectorAll('*').length;
-              const hasDataKind = root.querySelectorAll('[data-kind]').length > 0;
-              
-              if (initCheckAttempts <= 10 || initCheckAttempts % 20 === 0) {
-                console.log('[ChatKit] Init check:', initCheckAttempts, 'totalElements:', totalElements, 'hasDataKind:', hasDataKind);
+              // If ChatKit is ready, stop monitoring silently
+              if (isChatKitReady(el)) {
+                clearInterval(checkInit);
+                return;
               }
               
-              // If ChatKit is ready or we've checked enough times, stop monitoring
-              if (isChatKitReady(el) || initCheckAttempts > 100) {
+              // Only log if we've checked many times without success
+              if (initCheckAttempts > 50 && initCheckAttempts % 20 === 0) {
+                const totalElements = root.querySelectorAll('*').length;
+                const hasDataKind = root.querySelectorAll('[data-kind]').length > 0;
+                console.warn('[ChatKit] Still initializing... Attempt:', initCheckAttempts, 'totalElements:', totalElements, 'hasDataKind:', hasDataKind);
+              }
+              
+              // Stop after reasonable attempts
+              if (initCheckAttempts > 100) {
                 clearInterval(checkInit);
-                if (initCheckAttempts > 100 && !isChatKitReady(el)) {
+                if (!isChatKitReady(el)) {
                   console.error('[ChatKit] Failed to initialize after 100 checks - may be in error state');
                 }
               }
@@ -306,9 +312,10 @@
             // 2. Has data-kind elements OR has a composer OR has a start screen
             const isReady = totalElements > 10 && (hasDataKindElements || hasComposer || hasStartScreen);
             
-            if (isReady) {
-              console.log('[ChatKit] Ready! totalElements:', totalElements, 'hasDataKind:', hasDataKindElements, 'hasComposer:', !!hasComposer, 'hasStartScreen:', !!hasStartScreen);
-            }
+            // Only log if debugging is needed (commented out for production)
+            // if (isReady) {
+            //   console.log('[ChatKit] Ready! totalElements:', totalElements, 'hasDataKind:', hasDataKindElements, 'hasComposer:', !!hasComposer, 'hasStartScreen:', !!hasStartScreen);
+            // }
             
             return isReady;
           }
@@ -337,10 +344,9 @@
               
               // Wait for ChatKit to be fully ready before trying to find composer
               if (!isChatKitReady(el)) {
-                if (attempts <= 5 || attempts % 20 === 0) {
+                if (attempts > 50 && attempts % 20 === 0) {
                   const totalElements = root.querySelectorAll('*').length;
-                  const allKinds = Array.from(root.querySelectorAll('[data-kind]')).map(el => el.getAttribute('data-kind'));
-                  console.log('[S3] Waiting for ChatKit to initialize... Attempt:', attempts, 'totalElements:', totalElements, 'kinds:', allKinds);
+                  console.warn('[S3] Waiting for ChatKit to initialize... Attempt:', attempts, 'totalElements:', totalElements);
                 }
                 if (attempts < 200) {
                   const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
@@ -481,9 +487,9 @@
               
               // Wait for ChatKit to be fully ready before trying to find start screen
               if (!isChatKitReady(el)) {
-                if (attempts <= 5 || attempts % 20 === 0) {
+                if (attempts > 50 && attempts % 20 === 0) {
                   const totalElements = root.querySelectorAll('*').length;
-                  console.log('[CustomPrompts] Waiting for ChatKit to initialize... Attempt', attempts, 'totalElements:', totalElements);
+                  console.warn('[CustomPrompts] Waiting for ChatKit to initialize... Attempt', attempts, 'totalElements:', totalElements);
                 }
                 if (attempts < 200) {
                   const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
