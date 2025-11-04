@@ -133,15 +133,16 @@ function HelpPageContent() {
   }, [chatkit.control]);
 
   // Hide ChatKit UI completely but keep it functional
+  // Use a minimal visible size to ensure shadow DOM initializes properly
   useEffect(() => {
     const style = document.createElement("style");
     style.textContent = `
       openai-chatkit {
         position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 1px !important;
-        height: 1px !important;
+        top: -9999px !important;
+        left: -9999px !important;
+        width: 400px !important;
+        height: 600px !important;
         opacity: 0 !important;
         pointer-events: none !important;
         overflow: hidden !important;
@@ -158,8 +159,9 @@ function HelpPageContent() {
 
   // Handle sending messages
   const handleSendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || !chatkit.control) {
-      console.warn("Cannot send message: no control or empty text", { hasControl: !!chatkit.control, text });
+    const messageText = text.trim();
+    if (!messageText || !chatkit.control) {
+      console.warn("Cannot send message: no control or empty text", { hasControl: !!chatkit.control, text: messageText });
       return;
     }
 
@@ -167,55 +169,127 @@ function HelpPageContent() {
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: text.trim(),
+      content: messageText,
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
-      // Wait a bit for ChatKit to be ready
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Set the composer value first
+      await chatkit.setComposerValue({ text: messageText });
       
-      // Send message via ChatKit
-      await chatkit.setComposerValue({ text: text.trim() });
-      
-      // Wait a bit more then submit
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Submit the message by finding the composer and triggering submit
-      const wc = document.querySelector<HTMLElement>("openai-chatkit");
-      const shadow = wc?.shadowRoot;
-      if (shadow) {
-        // Try multiple ways to find and submit
-        const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"], textarea, input') as HTMLElement;
-        if (composer) {
-          // Focus first
-          composer.focus();
+      // Wait for ChatKit to be ready and find the composer using MutationObserver
+      const findAndSubmit = (): Promise<void> => {
+        return new Promise((resolve, reject) => {
+          let attempts = 0;
+          const maxAttempts = 50; // 5 seconds total
           
-          // Try Enter key
-          const enterEvent = new KeyboardEvent("keydown", {
-            key: "Enter",
-            code: "Enter",
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true,
-          });
-          composer.dispatchEvent(enterEvent);
-          
-          // Also try form submit
-          const form = composer.closest("form");
-          if (form) {
-            const submitEvent = new Event("submit", { bubbles: true, cancelable: true });
-            form.dispatchEvent(submitEvent);
-          }
-        } else {
-          console.warn("Could not find composer element in ChatKit shadow DOM");
-        }
-      } else {
-        console.warn("ChatKit shadow root not found");
-      }
+          const trySubmit = () => {
+            attempts++;
+            if (attempts > maxAttempts) {
+              console.error("Failed to find ChatKit composer after max attempts");
+              setIsLoading(false);
+              reject(new Error("Composer not found"));
+              return;
+            }
+
+            const wc = document.querySelector<HTMLElement>("openai-chatkit");
+            if (!wc) {
+              setTimeout(trySubmit, 100);
+              return;
+            }
+
+            const shadow = wc.shadowRoot;
+            if (!shadow) {
+              setTimeout(trySubmit, 100);
+              return;
+            }
+
+            // Try to find composer
+            const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"], textarea, input[type="text"]') as HTMLElement;
+            
+            if (composer) {
+              // Found it! Now submit
+              composer.focus();
+              
+              // Set value directly in case setComposerValue didn't work
+              if (composer.tagName === 'INPUT' || composer.tagName === 'TEXTAREA') {
+                (composer as HTMLInputElement | HTMLTextAreaElement).value = messageText;
+              } else if (composer.contentEditable === 'true') {
+                composer.textContent = messageText;
+              }
+              
+              // Try Enter key press
+              const enterDown = new KeyboardEvent("keydown", {
+                key: "Enter",
+                code: "Enter",
+                keyCode: 13,
+                which: 13,
+                bubbles: true,
+                cancelable: false,
+              });
+              composer.dispatchEvent(enterDown);
+              
+              const enterUp = new KeyboardEvent("keyup", {
+                key: "Enter",
+                code: "Enter",
+                keyCode: 13,
+                which: 13,
+                bubbles: true,
+                cancelable: false,
+              });
+              composer.dispatchEvent(enterUp);
+
+              // Also try to find and click submit button
+              const submitButton = shadow.querySelector('button[type="submit"], button[aria-label*="send" i], button[aria-label*="submit" i], button:has(svg)') as HTMLElement;
+              if (submitButton) {
+                submitButton.click();
+              }
+              
+              resolve();
+            } else {
+              // Use MutationObserver to watch for composer to appear
+              const observer = new MutationObserver(() => {
+                const newComposer = shadow.querySelector('[role="textbox"], [contenteditable="true"], textarea, input[type="text"]') as HTMLElement;
+                if (newComposer) {
+                  observer.disconnect();
+                  // Retry submit with the new composer
+                  setTimeout(() => {
+                    newComposer.focus();
+                    const enterDown = new KeyboardEvent("keydown", {
+                      key: "Enter",
+                      code: "Enter",
+                      keyCode: 13,
+                      which: 13,
+                      bubbles: true,
+                      cancelable: false,
+                    });
+                    newComposer.dispatchEvent(enterDown);
+                    const submitButton = shadow.querySelector('button[type="submit"], button[aria-label*="send" i]') as HTMLElement;
+                    if (submitButton) {
+                      submitButton.click();
+                    }
+                    resolve();
+                  }, 100);
+                }
+              });
+              
+              observer.observe(shadow, {
+                childList: true,
+                subtree: true,
+              });
+              
+              // Also continue polling as fallback
+              setTimeout(trySubmit, 100);
+            }
+          };
+
+          trySubmit();
+        });
+      };
+
+      await findAndSubmit();
     } catch (error) {
       console.error("Failed to send message:", error);
       setIsLoading(false);
@@ -379,7 +453,8 @@ function HelpPageContent() {
       </div>
 
       {/* Hidden ChatKit component for API access only - must be rendered for API to work */}
-      <div style={{ position: "fixed", top: 0, left: 0, width: "1px", height: "1px", overflow: "hidden", opacity: 0, pointerEvents: "none", zIndex: -1 }}>
+      {/* Give it a minimum size so shadow DOM initializes properly */}
+      <div style={{ position: "fixed", top: "-9999px", left: "-9999px", width: "400px", height: "600px", overflow: "hidden", opacity: 0, pointerEvents: "none", zIndex: -1 }}>
         {chatkit.control && <ChatKit control={chatkit.control} />}
       </div>
 
