@@ -552,6 +552,92 @@ export function ChatKitPanel({
     }
   }, [chatkit, isInitializingSession, setErrorState]);
 
+  // Control text size in ChatKit
+  useEffect(() => {
+    const rootNode = chatContainerRef.current;
+    if (!rootNode) return;
+
+    const applyTextSize = () => {
+      try {
+        // Find ChatKit web component inside our container
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) return;
+
+        // Configure font size here (default: 1rem / 16px)
+        // You can change this value to adjust text size:
+        // - "0.875rem" (14px) - smaller
+        // - "1rem" (16px) - default
+        // - "1.125rem" (18px) - larger
+        // - "1.25rem" (20px) - extra large
+        const baseFontSize = "0.875rem"; // Change this to adjust text size
+
+        // Inject CSS to control text size if not already injected
+        if (!shadow.querySelector('style[data-fyi-text-size]')) {
+          const style = document.createElement('style');
+          style.setAttribute('data-fyi-text-size', '1');
+          style.textContent = `
+            /* Control base font size for chat content */
+            :host {
+              font-size: ${baseFontSize} !important;
+            }
+            /* Message text */
+            [data-thread-turn] p,
+            [data-thread-turn] div,
+            [data-thread-turn] span:not([class*="icon"]):not([class*="Icon"]) {
+              font-size: ${baseFontSize} !important;
+            }
+            /* Composer input */
+            [role="textbox"],
+            [contenteditable="true"] {
+              font-size: ${baseFontSize} !important;
+            }
+            /* Thread items */
+            article p,
+            article div:not([class*="icon"]):not([class*="Icon"]),
+            article span:not([class*="icon"]):not([class*="Icon"]) {
+              font-size: ${baseFontSize} !important;
+            }
+          `;
+          shadow.appendChild(style);
+        }
+      } catch (e) {
+        if (isDev) console.debug('[ChatKitPanel] text size injection error:', e);
+      }
+    };
+
+    // Observe updates in the shadow DOM and apply text size
+    let mo: MutationObserver | null = null;
+    const attachObserver = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) {
+          requestAnimationFrame(attachObserver);
+          return;
+        }
+        try {
+          mo?.disconnect();
+        } catch {}
+        applyTextSize();
+        mo = new MutationObserver(() => applyTextSize());
+        mo.observe(shadow, {
+          childList: true,
+          subtree: true,
+        });
+      } catch (e) {
+        if (isDev) console.debug('[ChatKitPanel] text size observer error:', e);
+      }
+    };
+
+    attachObserver();
+    return () => {
+      try {
+        mo?.disconnect();
+      } catch {}
+    };
+  }, []);
+
   const handleQuickPrompt = useCallback(
     (text: string) => {
       if (!text) return;
