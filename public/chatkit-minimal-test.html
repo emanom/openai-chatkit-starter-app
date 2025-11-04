@@ -96,19 +96,37 @@
       }
 
       async function getClientSecret(currentSecret) {
-        const res = await fetch('/api/create-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
-        });
-        if (!res.ok) {
-          const t = await res.text().catch(() => '');
-          throw new Error('Failed to create ChatKit session: ' + (t || res.statusText));
+        // If ChatKit provides an existing secret, reuse it to maintain session continuity
+        if (currentSecret) {
+          console.log('[Session] Reusing existing secret from ChatKit');
+          return currentSecret;
         }
-        const data = await res.json();
-        try { window.appSessionId = data.app_session_id || null; } catch(_) {}
-        if (!data || !data.client_secret) throw new Error('Missing client_secret in response');
-        return data.client_secret;
+        
+        try {
+          const res = await fetch('/api/create-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+          if (!res.ok) {
+            const t = await res.text().catch(() => '');
+            const errorMsg = 'Failed to create ChatKit session: ' + (t || res.statusText);
+            console.error('[Session]', errorMsg);
+            throw new Error(errorMsg);
+          }
+          const data = await res.json();
+          try { window.appSessionId = data.app_session_id || null; } catch(_) {}
+          if (!data || !data.client_secret) {
+            const errorMsg = 'Missing client_secret in response';
+            console.error('[Session]', errorMsg);
+            throw new Error(errorMsg);
+          }
+          console.log('[Session] Session created successfully');
+          return data.client_secret;
+        } catch (error) {
+          console.error('[Session] Error creating session:', error);
+          throw error;
+        }
       }
 
       (async function initWhenReady(){
@@ -236,6 +254,16 @@
                   console.error('[minimal] widgets.onAction error:', err);
                 }
               }
+            },
+            onError: ({ error }) => {
+              console.error('[ChatKit] Error:', error);
+              // Don't show error overlay - ChatKit handles errors internally
+            },
+            onResponseStart: () => {
+              console.debug('[ChatKit] Response started');
+            },
+            onResponseEnd: () => {
+              console.debug('[ChatKit] Response ended');
             }
           });
 
@@ -274,15 +302,21 @@
                 })?.closest('[data-kind]') || null;
               }
               
-              const allKinds = Array.from(root.querySelectorAll('[data-kind]')).map(el => el.getAttribute('data-kind'));
-              const allRoles = Array.from(root.querySelectorAll('[role]')).map(el => el.getAttribute('role'));
-              console.log('[S3] Attempt:', attempts, 'hasComposer:', !!composer, 'totalElements:', root.querySelectorAll('*').length, 'kinds:', allKinds, 'roles:', allRoles);
+              // Only log every 20 attempts to reduce noise, or on first few attempts
+              if (attempts <= 5 || attempts % 20 === 0) {
+                const allKinds = Array.from(root.querySelectorAll('[data-kind]')).map(el => el.getAttribute('data-kind'));
+                const allRoles = Array.from(root.querySelectorAll('[role]')).map(el => el.getAttribute('role'));
+                console.log('[S3] Attempt:', attempts, 'hasComposer:', !!composer, 'totalElements:', root.querySelectorAll('*').length, 'kinds:', allKinds, 'roles:', allRoles);
+              }
               
               if (!composer) {
-                if (attempts < 300) {
+                if (attempts < 200) {
                   // Use longer delays for later attempts
-                  const delay = attempts < 50 ? 16 : attempts < 100 ? 100 : 500;
+                  const delay = attempts < 30 ? 50 : attempts < 80 ? 200 : 1000;
                   setTimeout(inject, delay);
+                } else {
+                  // After 200 attempts, give up silently
+                  console.warn('[S3] Composer not found after 200 attempts - ChatKit may not be fully initialized');
                 }
                 return;
               }
@@ -398,12 +432,16 @@
               // Find the start screen prompts container
               const startScreen = root.querySelector('[data-kind="start-screen"], [data-part="start-screen"]');
               if (!startScreen) { 
-                if (attempts % 20 === 0 || attempts < 10) {
+                // Only log every 20 attempts to reduce noise, or on first few attempts
+                if (attempts <= 5 || attempts % 20 === 0) {
                   console.log('[CustomPrompts] Attempt', attempts, 'No start screen found yet, totalElements:', root.querySelectorAll('*').length);
                 }
-                if (attempts < 300) {
-                  const delay = attempts < 50 ? 16 : attempts < 100 ? 100 : 500;
+                if (attempts < 200) {
+                  const delay = attempts < 30 ? 50 : attempts < 80 ? 200 : 1000;
                   setTimeout(inject, delay);
+                } else {
+                  // After 200 attempts, give up silently
+                  console.warn('[CustomPrompts] Start screen not found after 200 attempts - ChatKit may not be fully initialized');
                 }
                 return; 
               }
