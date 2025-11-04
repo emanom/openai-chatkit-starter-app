@@ -206,7 +206,7 @@
                 if (priority) lines.push(`Priority: ${priority}`);
                 if (impact) lines.push(`Impact: ${impact}`);
                 const text = lines.join('\n');
-                if (text) { await el.setComposerValue({ text }); await el.focusComposer(); }
+                if (text) { await el.setComposerValue({ text }); }
               } catch(_) {}
               hideForm();
             }
@@ -247,7 +247,7 @@
                   console.debug('[minimal] widgets.onAction', action);
                   if (action?.type === 'prefill' && action?.payload?.text) {
                     await el.setComposerValue({ text: String(action.payload.text) });
-                    await el.focusComposer();
+                    // focusComposer is not supported - ChatKit handles focus automatically
                     return;
                   }
                 } catch(err) {
@@ -402,7 +402,7 @@
               { label: 'Enhancement request', icon: 'sparkle', action: () => showForm() },
               { label: 'Report an issue', icon: 'bug', action: async () => {
                 await el.setComposerValue({ text: 'I want to report the following issue: ' });
-                await el.focusComposer();
+                // focusComposer is not supported - ChatKit handles focus automatically
               }}
             ];
             
@@ -674,12 +674,7 @@
             console.log('[minimal] openChat called');
             wrapper.classList.add('open');
             launcher.setAttribute('aria-expanded', 'true');
-            // Focus composer when opened
-            setTimeout(() => {
-              try { el.focusComposer(); } catch(err) {
-                console.log('[minimal] Could not focus composer:', err);
-              }
-            }, 100);
+            // ChatKit handles focus automatically when opened
           }
 
           function closeChat() {
