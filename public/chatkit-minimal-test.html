@@ -212,6 +212,11 @@
             }
           });
 
+          // Set up error listener before setting options
+          el.addEventListener('error', (event) => {
+            console.error('[ChatKit] Element error event:', event);
+          });
+
           el.setOptions({
             api: { getClientSecret },
             theme: {
@@ -256,6 +261,29 @@
               }
             }
           });
+
+          // Monitor ChatKit initialization
+          let initCheckAttempts = 0;
+          const checkInit = setInterval(() => {
+            initCheckAttempts++;
+            const root = el.shadowRoot;
+            if (root) {
+              const totalElements = root.querySelectorAll('*').length;
+              const hasDataKind = root.querySelectorAll('[data-kind]').length > 0;
+              
+              if (initCheckAttempts <= 10 || initCheckAttempts % 20 === 0) {
+                console.log('[ChatKit] Init check:', initCheckAttempts, 'totalElements:', totalElements, 'hasDataKind:', hasDataKind);
+              }
+              
+              // If ChatKit is ready or we've checked enough times, stop monitoring
+              if (isChatKitReady(el) || initCheckAttempts > 100) {
+                clearInterval(checkInit);
+                if (initCheckAttempts > 100 && !isChatKitReady(el)) {
+                  console.error('[ChatKit] Failed to initialize after 100 checks - may be in error state');
+                }
+              }
+            }
+          }, 500);
 
           wrapper.appendChild(el);
           wrapper.appendChild(form);
