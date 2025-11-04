@@ -254,16 +254,6 @@
                   console.error('[minimal] widgets.onAction error:', err);
                 }
               }
-            },
-            onError: ({ error }) => {
-              console.error('[ChatKit] Error:', error);
-              // Don't show error overlay - ChatKit handles errors internally
-            },
-            onResponseStart: () => {
-              console.debug('[ChatKit] Response started');
-            },
-            onResponseEnd: () => {
-              console.debug('[ChatKit] Response ended');
             }
           });
 
