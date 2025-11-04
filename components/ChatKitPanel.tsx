@@ -45,6 +45,8 @@ type ChatKitPanelProps = {
   onResponseEnd: () => void;
   onThemeRequest: (scheme: ColorScheme) => void;
   initialQuery?: string;
+  hideComposer?: boolean;
+  onChatKitReady?: (chatkit: { setComposerValue: (value: { text: string }) => Promise<void>; focusComposer: () => Promise<void> }) => void;
 };
 
 type ErrorState = {
@@ -70,6 +72,8 @@ export function ChatKitPanel({
   onResponseEnd,
   onThemeRequest,
   initialQuery,
+  hideComposer = false,
+  onChatKitReady,
 }: ChatKitPanelProps) {
   const processedFacts = useRef(new Set<string>());
   const [errors, setErrors] = useState<ErrorState>(() => createInitialErrors());
@@ -554,6 +558,16 @@ export function ChatKitPanel({
     }
   }, [chatkit, isInitializingSession, setErrorState]);
 
+  // Expose chatkit instance to parent component
+  useEffect(() => {
+    if (chatkit && chatkit.control && onChatKitReady) {
+      onChatKitReady({
+        setComposerValue: chatkit.setComposerValue.bind(chatkit),
+        focusComposer: chatkit.focusComposer.bind(chatkit),
+      });
+    }
+  }, [chatkit, onChatKitReady]);
+
   // Set initial query when ChatKit is ready
   useEffect(() => {
     if (initialQuery && chatkit && chatkit.control && !isInitializingSession) {
@@ -561,21 +575,42 @@ export function ChatKitPanel({
       const timer = setTimeout(async () => {
         try {
           await chatkit.setComposerValue({ text: initialQuery });
-          await chatkit.focusComposer();
+          // Auto-submit the query if hideComposer is true (using custom input)
+          if (hideComposer) {
+            // Trigger Enter key press to submit
+            const wc = chatContainerRef.current?.querySelector<HTMLElement>('openai-chatkit');
+            const shadow = wc?.shadowRoot;
+            if (shadow) {
+              const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]') as HTMLElement;
+              if (composer) {
+                const enterEvent = new KeyboardEvent('keydown', {
+                  key: 'Enter',
+                  code: 'Enter',
+                  keyCode: 13,
+                  which: 13,
+                  bubbles: true,
+                  cancelable: true,
+                });
+                composer.dispatchEvent(enterEvent);
+              }
+            }
+          } else {
+            await chatkit.focusComposer();
+          }
         } catch (error) {
           if (isDev) console.debug("[ChatKitPanel] Failed to set initial query:", error);
         }
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [initialQuery, chatkit, isInitializingSession]);
+  }, [initialQuery, chatkit, isInitializingSession, hideComposer]);
 
-  // Control text size in ChatKit
+  // Hide composer and control text size in ChatKit
   useEffect(() => {
     const rootNode = chatContainerRef.current;
     if (!rootNode) return;
 
-    const applyTextSize = () => {
+    const applyStyles = () => {
       try {
         // Find ChatKit web component inside our container
         const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
@@ -590,10 +625,11 @@ export function ChatKitPanel({
         // - "1.25rem" (20px) - extra large
         const baseFontSize = "0.875rem"; // Change this to adjust text size
 
-        // Inject CSS to control text size if not already injected
-        if (!shadow.querySelector('style[data-fyi-text-size]')) {
+        // Inject CSS to control text size and hide composer if needed
+        const styleId = hideComposer ? 'data-fyi-help-page-styles' : 'data-fyi-text-size';
+        if (!shadow.querySelector(`style[${styleId}]`)) {
           const style = document.createElement('style');
-          style.setAttribute('data-fyi-text-size', '1');
+          style.setAttribute(styleId, '1');
           style.textContent = `
             /* Control base font size for chat content */
             :host {
@@ -616,15 +652,32 @@ export function ChatKitPanel({
             article span:not([class*="icon"]):not([class*="Icon"]) {
               font-size: ${baseFontSize} !important;
             }
+            ${hideComposer ? `
+            /* Hide ChatKit composer when using custom input */
+            [part*="composer"],
+            [data-part*="composer"],
+            form[part*="composer"],
+            form[data-part*="composer"],
+            [role="textbox"],
+            [contenteditable="true"] {
+              display: none !important;
+              visibility: hidden !important;
+              height: 0 !important;
+              max-height: 0 !important;
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            ` : ''}
           `;
           shadow.appendChild(style);
         }
       } catch (e) {
-        if (isDev) console.debug('[ChatKitPanel] text size injection error:', e);
+        if (isDev) console.debug('[ChatKitPanel] style injection error:', e);
       }
     };
 
-    // Observe updates in the shadow DOM and apply text size
+    // Observe updates in the shadow DOM and apply styles
     let mo: MutationObserver | null = null;
     const attachObserver = () => {
       try {
@@ -637,14 +690,14 @@ export function ChatKitPanel({
         try {
           mo?.disconnect();
         } catch {}
-        applyTextSize();
-        mo = new MutationObserver(() => applyTextSize());
+        applyStyles();
+        mo = new MutationObserver(() => applyStyles());
         mo.observe(shadow, {
           childList: true,
           subtree: true,
         });
       } catch (e) {
-        if (isDev) console.debug('[ChatKitPanel] text size observer error:', e);
+        if (isDev) console.debug('[ChatKitPanel] style observer error:', e);
       }
     };
 
@@ -654,7 +707,7 @@ export function ChatKitPanel({
         mo?.disconnect();
       } catch {}
     };
-  }, []);
+  }, [hideComposer]);
 
   const handleQuickPrompt = useCallback(
     (text: string) => {

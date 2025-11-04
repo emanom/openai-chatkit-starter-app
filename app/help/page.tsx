@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, Suspense } from "react";
+import { useState, useCallback, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ChatKitPanel, type FactAction } from "@/components/ChatKitPanel";
@@ -8,36 +8,69 @@ import { useColorScheme } from "@/hooks/useColorScheme";
 
 function HelpPageContent() {
   const [inputValue, setInputValue] = useState("");
-  const [showChat, setShowChat] = useState(false);
-  const [initialQuery, setInitialQuery] = useState<string | undefined>(undefined);
+  const chatKitRef = useRef<{ setComposerValue: (value: { text: string }) => Promise<void>; focusComposer: () => Promise<void> } | null>(null);
   const { scheme, setScheme } = useColorScheme();
   const searchParams = useSearchParams();
 
-  // Check for query parameter on mount
+  const handleSendMessage = async (text: string) => {
+    if (!chatKitRef.current || !text.trim()) return;
+    try {
+      await chatKitRef.current.setComposerValue({ text: text.trim() });
+      // Trigger submit by simulating Enter key press on ChatKit's hidden composer
+      setTimeout(() => {
+        const wc = document.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (shadow) {
+          const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]') as HTMLElement;
+          if (composer) {
+            const enterEvent = new KeyboardEvent('keydown', {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true,
+            });
+            composer.dispatchEvent(enterEvent);
+          }
+        }
+      }, 100);
+    } catch (error) {
+      console.error("Failed to send message:", error);
+    }
+  };
+
+  // Check for query parameter on mount - wait for ChatKit to be ready
   useEffect(() => {
     const q = searchParams.get("q");
     if (q) {
-      setInitialQuery(q);
-      setShowChat(true);
+      // Wait for ChatKit to initialize
+      const checkAndSend = () => {
+        if (chatKitRef.current) {
+          handleSendMessage(q);
+        } else {
+          setTimeout(checkAndSend, 100);
+        }
+      };
+      checkAndSend();
     }
   }, [searchParams]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (inputValue.trim()) {
-      setInitialQuery(inputValue.trim());
-      setShowChat(true);
+      await handleSendMessage(inputValue.trim());
       setInputValue(""); // Clear input
-    } else {
-      setInitialQuery(undefined);
-      setShowChat(true);
     }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setInitialQuery(suggestion);
-    setShowChat(true);
+  const handleSuggestionClick = async (suggestion: string) => {
+    await handleSendMessage(suggestion);
   };
+
+  const handleChatKitReady = useCallback((chatkit: { setComposerValue: (value: { text: string }) => Promise<void>; focusComposer: () => Promise<void> }) => {
+    chatKitRef.current = chatkit;
+  }, []);
 
   const handleWidgetAction = useCallback(async (action: FactAction) => {
     if (process.env.NODE_ENV !== "production") {
@@ -137,24 +170,22 @@ function HelpPageContent() {
         </div>
       </div>
 
-      {/* ChatKit Section - Appears below when activated */}
-      {showChat && (
-        <div className="flex-1 border-t border-gray-200">
-          <div className="h-[calc(100vh-400px)] min-h-[600px] w-full">
-            <ChatKitPanel
-              theme={scheme}
-              onWidgetAction={handleWidgetAction}
-              onResponseEnd={handleResponseEnd}
-              onThemeRequest={setScheme}
-              initialQuery={initialQuery}
-            />
-          </div>
+      {/* ChatKit Section - Always visible, composer hidden */}
+      <div className="flex-1 border-t border-gray-200">
+        <div className="h-[calc(100vh-400px)] min-h-[600px] w-full">
+          <ChatKitPanel
+            theme={scheme}
+            onWidgetAction={handleWidgetAction}
+            onResponseEnd={handleResponseEnd}
+            onThemeRequest={setScheme}
+            hideComposer={true}
+            onChatKitReady={handleChatKitReady}
+          />
         </div>
-      )}
+      </div>
 
-      {/* Bottom Information Cards - Show when chat is not active or at bottom */}
-      {!showChat && (
-        <div className="flex flex-col items-center px-4 pb-12">
+      {/* Bottom Information Cards - Always visible */}
+      <div className="flex flex-col items-center px-4 pb-12">
           <div className="w-full max-w-2xl">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {/* Submit a Support Request Card */}
@@ -218,7 +249,6 @@ function HelpPageContent() {
             </div>
           </div>
         </div>
-      )}
     </div>
   );
 }
