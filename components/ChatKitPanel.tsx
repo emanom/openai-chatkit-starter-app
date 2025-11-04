@@ -44,6 +44,7 @@ type ChatKitPanelProps = {
   onWidgetAction: (action: FactAction) => Promise<void>;
   onResponseEnd: () => void;
   onThemeRequest: (scheme: ColorScheme) => void;
+  initialQuery?: string;
 };
 
 type ErrorState = {
@@ -68,6 +69,7 @@ export function ChatKitPanel({
   onWidgetAction,
   onResponseEnd,
   onThemeRequest,
+  initialQuery,
 }: ChatKitPanelProps) {
   const processedFacts = useRef(new Set<string>());
   const [errors, setErrors] = useState<ErrorState>(() => createInitialErrors());
@@ -551,6 +553,22 @@ export function ChatKitPanel({
       }
     }
   }, [chatkit, isInitializingSession, setErrorState]);
+
+  // Set initial query when ChatKit is ready
+  useEffect(() => {
+    if (initialQuery && chatkit && chatkit.control && !isInitializingSession) {
+      // Wait a bit for ChatKit to fully initialize, then set the query
+      const timer = setTimeout(async () => {
+        try {
+          await chatkit.setComposerValue({ text: initialQuery });
+          await chatkit.focusComposer();
+        } catch (error) {
+          if (isDev) console.debug("[ChatKitPanel] Failed to set initial query:", error);
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [initialQuery, chatkit, isInitializingSession]);
 
   // Control text size in ChatKit
   useEffect(() => {
