@@ -11,7 +11,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.908.0",
     "@aws-sdk/s3-request-presigner": "^3.908.0",
-    "@openai/chatkit-react": ">=1.1.1 <2.0.0",
+    "@openai/chatkit-react": "^1.2.0",
     "next": "^15.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
@@ -20,7 +20,7 @@
     "@tailwindcss/oxide-linux-x64-gnu": "4.1.11",
     "@tailwindcss/oxide-win32-x64-msvc": "^4.1.11",
     "lightningcss-linux-x64-gnu": "1.30.1",
-    "lightningcss-win32-x64-msvc": "^1.30.1"
+    "lightningcss-win32-x64-msvc": "^1.30.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -30,6 +30,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.4",
+    "lightningcss": "^1.30.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
