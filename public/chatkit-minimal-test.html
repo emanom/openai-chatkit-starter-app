@@ -98,7 +98,6 @@
       async function getClientSecret(currentSecret) {
         // If ChatKit provides an existing secret, reuse it to maintain session continuity
         if (currentSecret) {
-          console.log('[Session] Reusing existing secret from ChatKit');
           return currentSecret;
         }
         
@@ -121,7 +120,6 @@
             console.error('[Session]', errorMsg);
             throw new Error(errorMsg);
           }
-          console.log('[Session] Session created successfully');
           return data.client_secret;
         } catch (error) {
           console.error('[Session] Error creating session:', error);
