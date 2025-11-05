@@ -140,20 +140,20 @@ function HelpPageContent() {
   }, [chatkit.control]);
 
   // Hide ChatKit UI completely but keep it functional
-  // Use a minimal visible size to ensure shadow DOM initializes properly
+  // Use a proper size and ensure it's positioned so shadow DOM initializes properly
   useEffect(() => {
     const style = document.createElement("style");
     style.textContent = `
       openai-chatkit {
         position: fixed !important;
-        top: -9999px !important;
-        left: -9999px !important;
-        width: 400px !important;
-        height: 600px !important;
+        top: -10000px !important;
+        left: -10000px !important;
+        width: 600px !important;
+        height: 800px !important;
         opacity: 0 !important;
-        pointer-events: none !important;
-        overflow: hidden !important;
-        z-index: -1 !important;
+        pointer-events: auto !important;
+        overflow: visible !important;
+        z-index: -9999 !important;
       }
     `;
     document.head.appendChild(style);
@@ -213,69 +213,131 @@ function HelpPageContent() {
               return;
             }
 
-            // Try to find composer
-            const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"], textarea, input[type="text"]') as HTMLElement;
+            // Try multiple selectors to find composer
+            const composerSelectors = [
+              '[role="textbox"]',
+              '[contenteditable="true"]',
+              'textarea',
+              'input[type="text"]',
+              '[data-composer]',
+              'form [contenteditable]',
+              'form textarea',
+              'form input[type="text"]',
+            ];
+            
+            let composer: HTMLElement | null = null;
+            for (const selector of composerSelectors) {
+              composer = shadow.querySelector(selector) as HTMLElement;
+              if (composer) break;
+            }
             
             if (composer) {
               // Found it! Now submit
-              composer.focus();
-              
-              // Set value directly in case setComposerValue didn't work
-              if (composer.tagName === 'INPUT' || composer.tagName === 'TEXTAREA') {
-                (composer as HTMLInputElement | HTMLTextAreaElement).value = messageText;
-              } else if (composer.contentEditable === 'true') {
-                composer.textContent = messageText;
-              }
-              
-              // Try Enter key press
-              const enterDown = new KeyboardEvent("keydown", {
-                key: "Enter",
-                code: "Enter",
-                keyCode: 13,
-                which: 13,
-                bubbles: true,
-                cancelable: false,
-              });
-              composer.dispatchEvent(enterDown);
-              
-              const enterUp = new KeyboardEvent("keyup", {
-                key: "Enter",
-                code: "Enter",
-                keyCode: 13,
-                which: 13,
-                bubbles: true,
-                cancelable: false,
-              });
-              composer.dispatchEvent(enterUp);
+              (async () => {
+                try {
+                  composer!.focus();
+                  
+                  // Wait a moment for focus
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  
+                  // Set value directly
+                  if (composer!.tagName === 'INPUT' || composer!.tagName === 'TEXTAREA') {
+                    (composer as HTMLInputElement | HTMLTextAreaElement).value = messageText;
+                    // Trigger input event
+                    composer!.dispatchEvent(new Event('input', { bubbles: true }));
+                  } else if (composer!.contentEditable === 'true') {
+                    composer!.textContent = messageText;
+                    composer!.dispatchEvent(new Event('input', { bubbles: true }));
+                  }
+                  
+                  // Wait a bit more
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  
+                  // Try Enter key press (keydown + keyup + keypress)
+                  const enterDown = new KeyboardEvent("keydown", {
+                    key: "Enter",
+                    code: "Enter",
+                    keyCode: 13,
+                    which: 13,
+                    bubbles: true,
+                    cancelable: true,
+                  });
+                  composer!.dispatchEvent(enterDown);
+                  
+                  const enterPress = new KeyboardEvent("keypress", {
+                    key: "Enter",
+                    code: "Enter",
+                    keyCode: 13,
+                    which: 13,
+                    bubbles: true,
+                    cancelable: true,
+                  });
+                  composer!.dispatchEvent(enterPress);
+                  
+                  const enterUp = new KeyboardEvent("keyup", {
+                    key: "Enter",
+                    code: "Enter",
+                    keyCode: 13,
+                    which: 13,
+                    bubbles: true,
+                    cancelable: true,
+                  });
+                  composer!.dispatchEvent(enterUp);
 
-              // Also try to find and click submit button
-              const submitButton = shadow.querySelector('button[type="submit"], button[aria-label*="send" i], button[aria-label*="submit" i], button:has(svg)') as HTMLElement;
-              if (submitButton) {
-                submitButton.click();
-              }
-              
-              resolve();
+                  // Also try to find and click submit button
+                  await new Promise(resolve => setTimeout(resolve, 50));
+                  const submitSelectors = [
+                    'button[type="submit"]',
+                    'button[aria-label*="send" i]',
+                    'button[aria-label*="Send" i]',
+                    'button[aria-label*="submit" i]',
+                    'button:has(svg)',
+                    '[role="button"][aria-label*="send" i]',
+                  ];
+                  
+                  for (const selector of submitSelectors) {
+                    const submitButton = shadow.querySelector(selector) as HTMLElement;
+                    if (submitButton && submitButton.offsetParent !== null) {
+                      submitButton.click();
+                      break;
+                    }
+                  }
+                } catch (e) {
+                  console.warn("Error submitting via composer:", e);
+                }
+                
+                resolve();
+              })();
             } else {
               // Use MutationObserver to watch for composer to appear
               const observer = new MutationObserver(() => {
-                const newComposer = shadow.querySelector('[role="textbox"], [contenteditable="true"], textarea, input[type="text"]') as HTMLElement;
+                let newComposer: HTMLElement | null = null;
+                for (const selector of composerSelectors) {
+                  newComposer = shadow.querySelector(selector) as HTMLElement;
+                  if (newComposer) break;
+                }
+                
                 if (newComposer) {
                   observer.disconnect();
                   // Retry submit with the new composer
-                  setTimeout(() => {
-                    newComposer.focus();
-                    const enterDown = new KeyboardEvent("keydown", {
-                      key: "Enter",
-                      code: "Enter",
-                      keyCode: 13,
-                      which: 13,
-                      bubbles: true,
-                      cancelable: false,
-                    });
-                    newComposer.dispatchEvent(enterDown);
-                    const submitButton = shadow.querySelector('button[type="submit"], button[aria-label*="send" i]') as HTMLElement;
-                    if (submitButton) {
-                      submitButton.click();
+                  setTimeout(async () => {
+                    try {
+                      newComposer!.focus();
+                      await new Promise(resolve => setTimeout(resolve, 50));
+                      if (newComposer!.tagName === 'INPUT' || newComposer!.tagName === 'TEXTAREA') {
+                        (newComposer as HTMLInputElement | HTMLTextAreaElement).value = messageText;
+                      } else if (newComposer!.contentEditable === 'true') {
+                        newComposer!.textContent = messageText;
+                      }
+                      await new Promise(resolve => setTimeout(resolve, 100));
+                      const enterDown = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+                      newComposer!.dispatchEvent(enterDown);
+                      const submitButton = shadow.querySelector('button[type="submit"], button[aria-label*="send" i]') as HTMLElement;
+                      if (submitButton) {
+                        submitButton.click();
+                      }
+                    } catch (e) {
+                      console.warn("Error in MutationObserver submit:", e);
                     }
                     resolve();
                   }, 100);
@@ -285,10 +347,12 @@ function HelpPageContent() {
               observer.observe(shadow, {
                 childList: true,
                 subtree: true,
+                attributes: true,
+                attributeFilter: ['role', 'contenteditable'],
               });
               
               // Also continue polling as fallback
-              setTimeout(trySubmit, 100);
+              setTimeout(trySubmit, 200);
             }
           };
 
@@ -458,8 +522,8 @@ function HelpPageContent() {
       </div>
 
       {/* Hidden ChatKit component for API access only - must be rendered for API to work */}
-      {/* Give it a minimum size so shadow DOM initializes properly */}
-      <div style={{ position: "fixed", top: "-9999px", left: "-9999px", width: "400px", height: "600px", overflow: "hidden", opacity: 0, pointerEvents: "none", zIndex: -1 }}>
+      {/* Give it proper size so shadow DOM and composer initialize properly */}
+      <div style={{ position: "fixed", top: "-10000px", left: "-10000px", width: "600px", height: "800px", overflow: "visible", opacity: 0, pointerEvents: "auto", zIndex: -9999 }}>
         {chatkit.control && <ChatKit control={chatkit.control} />}
       </div>
 
