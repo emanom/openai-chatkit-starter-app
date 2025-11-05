@@ -231,6 +231,7 @@ function HelpPageContent() {
             alt="FYI Logo" 
             width={40} 
             height={13}
+            style={{ height: 'auto' }}
             priority
           />
           <h1 className="text-xl font-semibold text-gray-900">FYI Support Assistant</h1>
