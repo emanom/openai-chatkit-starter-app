@@ -2,30 +2,143 @@
 
 import { useState, useCallback, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { ChatKitPanel, type FactAction } from "@/components/ChatKitPanel";
+import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
 import type { ColorScheme } from "@/hooks/useColorScheme";
 
 function HelpPageContent() {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [hasStartedChat, setHasStartedChat] = useState(false);
-  const chatKitRef = useRef<{ setComposerValue: (value: { text: string }) => Promise<void>; focusComposer: () => Promise<void> } | null>(null);
+  const customInputRef = useRef<HTMLInputElement>(null);
   const { scheme, setScheme } = useColorScheme();
   const searchParams = useSearchParams();
 
-  // ChatKit start screen prompts - matching ChatKitPanel configuration
+  // ChatKit start screen prompts
   const chatKitPrompts = [
     { label: "What can fyi do for me?", prompt: "What can fyi do for me?" },
     { label: "Tell me about the subscription plans", prompt: "Tell me about the subscription plans" },
     { label: "What's new with fyi?", prompt: "What's the latest with fyi?" },
   ];
 
-  // Handle sending messages - use ChatKit's API
+  // Get client secret for ChatKit
+  const getClientSecret = useCallback(async (currentSecret: string | null) => {
+    if (currentSecret) return currentSecret;
+
+    const response = await fetch(CREATE_SESSION_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workflow: { id: WORKFLOW_ID },
+        chatkit_configuration: {
+          file_upload: { enabled: true },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to create session");
+    }
+
+    const data = await response.json();
+    return data.client_secret as string;
+  }, []);
+
+  // Initialize ChatKit
+  const chatkit = useChatKit({
+    api: { getClientSecret },
+    theme: {
+      colorScheme: scheme,
+      color: {
+        grayscale: { hue: 220, tint: 6, shade: scheme === "dark" ? 1 : 4 },
+        accent: { primary: "#4ccf96", level: 3 },
+      },
+      radius: "round",
+    },
+    startScreen: {
+      greeting: "How can I help you today?",
+      prompts: chatKitPrompts.map(p => ({ label: p.label, prompt: p.prompt, icon: "sparkle" as const })),
+    },
+    onResponseStart: () => {
+      setIsLoading(true);
+    },
+    onResponseEnd: () => {
+      setIsLoading(false);
+    },
+  });
+
+  // Sync custom input with ChatKit's composer
+  useEffect(() => {
+    if (!chatkit.control) return;
+
+    const syncInput = async () => {
+      // When user types in custom input, sync to ChatKit's composer
+      if (customInputRef.current) {
+        const value = customInputRef.current.value;
+        try {
+          await chatkit.setComposerValue({ text: value });
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+    };
+
+    const input = customInputRef.current;
+    if (input) {
+      input.addEventListener("input", syncInput);
+      return () => {
+        input.removeEventListener("input", syncInput);
+      };
+    }
+  }, [chatkit.control, chatkit]);
+
+  // Style ChatKit: Hide composer and start screen, keep messages visible
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.id = "chatkit-custom-styles";
+    style.textContent = `
+      /* Hide ChatKit's start screen completely (we have our own) */
+      openai-chatkit [data-start-screen],
+      openai-chatkit [data-kind="start-screen"] {
+        display: none !important;
+      }
+      
+      /* Hide ChatKit's composer completely (we use custom input) */
+      openai-chatkit [part*="composer"],
+      openai-chatkit [data-part*="composer"],
+      openai-chatkit form[part*="composer"],
+      openai-chatkit form[data-part*="composer"],
+      openai-chatkit [role="textbox"],
+      openai-chatkit [contenteditable="true"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      
+      /* Keep ChatKit messages visible and styled */
+      openai-chatkit {
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      if (document.head.contains(style)) {
+        document.head.removeChild(style);
+      }
+    };
+  }, []);
+
+  // Handle sending messages
   const handleSendMessage = useCallback(async (text: string) => {
     const messageText = text.trim();
-    if (!messageText || !chatKitRef.current) {
-      console.warn("Cannot send message: ChatKit not ready", { hasControl: !!chatKitRef.current, text: messageText });
+    if (!messageText || !chatkit.control) {
       return;
     }
 
@@ -33,75 +146,40 @@ function HelpPageContent() {
     setIsLoading(true);
 
     try {
-      // Use ChatKit's API to set the composer value
-      await chatKitRef.current.setComposerValue({ text: messageText });
+      // Set ChatKit's composer value
+      await chatkit.setComposerValue({ text: messageText });
+      await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Wait a moment for ChatKit to process
+      // Focus and submit
+      await chatkit.focusComposer();
       await new Promise(resolve => setTimeout(resolve, 200));
       
-      // Focus the composer - this makes ChatKit ready
-      await chatKitRef.current.focusComposer();
-      
-      // Wait a bit more, then trigger Enter key to submit
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Trigger Enter key on ChatKit's web component to submit
+      // Trigger Enter key on ChatKit
       const wc = document.querySelector<HTMLElement>("openai-chatkit");
       if (wc) {
-        const shadow = wc.shadowRoot;
-        if (shadow) {
-          // Find the iframe and send postMessage, or dispatch Enter event
-          const iframe = shadow.querySelector('iframe.ck-iframe, iframe') as HTMLIFrameElement;
-          if (iframe?.contentWindow) {
-            // Try postMessage first
-            iframe.contentWindow.postMessage({
-              type: 'chatkit-submit',
-              text: messageText
-            }, '*');
-          }
-          
-          // Also dispatch Enter event on web component as fallback
-          const enterEvent = new KeyboardEvent("keydown", {
-            key: "Enter",
-            code: "Enter",
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true,
-          });
-          wc.dispatchEvent(enterEvent);
-        }
+        const enterEvent = new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
+        });
+        wc.dispatchEvent(enterEvent);
       }
     } catch (error) {
       console.error("Failed to send message:", error);
       setIsLoading(false);
     }
-  }, []);
+  }, [chatkit]);
 
-  const handleChatKitReady = useCallback((chatkit: { setComposerValue: (value: { text: string }) => Promise<void>; focusComposer: () => Promise<void> }) => {
-    chatKitRef.current = chatkit;
-  }, []);
-
-  const handleWidgetAction = useCallback(async (action: FactAction) => {
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[HelpPage] widget action", action);
-    }
-  }, []);
-
-  const handleResponseEnd = useCallback(() => {
-    setIsLoading(false);
-    if (process.env.NODE_ENV !== "production") {
-      console.debug("[HelpPage] response end");
-    }
-  }, []);
-
-  // Check for query parameter on mount
+  // Check for query parameter
   useEffect(() => {
     const q = searchParams.get("q");
-    if (q && chatKitRef.current) {
+    if (q && chatkit.control) {
       handleSendMessage(q);
     }
-  }, [searchParams, handleSendMessage]);
+  }, [searchParams, chatkit.control, handleSendMessage]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,7 +193,6 @@ function HelpPageContent() {
     await handleSendMessage(suggestion);
   };
 
-
   return (
     <div className="flex min-h-screen flex-col bg-white">
       {/* Header Section - Always Visible */}
@@ -126,20 +203,7 @@ function HelpPageContent() {
             How can I help you today?
           </h1>
 
-          {/* Loading indicator */}
-          {isLoading && (
-            <div className="flex justify-start px-4">
-              <div className="bg-gray-100 rounded-lg px-4 py-3">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Chat Input Area */}
+          {/* Custom Input Area - Syncs with ChatKit's composer */}
           <form onSubmit={handleSubmit} className="relative">
             <div className="relative flex items-center rounded-2xl border border-gray-300 bg-white px-4 py-4 shadow-sm transition-shadow focus-within:border-gray-400 focus-within:shadow-md">
               {/* Smiley Icon */}
@@ -160,6 +224,7 @@ function HelpPageContent() {
 
               {/* Input Field */}
               <input
+                ref={customInputRef}
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
@@ -198,7 +263,20 @@ function HelpPageContent() {
             </div>
           </form>
 
-          {/* ChatKit Start Screen Prompts - Using same prompts as ChatKitPanel */}
+          {/* Loading indicator */}
+          {isLoading && (
+            <div className="flex justify-start px-4">
+              <div className="bg-gray-100 rounded-lg px-4 py-3">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ChatKit Start Screen Prompts */}
           {!hasStartedChat && (
             <div className="flex flex-wrap justify-center gap-3">
               {chatKitPrompts.map((prompt) => (
@@ -216,17 +294,12 @@ function HelpPageContent() {
         </div>
       </div>
 
-      {/* ChatKit - rendered normally, composer hidden, displays messages */}
+      {/* ChatKit - Rendered with custom styling */}
       <div className="flex-1 border-t border-gray-200 overflow-hidden">
         <div className="h-[calc(100vh-500px)] min-h-[400px] max-h-[600px] w-full">
-          <ChatKitPanel
-            theme={scheme}
-            onWidgetAction={handleWidgetAction}
-            onResponseEnd={handleResponseEnd}
-            onThemeRequest={setScheme}
-            hideComposer={true}
-            onChatKitReady={handleChatKitReady}
-          />
+          {chatkit.control && (
+            <ChatKit control={chatkit.control} />
+          )}
         </div>
       </div>
 
