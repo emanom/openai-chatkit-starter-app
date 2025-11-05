@@ -235,32 +235,58 @@ function HelpPageContent() {
       const wc = await waitForChatKit();
       const shadow = wc.shadowRoot!;
       
-      // CRITICAL: ChatKit needs a thread started before composer appears
-      // Try to trigger start screen prompt to initialize thread
-      const startScreenSelectors = [
-        '[data-start-screen-prompt]',
-        'button[data-prompt]',
-        '[role="button"][data-kind="prompt"]',
-        'button',
-        '[role="button"]',
-      ];
-      
-      let startScreenPrompt: HTMLElement | null = null;
-      for (const selector of startScreenSelectors) {
-        const prompts = shadow.querySelectorAll(selector);
-        if (prompts.length > 0) {
-          startScreenPrompt = prompts[0] as HTMLElement;
-          if (startScreenPrompt.offsetParent !== null || startScreenPrompt.getBoundingClientRect().width > 0) {
-            console.log(`[ChatKit] Found start screen prompt with selector: ${selector}`);
-            break;
-          }
-        }
+      // ChatKit uses an iframe - need to access iframe content
+      const iframe = shadow.querySelector('iframe.ck-iframe, iframe') as HTMLIFrameElement;
+      if (!iframe) {
+        throw new Error("ChatKit iframe not found");
       }
       
-      if (startScreenPrompt && messages.length === 0) {
-        console.log('[ChatKit] Clicking start screen prompt to initialize thread...');
-        startScreenPrompt.click();
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for thread to initialize
+      // Wait for iframe to load
+      await new Promise<void>((resolve) => {
+        if (iframe.contentDocument?.readyState === 'complete') {
+          resolve();
+        } else {
+          iframe.onload = () => resolve();
+          setTimeout(() => resolve(), 2000); // Timeout after 2s
+        }
+      });
+      
+      // Try to access iframe document
+      let iframeDoc: Document | null = null;
+      try {
+        iframeDoc = iframe.contentDocument || iframe.contentWindow?.document || null;
+      } catch (e) {
+        console.warn('[ChatKit] Cannot access iframe content (might be cross-origin)');
+      }
+      
+      if (iframeDoc && messages.length === 0) {
+        // CRITICAL: ChatKit needs a thread started before composer appears
+        // Try to trigger start screen prompt to initialize thread
+        const startScreenSelectors = [
+          '[data-start-screen-prompt]',
+          'button[data-prompt]',
+          '[role="button"][data-kind="prompt"]',
+          'button',
+          '[role="button"]',
+        ];
+        
+        let startScreenPrompt: HTMLElement | null = null;
+        for (const selector of startScreenSelectors) {
+          const prompts = iframeDoc.querySelectorAll(selector);
+          if (prompts.length > 0) {
+            startScreenPrompt = prompts[0] as HTMLElement;
+            if (startScreenPrompt.offsetParent !== null || startScreenPrompt.getBoundingClientRect().width > 0) {
+              console.log(`[ChatKit] Found start screen prompt in iframe with selector: ${selector}`);
+              break;
+            }
+          }
+        }
+        
+        if (startScreenPrompt) {
+          console.log('[ChatKit] Clicking start screen prompt to initialize thread...');
+          startScreenPrompt.click();
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for thread to initialize
+        }
       }
       
       // Set the composer value
@@ -282,26 +308,50 @@ function HelpPageContent() {
               return;
             }
 
-            // Debug: log what's in the shadow DOM
-            if (attempts === 1 || attempts % 10 === 0) {
-              const allElements = shadow.querySelectorAll('*');
-              const elementInfo = Array.from(allElements).map(el => ({
-                tag: el.tagName,
-                role: el.getAttribute('role'),
-                contenteditable: el.getAttribute('contenteditable'),
-                dataKind: el.getAttribute('data-kind'),
-                dataPart: el.getAttribute('data-part'),
-                part: el.getAttribute('part'),
-                id: el.id,
-                className: el.className,
-                text: el.textContent?.slice(0, 100),
-                innerHTML: el.innerHTML?.slice(0, 200),
-              }));
-              console.log(`[ChatKit Debug] Attempt ${attempts}, found ${allElements.length} elements:`, elementInfo);
-              console.log(`[ChatKit Debug] Shadow root HTML (first 500 chars):`, shadow.innerHTML?.slice(0, 500));
+            // ChatKit uses an iframe! We need to access the iframe's content
+            const iframe = shadow.querySelector('iframe.ck-iframe, iframe') as HTMLIFrameElement;
+            
+            if (!iframe) {
+              console.warn(`[ChatKit] No iframe found in shadow DOM`);
+              setTimeout(trySubmit, 200);
+              return;
             }
             
-            // Try multiple selectors to find composer
+            // Debug: log iframe info
+            if (attempts === 1 || attempts % 10 === 0) {
+              console.log(`[ChatKit Debug] Attempt ${attempts}, iframe found:`, {
+                src: iframe.src,
+                contentWindow: !!iframe.contentWindow,
+                contentDocument: !!iframe.contentDocument,
+              });
+            }
+            
+            // Try to access iframe content (might be same-origin or cross-origin)
+            let iframeDoc: Document | null = null;
+            try {
+              iframeDoc = iframe.contentDocument || iframe.contentWindow?.document || null;
+            } catch (e) {
+              // Cross-origin - can't access directly
+              console.warn('[ChatKit] Iframe is cross-origin, cannot access content directly');
+              // Try using postMessage API instead
+              if (iframe.contentWindow) {
+                // Send message to iframe to trigger submit
+                iframe.contentWindow.postMessage({ type: 'chatkit-submit', text: messageText }, '*');
+                console.log('[ChatKit] Sent postMessage to iframe');
+                resolve();
+                return;
+              }
+              setTimeout(trySubmit, 200);
+              return;
+            }
+            
+            if (!iframeDoc) {
+              // Iframe not loaded yet
+              setTimeout(trySubmit, 200);
+              return;
+            }
+            
+            // Try multiple selectors to find composer INSIDE the iframe
             const composerSelectors = [
               '[role="textbox"]',
               '[contenteditable="true"]',
@@ -317,9 +367,9 @@ function HelpPageContent() {
             
             let composer: HTMLElement | null = null;
             for (const selector of composerSelectors) {
-              composer = shadow.querySelector(selector) as HTMLElement;
+              composer = iframeDoc.querySelector(selector) as HTMLElement;
               if (composer) {
-                console.log(`[ChatKit] Found composer with selector: ${selector}`);
+                console.log(`[ChatKit] Found composer in iframe with selector: ${selector}`);
                 break;
               }
             }
@@ -389,7 +439,7 @@ function HelpPageContent() {
                   ];
                   
                   for (const selector of submitSelectors) {
-                    const submitButton = shadow.querySelector(selector) as HTMLElement;
+                    const submitButton = iframeDoc.querySelector(selector) as HTMLElement;
                     if (submitButton && submitButton.offsetParent !== null) {
                       submitButton.click();
                       break;
@@ -402,9 +452,9 @@ function HelpPageContent() {
                 resolve();
               })();
             } else {
-              // If composer not found, try clicking start screen prompt to initialize thread
-              if (attempts === 1) {
-                const startScreenPrompts = shadow.querySelectorAll('[data-start-screen-prompt], button[data-prompt], [role="button"][data-kind="prompt"], button');
+              // If composer not found, try clicking start screen prompt to initialize thread (inside iframe)
+              if (attempts === 1 && iframeDoc) {
+                const startScreenPrompts = iframeDoc.querySelectorAll('[data-start-screen-prompt], button[data-prompt], [role="button"][data-kind="prompt"], button');
                 if (startScreenPrompts.length > 0) {
                   // Click any button to potentially initialize the thread
                   (startScreenPrompts[0] as HTMLElement).click();
@@ -416,47 +466,49 @@ function HelpPageContent() {
                 }
               }
               
-              // Use MutationObserver to watch for composer to appear
-              const observer = new MutationObserver(() => {
-                let newComposer: HTMLElement | null = null;
-                for (const selector of composerSelectors) {
-                  newComposer = shadow.querySelector(selector) as HTMLElement;
-                  if (newComposer) break;
-                }
+              // Use MutationObserver to watch for composer to appear INSIDE the iframe
+              if (iframeDoc) {
+                const observer = new MutationObserver(() => {
+                  let newComposer: HTMLElement | null = null;
+                  for (const selector of composerSelectors) {
+                    newComposer = iframeDoc!.querySelector(selector) as HTMLElement;
+                    if (newComposer) break;
+                  }
+                  
+                  if (newComposer) {
+                    observer.disconnect();
+                    // Retry submit with the new composer
+                    setTimeout(async () => {
+                      try {
+                        newComposer!.focus();
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                        if (newComposer!.tagName === 'INPUT' || newComposer!.tagName === 'TEXTAREA') {
+                          (newComposer as HTMLInputElement | HTMLTextAreaElement).value = messageText;
+                        } else if (newComposer!.contentEditable === 'true') {
+                          newComposer!.textContent = messageText;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        const enterDown = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+                        newComposer!.dispatchEvent(enterDown);
+                        const submitButton = iframeDoc!.querySelector('button[type="submit"], button[aria-label*="send" i]') as HTMLElement;
+                        if (submitButton) {
+                          submitButton.click();
+                        }
+                      } catch (e) {
+                        console.warn("Error in MutationObserver submit:", e);
+                      }
+                      resolve();
+                    }, 100);
+                  }
+                });
                 
-                if (newComposer) {
-                  observer.disconnect();
-                  // Retry submit with the new composer
-                  setTimeout(async () => {
-                    try {
-                      newComposer!.focus();
-                      await new Promise(resolve => setTimeout(resolve, 50));
-                      if (newComposer!.tagName === 'INPUT' || newComposer!.tagName === 'TEXTAREA') {
-                        (newComposer as HTMLInputElement | HTMLTextAreaElement).value = messageText;
-                      } else if (newComposer!.contentEditable === 'true') {
-                        newComposer!.textContent = messageText;
-                      }
-                      await new Promise(resolve => setTimeout(resolve, 100));
-                      const enterDown = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true, cancelable: true });
-                      newComposer!.dispatchEvent(enterDown);
-                      const submitButton = shadow.querySelector('button[type="submit"], button[aria-label*="send" i]') as HTMLElement;
-                      if (submitButton) {
-                        submitButton.click();
-                      }
-                    } catch (e) {
-                      console.warn("Error in MutationObserver submit:", e);
-                    }
-                    resolve();
-                  }, 100);
-                }
-              });
-              
-              observer.observe(shadow, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['role', 'contenteditable'],
-              });
+                observer.observe(iframeDoc, {
+                  childList: true,
+                  subtree: true,
+                  attributes: true,
+                  attributeFilter: ['role', 'contenteditable'],
+                });
+              }
               
               // Also continue polling as fallback
               setTimeout(trySubmit, 200);
