@@ -190,7 +190,7 @@ function HelpPageContent() {
     };
   }, []);
 
-  // Handle sending messages
+  // Handle sending messages - use ChatKit's API
   const handleSendMessage = useCallback(async (text: string) => {
     const messageText = text.trim();
     if (!messageText || !chatkit.control) {
@@ -209,317 +209,44 @@ function HelpPageContent() {
     setIsLoading(true);
 
     try {
-      // First, ensure ChatKit is fully loaded
-      const waitForChatKit = (): Promise<HTMLElement> => {
-        return new Promise((resolve, reject) => {
-          let attempts = 0;
-          const maxAttempts = 100; // 10 seconds
-          
-          const check = () => {
-            attempts++;
-            const wc = document.querySelector<HTMLElement>("openai-chatkit");
-            if (wc && wc.shadowRoot) {
-              resolve(wc);
-              return;
-            }
-            if (attempts >= maxAttempts) {
-              reject(new Error("ChatKit not found"));
-              return;
-            }
-            setTimeout(check, 100);
-          };
-          check();
-        });
-      };
-
-      const wc = await waitForChatKit();
-      const shadow = wc.shadowRoot!;
-      
-      // ChatKit uses an iframe - need to access iframe content
-      const iframe = shadow.querySelector('iframe.ck-iframe, iframe') as HTMLIFrameElement;
-      if (!iframe) {
-        throw new Error("ChatKit iframe not found");
-      }
-      
-      // Wait for iframe to load
-      await new Promise<void>((resolve) => {
-        if (iframe.contentDocument?.readyState === 'complete') {
-          resolve();
-        } else {
-          iframe.onload = () => resolve();
-          setTimeout(() => resolve(), 2000); // Timeout after 2s
-        }
-      });
-      
-      // Try to access iframe document
-      let iframeDoc: Document | null = null;
-      try {
-        iframeDoc = iframe.contentDocument || iframe.contentWindow?.document || null;
-      } catch (e) {
-        console.warn('[ChatKit] Cannot access iframe content (might be cross-origin)');
-      }
-      
-      if (iframeDoc && messages.length === 0) {
-        // CRITICAL: ChatKit needs a thread started before composer appears
-        // Try to trigger start screen prompt to initialize thread
-        const startScreenSelectors = [
-          '[data-start-screen-prompt]',
-          'button[data-prompt]',
-          '[role="button"][data-kind="prompt"]',
-          'button',
-          '[role="button"]',
-        ];
-        
-        let startScreenPrompt: HTMLElement | null = null;
-        for (const selector of startScreenSelectors) {
-          const prompts = iframeDoc.querySelectorAll(selector);
-          if (prompts.length > 0) {
-            startScreenPrompt = prompts[0] as HTMLElement;
-            if (startScreenPrompt.offsetParent !== null || startScreenPrompt.getBoundingClientRect().width > 0) {
-              console.log(`[ChatKit] Found start screen prompt in iframe with selector: ${selector}`);
-              break;
-            }
-          }
-        }
-        
-        if (startScreenPrompt) {
-          console.log('[ChatKit] Clicking start screen prompt to initialize thread...');
-          startScreenPrompt.click();
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for thread to initialize
-        }
-      }
-      
-      // Set the composer value
+      // Use ChatKit's API to set the composer value
       await chatkit.setComposerValue({ text: messageText });
-      await new Promise(resolve => setTimeout(resolve, 500)); // Give more time for composer to appear
       
-      // Wait for ChatKit to be ready and find the composer using MutationObserver
-      const findAndSubmit = (): Promise<void> => {
-        return new Promise((resolve, reject) => {
-          let attempts = 0;
-          const maxAttempts = 100; // 10 seconds total
-          
-          const trySubmit = () => {
-            attempts++;
-            if (attempts > maxAttempts) {
-              console.error("Failed to find ChatKit composer after max attempts");
-              setIsLoading(false);
-              reject(new Error("Composer not found"));
-              return;
-            }
-
-            // ChatKit uses an iframe! We need to access the iframe's content
-            const iframe = shadow.querySelector('iframe.ck-iframe, iframe') as HTMLIFrameElement;
-            
-            if (!iframe) {
-              console.warn(`[ChatKit] No iframe found in shadow DOM`);
-              setTimeout(trySubmit, 200);
-              return;
-            }
-            
-            // Debug: log iframe info
-            if (attempts === 1 || attempts % 10 === 0) {
-              console.log(`[ChatKit Debug] Attempt ${attempts}, iframe found:`, {
-                src: iframe.src,
-                contentWindow: !!iframe.contentWindow,
-                contentDocument: !!iframe.contentDocument,
-              });
-            }
-            
-            // Try to access iframe content (might be same-origin or cross-origin)
-            let iframeDoc: Document | null = null;
-            try {
-              iframeDoc = iframe.contentDocument || iframe.contentWindow?.document || null;
-            } catch (e) {
-              // Cross-origin - can't access directly
-              console.warn('[ChatKit] Iframe is cross-origin, cannot access content directly');
-              // Try using postMessage API instead
-              if (iframe.contentWindow) {
-                // Send message to iframe to trigger submit
-                iframe.contentWindow.postMessage({ type: 'chatkit-submit', text: messageText }, '*');
-                console.log('[ChatKit] Sent postMessage to iframe');
-                resolve();
-                return;
-              }
-              setTimeout(trySubmit, 200);
-              return;
-            }
-            
-            if (!iframeDoc) {
-              // Iframe not loaded yet
-              setTimeout(trySubmit, 200);
-              return;
-            }
-            
-            // Try multiple selectors to find composer INSIDE the iframe
-            const composerSelectors = [
-              '[role="textbox"]',
-              '[contenteditable="true"]',
-              'textarea',
-              'input[type="text"]',
-              '[data-composer]',
-              'form [contenteditable]',
-              'form textarea',
-              'form input[type="text"]',
-              '[part*="composer"]',
-              '[data-part*="composer"]',
-            ];
-            
-            let composer: HTMLElement | null = null;
-            for (const selector of composerSelectors) {
-              composer = iframeDoc.querySelector(selector) as HTMLElement;
-              if (composer) {
-                console.log(`[ChatKit] Found composer in iframe with selector: ${selector}`);
-                break;
-              }
-            }
-            
-            if (composer) {
-              // Found it! Now submit
-              (async () => {
-                try {
-                  composer!.focus();
-                  
-                  // Wait a moment for focus
-                  await new Promise(resolve => setTimeout(resolve, 50));
-                  
-                  // Set value directly
-                  if (composer!.tagName === 'INPUT' || composer!.tagName === 'TEXTAREA') {
-                    (composer as HTMLInputElement | HTMLTextAreaElement).value = messageText;
-                    // Trigger input event
-                    composer!.dispatchEvent(new Event('input', { bubbles: true }));
-                  } else if (composer!.contentEditable === 'true') {
-                    composer!.textContent = messageText;
-                    composer!.dispatchEvent(new Event('input', { bubbles: true }));
-                  }
-                  
-                  // Wait a bit more
-                  await new Promise(resolve => setTimeout(resolve, 100));
-                  
-                  // Try Enter key press (keydown + keyup + keypress)
-                  const enterDown = new KeyboardEvent("keydown", {
-                    key: "Enter",
-                    code: "Enter",
-                    keyCode: 13,
-                    which: 13,
-                    bubbles: true,
-                    cancelable: true,
-                  });
-                  composer!.dispatchEvent(enterDown);
-                  
-                  const enterPress = new KeyboardEvent("keypress", {
-                    key: "Enter",
-                    code: "Enter",
-                    keyCode: 13,
-                    which: 13,
-                    bubbles: true,
-                    cancelable: true,
-                  });
-                  composer!.dispatchEvent(enterPress);
-                  
-                  const enterUp = new KeyboardEvent("keyup", {
-                    key: "Enter",
-                    code: "Enter",
-                    keyCode: 13,
-                    which: 13,
-                    bubbles: true,
-                    cancelable: true,
-                  });
-                  composer!.dispatchEvent(enterUp);
-
-                  // Also try to find and click submit button
-                  await new Promise(resolve => setTimeout(resolve, 50));
-                  const submitSelectors = [
-                    'button[type="submit"]',
-                    'button[aria-label*="send" i]',
-                    'button[aria-label*="Send" i]',
-                    'button[aria-label*="submit" i]',
-                    'button:has(svg)',
-                    '[role="button"][aria-label*="send" i]',
-                  ];
-                  
-                  for (const selector of submitSelectors) {
-                    const submitButton = iframeDoc.querySelector(selector) as HTMLElement;
-                    if (submitButton && submitButton.offsetParent !== null) {
-                      submitButton.click();
-                      break;
-                    }
-                  }
-                } catch (e) {
-                  console.warn("Error submitting via composer:", e);
-                }
-                
-                resolve();
-              })();
-            } else {
-              // If composer not found, try clicking start screen prompt to initialize thread (inside iframe)
-              if (attempts === 1 && iframeDoc) {
-                const startScreenPrompts = iframeDoc.querySelectorAll('[data-start-screen-prompt], button[data-prompt], [role="button"][data-kind="prompt"], button');
-                if (startScreenPrompts.length > 0) {
-                  // Click any button to potentially initialize the thread
-                  (startScreenPrompts[0] as HTMLElement).click();
-                  // After clicking, wait and try to find composer again
-                  setTimeout(() => {
-                    setTimeout(trySubmit, 200);
-                  }, 500);
-                  return;
-                }
-              }
-              
-              // Use MutationObserver to watch for composer to appear INSIDE the iframe
-              if (iframeDoc) {
-                const observer = new MutationObserver(() => {
-                  let newComposer: HTMLElement | null = null;
-                  for (const selector of composerSelectors) {
-                    newComposer = iframeDoc!.querySelector(selector) as HTMLElement;
-                    if (newComposer) break;
-                  }
-                  
-                  if (newComposer) {
-                    observer.disconnect();
-                    // Retry submit with the new composer
-                    setTimeout(async () => {
-                      try {
-                        newComposer!.focus();
-                        await new Promise(resolve => setTimeout(resolve, 50));
-                        if (newComposer!.tagName === 'INPUT' || newComposer!.tagName === 'TEXTAREA') {
-                          (newComposer as HTMLInputElement | HTMLTextAreaElement).value = messageText;
-                        } else if (newComposer!.contentEditable === 'true') {
-                          newComposer!.textContent = messageText;
-                        }
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        const enterDown = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true, cancelable: true });
-                        newComposer!.dispatchEvent(enterDown);
-                        const submitButton = iframeDoc!.querySelector('button[type="submit"], button[aria-label*="send" i]') as HTMLElement;
-                        if (submitButton) {
-                          submitButton.click();
-                        }
-                      } catch (e) {
-                        console.warn("Error in MutationObserver submit:", e);
-                      }
-                      resolve();
-                    }, 100);
-                  }
-                });
-                
-                observer.observe(iframeDoc, {
-                  childList: true,
-                  subtree: true,
-                  attributes: true,
-                  attributeFilter: ['role', 'contenteditable'],
-                });
-              }
-              
-              // Also continue polling as fallback
-              setTimeout(trySubmit, 200);
-            }
-          };
-
-          trySubmit();
+      // Wait for ChatKit to process
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Focus the composer - this should make ChatKit ready to receive keyboard events
+      await chatkit.focusComposer();
+      
+      // Wait a bit more, then trigger Enter key on the web component
+      // This should work because ChatKit handles keyboard events at the web component level
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      const wc = document.querySelector<HTMLElement>("openai-chatkit");
+      if (wc) {
+        // Dispatch Enter key event on the web component
+        // ChatKit should handle this and submit the message
+        const enterEvent = new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
         });
-      };
-
-      await findAndSubmit();
+        wc.dispatchEvent(enterEvent);
+        
+        // Also try keyup
+        const enterUpEvent = new KeyboardEvent("keyup", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
+        });
+        wc.dispatchEvent(enterUpEvent);
+      }
     } catch (error) {
       console.error("Failed to send message:", error);
       setIsLoading(false);
