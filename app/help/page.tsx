@@ -140,9 +140,12 @@ function HelpPageContent() {
   }, [chatkit.control]);
 
   // Hide ChatKit UI completely but keep it functional
-  // Use a proper size and ensure it's positioned so shadow DOM initializes properly
+  // Make it visible initially so it can render, then hide it after initialization
   useEffect(() => {
     const style = document.createElement("style");
+    style.id = "chatkit-hide-style";
+    
+    // Initially make it visible but off-screen so it can render
     style.textContent = `
       openai-chatkit {
         position: fixed !important;
@@ -150,14 +153,37 @@ function HelpPageContent() {
         left: -10000px !important;
         width: 600px !important;
         height: 800px !important;
-        opacity: 0 !important;
+        opacity: 1 !important;
         pointer-events: auto !important;
         overflow: visible !important;
         z-index: -9999 !important;
+        visibility: visible !important;
       }
     `;
     document.head.appendChild(style);
+    
+    // After a delay, ensure it stays hidden but rendered
+    const timer = setTimeout(() => {
+      if (document.getElementById("chatkit-hide-style")) {
+        style.textContent = `
+          openai-chatkit {
+            position: fixed !important;
+            top: -10000px !important;
+            left: -10000px !important;
+            width: 600px !important;
+            height: 800px !important;
+            opacity: 0 !important;
+            pointer-events: auto !important;
+            overflow: visible !important;
+            z-index: -9999 !important;
+            visibility: hidden !important;
+          }
+        `;
+      }
+    }, 2000);
+    
     return () => {
+      clearTimeout(timer);
       if (document.head.contains(style)) {
         document.head.removeChild(style);
       }
@@ -209,18 +235,37 @@ function HelpPageContent() {
       const wc = await waitForChatKit();
       const shadow = wc.shadowRoot!;
       
-      // Try to trigger start screen if it exists (to initialize thread)
-      const startScreenPrompts = shadow.querySelectorAll('[data-start-screen-prompt], button[data-prompt], [role="button"][data-kind="prompt"]');
-      if (startScreenPrompts.length > 0 && messages.length === 0) {
-        // Click the first prompt to start a thread, then send our message
-        const firstPrompt = startScreenPrompts[0] as HTMLElement;
-        firstPrompt.click();
-        await new Promise(resolve => setTimeout(resolve, 500));
+      // CRITICAL: ChatKit needs a thread started before composer appears
+      // Try to trigger start screen prompt to initialize thread
+      const startScreenSelectors = [
+        '[data-start-screen-prompt]',
+        'button[data-prompt]',
+        '[role="button"][data-kind="prompt"]',
+        'button',
+        '[role="button"]',
+      ];
+      
+      let startScreenPrompt: HTMLElement | null = null;
+      for (const selector of startScreenSelectors) {
+        const prompts = shadow.querySelectorAll(selector);
+        if (prompts.length > 0) {
+          startScreenPrompt = prompts[0] as HTMLElement;
+          if (startScreenPrompt.offsetParent !== null || startScreenPrompt.getBoundingClientRect().width > 0) {
+            console.log(`[ChatKit] Found start screen prompt with selector: ${selector}`);
+            break;
+          }
+        }
+      }
+      
+      if (startScreenPrompt && messages.length === 0) {
+        console.log('[ChatKit] Clicking start screen prompt to initialize thread...');
+        startScreenPrompt.click();
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for thread to initialize
       }
       
       // Set the composer value
       await chatkit.setComposerValue({ text: messageText });
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500)); // Give more time for composer to appear
       
       // Wait for ChatKit to be ready and find the composer using MutationObserver
       const findAndSubmit = (): Promise<void> => {
@@ -240,14 +285,20 @@ function HelpPageContent() {
             // Debug: log what's in the shadow DOM
             if (attempts === 1 || attempts % 10 === 0) {
               const allElements = shadow.querySelectorAll('*');
-              const elementInfo = Array.from(allElements).slice(0, 20).map(el => ({
+              const elementInfo = Array.from(allElements).map(el => ({
                 tag: el.tagName,
                 role: el.getAttribute('role'),
                 contenteditable: el.getAttribute('contenteditable'),
                 dataKind: el.getAttribute('data-kind'),
-                text: el.textContent?.slice(0, 50),
+                dataPart: el.getAttribute('data-part'),
+                part: el.getAttribute('part'),
+                id: el.id,
+                className: el.className,
+                text: el.textContent?.slice(0, 100),
+                innerHTML: el.innerHTML?.slice(0, 200),
               }));
               console.log(`[ChatKit Debug] Attempt ${attempts}, found ${allElements.length} elements:`, elementInfo);
+              console.log(`[ChatKit Debug] Shadow root HTML (first 500 chars):`, shadow.innerHTML?.slice(0, 500));
             }
             
             // Try multiple selectors to find composer
@@ -579,7 +630,7 @@ function HelpPageContent() {
 
       {/* Hidden ChatKit component for API access only - must be rendered for API to work */}
       {/* Give it proper size so shadow DOM and composer initialize properly */}
-      <div style={{ position: "fixed", top: "-10000px", left: "-10000px", width: "600px", height: "800px", overflow: "visible", opacity: 0, pointerEvents: "auto", zIndex: -9999 }}>
+      <div style={{ position: "fixed", top: "-10000px", left: "-10000px", width: "600px", height: "800px", overflow: "visible", opacity: 1, visibility: "visible", pointerEvents: "auto", zIndex: -9999 }}>
         {chatkit.control && <ChatKit control={chatkit.control} />}
       </div>
 
