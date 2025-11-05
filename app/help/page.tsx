@@ -183,14 +183,50 @@ function HelpPageContent() {
     setIsLoading(true);
 
     try {
-      // Set the composer value first
+      // First, ensure ChatKit is fully loaded
+      const waitForChatKit = (): Promise<HTMLElement> => {
+        return new Promise((resolve, reject) => {
+          let attempts = 0;
+          const maxAttempts = 100; // 10 seconds
+          
+          const check = () => {
+            attempts++;
+            const wc = document.querySelector<HTMLElement>("openai-chatkit");
+            if (wc && wc.shadowRoot) {
+              resolve(wc);
+              return;
+            }
+            if (attempts >= maxAttempts) {
+              reject(new Error("ChatKit not found"));
+              return;
+            }
+            setTimeout(check, 100);
+          };
+          check();
+        });
+      };
+
+      const wc = await waitForChatKit();
+      const shadow = wc.shadowRoot!;
+      
+      // Try to trigger start screen if it exists (to initialize thread)
+      const startScreenPrompts = shadow.querySelectorAll('[data-start-screen-prompt], button[data-prompt], [role="button"][data-kind="prompt"]');
+      if (startScreenPrompts.length > 0 && messages.length === 0) {
+        // Click the first prompt to start a thread, then send our message
+        const firstPrompt = startScreenPrompts[0] as HTMLElement;
+        firstPrompt.click();
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // Set the composer value
       await chatkit.setComposerValue({ text: messageText });
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Wait for ChatKit to be ready and find the composer using MutationObserver
       const findAndSubmit = (): Promise<void> => {
         return new Promise((resolve, reject) => {
           let attempts = 0;
-          const maxAttempts = 50; // 5 seconds total
+          const maxAttempts = 100; // 10 seconds total
           
           const trySubmit = () => {
             attempts++;
@@ -201,18 +237,19 @@ function HelpPageContent() {
               return;
             }
 
-            const wc = document.querySelector<HTMLElement>("openai-chatkit");
-            if (!wc) {
-              setTimeout(trySubmit, 100);
-              return;
+            // Debug: log what's in the shadow DOM
+            if (attempts === 1 || attempts % 10 === 0) {
+              const allElements = shadow.querySelectorAll('*');
+              const elementInfo = Array.from(allElements).slice(0, 20).map(el => ({
+                tag: el.tagName,
+                role: el.getAttribute('role'),
+                contenteditable: el.getAttribute('contenteditable'),
+                dataKind: el.getAttribute('data-kind'),
+                text: el.textContent?.slice(0, 50),
+              }));
+              console.log(`[ChatKit Debug] Attempt ${attempts}, found ${allElements.length} elements:`, elementInfo);
             }
-
-            const shadow = wc.shadowRoot;
-            if (!shadow) {
-              setTimeout(trySubmit, 100);
-              return;
-            }
-
+            
             // Try multiple selectors to find composer
             const composerSelectors = [
               '[role="textbox"]',
@@ -223,12 +260,17 @@ function HelpPageContent() {
               'form [contenteditable]',
               'form textarea',
               'form input[type="text"]',
+              '[part*="composer"]',
+              '[data-part*="composer"]',
             ];
             
             let composer: HTMLElement | null = null;
             for (const selector of composerSelectors) {
               composer = shadow.querySelector(selector) as HTMLElement;
-              if (composer) break;
+              if (composer) {
+                console.log(`[ChatKit] Found composer with selector: ${selector}`);
+                break;
+              }
             }
             
             if (composer) {
@@ -309,6 +351,20 @@ function HelpPageContent() {
                 resolve();
               })();
             } else {
+              // If composer not found, try clicking start screen prompt to initialize thread
+              if (attempts === 1) {
+                const startScreenPrompts = shadow.querySelectorAll('[data-start-screen-prompt], button[data-prompt], [role="button"][data-kind="prompt"], button');
+                if (startScreenPrompts.length > 0) {
+                  // Click any button to potentially initialize the thread
+                  (startScreenPrompts[0] as HTMLElement).click();
+                  // After clicking, wait and try to find composer again
+                  setTimeout(() => {
+                    setTimeout(trySubmit, 200);
+                  }, 500);
+                  return;
+                }
+              }
+              
               // Use MutationObserver to watch for composer to appear
               const observer = new MutationObserver(() => {
                 let newComposer: HTMLElement | null = null;
