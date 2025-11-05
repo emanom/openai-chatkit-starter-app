@@ -22,6 +22,13 @@ function HelpPageContent() {
   const { scheme, setScheme } = useColorScheme();
   const searchParams = useSearchParams();
 
+  // ChatKit start screen prompts - matching ChatKitPanel configuration
+  const chatKitPrompts = [
+    { label: "What can fyi do for me?", prompt: "What can fyi do for me?" },
+    { label: "Tell me about the subscription plans", prompt: "Tell me about the subscription plans" },
+    { label: "What's new with fyi?", prompt: "What's the latest with fyi?" },
+  ];
+
   // Get client secret for ChatKit
   const getClientSecret = useCallback(async (currentSecret: string | null) => {
     if (currentSecret) return currentSecret;
@@ -432,23 +439,21 @@ function HelpPageContent() {
             </div>
           </form>
 
-          {/* Suggestion Buttons */}
-          <div className="flex flex-wrap justify-center gap-3">
-            {[
-              "Help with feature",
-              "Enhancement idea",
-              "Something's not working",
-            ].map((suggestion) => (
-              <button
-                key={suggestion}
-                onClick={() => handleSuggestionClick(suggestion)}
-                disabled={isLoading}
-                className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
+          {/* ChatKit Start Screen Prompts - Using same prompts as ChatKitPanel */}
+          {messages.length === 0 && (
+            <div className="flex flex-wrap justify-center gap-3">
+              {chatKitPrompts.map((prompt) => (
+                <button
+                  key={prompt.label}
+                  onClick={() => handleSuggestionClick(prompt.prompt)}
+                  disabled={isLoading}
+                  className="group relative rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {prompt.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
