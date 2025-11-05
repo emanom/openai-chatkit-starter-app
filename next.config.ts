@@ -4,7 +4,13 @@ const nextConfig: NextConfig = {
   webpack: (config) => {
     config.resolve.alias = {
       ...(config.resolve.alias ?? {}),
+      // Force lightningcss to use the Windows native binding
+      'lightningcss-win32-x64-msvc': require.resolve('lightningcss-win32-x64-msvc'),
     };
+    
+    // Ensure native modules are properly handled
+    config.resolve.extensions = ['.js', '.json', '.node', ...(config.resolve.extensions || [])];
+    
     return config;
   },
         // Optimize for Amplify/CloudFront CDN
