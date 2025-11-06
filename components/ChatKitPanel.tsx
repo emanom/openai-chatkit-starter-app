@@ -433,9 +433,9 @@ export function ChatKitPanel({
     startScreen: {
       greeting: GREETING,
       prompts: [
-        { label: "What can fyi do for me?", prompt: "What can fyi do for me?", icon: "sparkle" },
+        { label: "What can FYI do for me?", prompt: "What can FYI do for me?", icon: "sparkle" },
         { label: "Tell me about the subscription plans", prompt: "Tell me about the subscription plans", icon: "circle-question" },
-        { label: "What's new with fyi?", prompt: "What's the latest with fyi?", icon: "sparkle" },
+        { label: "What's new with FYI?", prompt: "What's the latest with FYI?", icon: "sparkle" },
       ],
     },
     composer: {
