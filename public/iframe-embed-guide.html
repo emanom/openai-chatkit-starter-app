@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>How to Embed ChatKit Iframe</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: #f8fafc;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      color: #0f172a;
+      margin-bottom: 10px;
+    }
+    h2 {
+      color: #1e293b;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 8px;
+    }
+    h3 {
+      color: #334155;
+      margin-top: 20px;
+    }
+    code {
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 15px 0;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: #e2e8f0;
+    }
+    .example {
+      background: #f8fafc;
+      border-left: 4px solid #4ccf96;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 4px;
+    }
+    .warning {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 4px;
+    }
+    .info {
+      background: #dbeafe;
+      border-left: 4px solid #3b82f6;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 4px;
+    }
+    ul, ol {
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+    li {
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>How to Embed ChatKit Iframe</h1>
+    <p>This guide shows you how to embed the ChatKit widget in any webpage using an iframe.</p>
+
+    <h2>1. Basic HTML Embedding</h2>
+    <div class="example">
+      <h3>Simple Embed</h3>
+      <pre><code>&lt;iframe 
+  src="/chatkit-iframe.html" 
+  width="100%" 
+  height="600" 
+  frameborder="0"
+  style="border: none;"
+  allow="clipboard-read; clipboard-write"&gt;
+&lt;/iframe&gt;</code></pre>
+    </div>
+
+    <h2>2. With URL Parameters</h2>
+    <p>You can personalize the greeting by passing a <code>firstname</code> parameter:</p>
+    <div class="example">
+      <pre><code>&lt;iframe 
+  src="/chatkit-iframe.html?firstname=John" 
+  width="100%" 
+  height="600" 
+  frameborder="0"
+  style="border: none;"
+  allow="clipboard-read; clipboard-write"&gt;
+&lt;/iframe&gt;</code></pre>
+    </div>
+
+    <h2>3. Responsive Embedding</h2>
+    <p>For responsive design, wrap the iframe in a container:</p>
+    <div class="example">
+      <pre><code>&lt;div style="position: relative; width: 100%; padding-bottom: 75%; height: 0;"&gt;
+  &lt;iframe 
+    src="/chatkit-iframe.html" 
+    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none;"
+    allow="clipboard-read; clipboard-write"&gt;
+  &lt;/iframe&gt;
+&lt;/div&gt;</code></pre>
+    </div>
+    <p>Or use a fixed aspect ratio container:</p>
+    <div class="example">
+      <pre><code>&lt;div style="width: 100%; max-width: 800px; margin: 0 auto;"&gt;
+  &lt;iframe 
+    src="/chatkit-iframe.html" 
+    width="100%" 
+    height="600" 
+    frameborder="0"
+    style="border: none; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"
+    allow="clipboard-read; clipboard-write"&gt;
+  &lt;/iframe&gt;
+&lt;/div&gt;</code></pre>
+    </div>
+
+    <h2>4. Embedding in Next.js (React)</h2>
+    <p>Create a React component or page:</p>
+    <div class="example">
+      <pre><code>// app/chat/page.tsx or components/ChatIframe.tsx
+export default function ChatPage() {
+  return (
+    &lt;div className="w-full h-[600px] rounded-lg overflow-hidden shadow-lg"&gt;
+      &lt;iframe
+        src="/chatkit-iframe.html"
+        width="100%"
+        height="600"
+        style={{ border: 'none' }}
+        allow="clipboard-read; clipboard-write"
+        title="Chat Widget"
+      /&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+    </div>
+
+    <h2>5. Cross-Domain Embedding</h2>
+    <div class="warning">
+      <strong>⚠️ Important:</strong> If embedding from a different domain, you need to:
+      <ul>
+        <li>Ensure CORS is configured on your server</li>
+        <li>Use the full URL (e.g., <code>https://yourdomain.com/chatkit-iframe.html</code>)</li>
+        <li>API endpoints must be accessible from the iframe's origin</li>
+      </ul>
+    </div>
+    <div class="example">
+      <pre><code>&lt;iframe 
+  src="https://yourdomain.com/chatkit-iframe.html?firstname=John" 
+  width="100%" 
+  height="600" 
+  frameborder="0"
+  style="border: none;"
+  allow="clipboard-read; clipboard-write"
+  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"&gt;
+&lt;/iframe&gt;</code></pre>
+    </div>
+
+    <h2>6. Dynamic Height (Advanced)</h2>
+    <p>For iframe height to adjust dynamically, use postMessage communication:</p>
+    <div class="example">
+      <pre><code>&lt;iframe 
+  id="chatkit-iframe"
+  src="/chatkit-iframe.html" 
+  width="100%" 
+  height="600" 
+  frameborder="0"
+  style="border: none;"
+  allow="clipboard-read; clipboard-write"&gt;
+&lt;/iframe&gt;
+
+&lt;script&gt;
+  // Listen for height updates from iframe
+  window.addEventListener('message', (event) => {
+    // Verify origin for security
+    if (event.origin !== window.location.origin) return;
+    
+    if (event.data.type === 'chatkit-resize') {
+      const iframe = document.getElementById('chatkit-iframe');
+      if (iframe && event.data.height) {
+        iframe.style.height = event.data.height + 'px';
+      }
+    }
+  });
+&lt;/script&gt;</code></pre>
+    </div>
+
+    <h2>7. Full-Page Embedding</h2>
+    <p>For a full-page chat experience:</p>
+    <div class="example">
+      <pre><code>&lt;iframe 
+  src="/chatkit-iframe.html" 
+  width="100%" 
+  height="100vh" 
+  frameborder="0"
+  style="border: none; position: fixed; top: 0; left: 0; z-index: 1000;"
+  allow="clipboard-read; clipboard-write"&gt;
+&lt;/iframe&gt;</code></pre>
+    </div>
+
+    <h2>8. Sidebar Embedding</h2>
+    <p>For a sidebar chat widget:</p>
+    <div class="example">
+      <pre><code>&lt;div style="position: fixed; right: 0; top: 0; width: 400px; height: 100vh; z-index: 1000; box-shadow: -2px 0 8px rgba(0,0,0,0.1);"&gt;
+  &lt;iframe 
+    src="/chatkit-iframe.html" 
+    width="100%" 
+    height="100%" 
+    frameborder="0"
+    style="border: none;"
+    allow="clipboard-read; clipboard-write"&gt;
+  &lt;/iframe&gt;
+&lt;/div&gt;</code></pre>
+    </div>
+
+    <h2>Important Considerations</h2>
+    
+    <div class="info">
+      <h3>✅ Best Practices:</h3>
+      <ul>
+        <li>Always set <code>allow="clipboard-read; clipboard-write"</code> for clipboard functionality</li>
+        <li>Use <code>title</code> attribute for accessibility</li>
+        <li>Set <code>frameborder="0"</code> or use CSS <code>border: none</code> for cleaner look</li>
+        <li>Ensure the iframe has appropriate dimensions (minimum 400px width recommended)</li>
+        <li>For mobile, consider responsive height (e.g., <code>height="100vh"</code>)</li>
+      </ul>
+    </div>
+
+    <div class="warning">
+      <h3>⚠️ Security:</h3>
+      <ul>
+        <li>If using <code>sandbox</code> attribute, be careful not to restrict necessary features</li>
+        <li>Verify postMessage origins when listening to messages from iframe</li>
+        <li>Ensure your API endpoints have proper CORS headers if embedding cross-domain</li>
+      </ul>
+    </div>
+
+    <h2>Testing</h2>
+    <p>You can test the iframe embedding at:</p>
+    <ul>
+      <li><a href="/iframe-test.html">Test page with embedded iframe</a></li>
+      <li><a href="/chatkit-iframe.html">Direct iframe page</a></li>
+    </ul>
+  </div>
+</body>
+</html>

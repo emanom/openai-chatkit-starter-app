@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatKit Iframe Embed</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
+        background: #ffffff;
+        color: #0f172a;
+        width: 100%;
+        height: 100vh;
+        overflow: hidden;
+      }
+      /* Full container for iframe */
+      #chat-wrapper {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      #chat-wrapper > openai-chatkit {
+        flex: 1 1 auto;
+        width: 100%;
+        height: 100%;
+        background: #ffffff;
+        border-radius: 0;
+        overflow: hidden;
+        font-size: 14px;
+        line-height: 1.4;
+        --user-message-text-color: #ffffff;
+        --font-text-md-size: 0.9rem;
+        --accent-color-primary-inverse: #ffffff;
+        --font-heading-lg-size: 1.3rem;
+      }
+      #chat-wrapper > openai-chatkit[data-accent="3"] {
+        --user-message-text-color: #ffffff;
+      }
+    </style>
+    <script
+      src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
+      async
+    ></script>
+  </head>
+  <body>
+    <div id="chat-wrapper"></div>
+
+    <script>
+      function getCaseInsensitiveParam(...candidates) {
+        const url = new URL(window.location.href);
+        const params = url.searchParams;
+        const keys = Array.from(params.keys());
+        for (const cand of candidates) {
+          const found = keys.find((k) => k.toLowerCase() === String(cand).toLowerCase());
+          if (found) {
+            const v = params.get(found);
+            if (v) { return v.trim(); }
+          }
+        }
+        return null;
+      }
+
+      async function getClientSecret(currentSecret) {
+        // If ChatKit provides an existing secret, reuse it to maintain session continuity
+        if (currentSecret) {
+          return currentSecret;
+        }
+        
+        try {
+          // Use relative path for iframe - works if parent is same origin or CORS is configured
+          const baseUrl = window.location.origin;
+          const res = await fetch(`${baseUrl}/api/create-session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+          if (!res.ok) {
+            const t = await res.text().catch(() => '');
+            const errorMsg = 'Failed to create ChatKit session: ' + (t || res.statusText);
+            console.error('[Session]', errorMsg);
+            throw new Error(errorMsg);
+          }
+          const data = await res.json();
+          try { window.appSessionId = data.app_session_id || null; } catch(_) {}
+          if (!data || !data.client_secret) {
+            const errorMsg = 'Missing client_secret in response';
+            console.error('[Session]', errorMsg);
+            throw new Error(errorMsg);
+          }
+          return data.client_secret;
+        } catch (error) {
+          console.error('[Session] Error creating session:', error);
+          throw error;
+        }
+      }
+
+      (async function initWhenReady(){
+        if (!(window.customElements && window.customElements.get('openai-chatkit'))) {
+          requestAnimationFrame(initWhenReady);
+          return;
+        }
+        try {
+          const wrapper = document.getElementById('chat-wrapper');
+          const firstForGreeting = getCaseInsensitiveParam('firstname','first','firstName');
+          const uiGreeting = firstForGreeting ? `Hi ${firstForGreeting}, how can I help?` : 'How can I help you today?';
+
+          // Enhancement form
+          const ENH_TEXT = 'I want to request this product enhancement: ';
+          const form = document.createElement('div');
+          form.id = 'enh-form';
+          form.style.cssText = 'display:none; position:absolute; left:8px; right:8px; bottom:8px; z-index:100; background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:10px; box-shadow:0 6px 16px rgba(2,6,23,.15);';
+          form.innerHTML = `
+            <div style="font-weight:600; color:#0f172a; margin-bottom:6px;">Enhancement request</div>
+            <div style="display:grid; gap:8px;">
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span style="color:#475569;">Title</span>
+                <input id="enh-title" placeholder="Short, descriptive title" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span style="color:#475569;">Description</span>
+                <textarea id="enh-desc" rows="4" placeholder="What problem does this solve?" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;"></textarea>
+              </label>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <label style="display:flex; flex-direction:column; gap:4px;">
+                  <span style="color:#475569;">Priority</span>
+                  <select id="enh-priority" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;">
+                    <option>Low</option>
+                    <option selected>Medium</option>
+                    <option>High</option>
+                  </select>
+                </label>
+                <label style="display:flex; flex-direction:column; gap:4px;">
+                  <span style="color:#475569;">Impact</span>
+                  <input id="enh-impact" placeholder="Who is impacted?" style="border:1px solid #cbd5e1; border-radius:6px; padding:6px;" />
+                </label>
+              </div>
+              <div style="display:flex; justify-content:flex-end; gap:8px;">
+                <button id="enh-cancel" type="button" style="border:1px solid #cbd5e1; background:#fff; color:#0f172a; padding:6px 10px; border-radius:6px; cursor:pointer;">Cancel</button>
+                <button id="enh-submit" type="button" style="background:#0f172a; color:#fff; padding:6px 10px; border:none; border-radius:6px; cursor:pointer;">Add to message</button>
+              </div>
+            </div>
+          `;
+
+          // Create ChatKit element dynamically
+          const el = document.createElement('openai-chatkit');
+          
+          const showForm = () => { form.style.display = 'block'; };
+          const hideForm = () => {
+            form.style.display = 'none';
+            try {
+              document.getElementById('enh-title').value = '';
+              document.getElementById('enh-desc').value = '';
+              document.getElementById('enh-priority').value = 'Medium';
+              document.getElementById('enh-impact').value = '';
+            } catch(_){}
+          };
+          
+          form.addEventListener('click', async (e) => {
+            const t = e.target?.id || e.target?.closest?.('#enh-cancel, #enh-submit')?.id || '';
+            if (t === 'enh-cancel') { hideForm(); return; }
+            if (t === 'enh-submit') {
+              try {
+                const title = String(document.getElementById('enh-title')?.value || '').trim();
+                const desc = String(document.getElementById('enh-desc')?.value || '').trim();
+                const priority = String(document.getElementById('enh-priority')?.value || 'Medium');
+                const impact = String(document.getElementById('enh-impact')?.value || '').trim();
+                const lines = ['I want to request a product enhancement:'];
+                if (title) lines.push(`Title: ${title}`);
+                if (desc) lines.push(`Description: ${desc}`);
+                if (priority) lines.push(`Priority: ${priority}`);
+                if (impact) lines.push(`Impact: ${impact}`);
+                const text = lines.join('\n');
+                if (text) { await el.setComposerValue({ text }); }
+              } catch(_) {}
+              hideForm();
+            }
+          });
+
+          // Set up error listener before setting options
+          el.addEventListener('error', (event) => {
+            console.error('[ChatKit] Element error event:', event);
+          });
+
+          el.setOptions({
+            api: { getClientSecret },
+            theme: {
+              color: { accent: { primary: '#4ccf96', level: 3 } }
+            },
+            header: {
+              rightAction: {
+                icon: 'collapse-small',
+                onClick: () => { 
+                  // If in iframe, notify parent window (optional)
+                  if (window.parent !== window) {
+                    try {
+                      window.parent.postMessage({ type: 'chatkit-close' }, '*');
+                    } catch(_) {}
+                  }
+                }
+              }
+            },
+            startScreen: {
+              greeting: uiGreeting,
+              prompts: [
+                { label: "What's new with fyi?", prompt: "What's the latest with fyi?", icon: 'sparkle' },
+                { label: 'Tell me about the subscription plans', prompt: 'Tell me about the subscription plans', icon: 'circle-question' }
+              ]
+            },
+            disclaimer: { text: 'AI can make mistakes — See [ Help articles ](https://support.fyi.app/)' },
+            composer: {
+              placeholder: 'Message the assistant',
+              attachments: {
+                enabled: false,
+                accept: {
+                  "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+                  "application/pdf": [".pdf"]
+                }
+              }
+            },
+            widgets: {
+              onAction: async (action) => {
+                try {
+                  console.debug('[iframe] widgets.onAction', action);
+                  if (action?.type === 'prefill' && action?.payload?.text) {
+                    await el.setComposerValue({ text: String(action.payload.text) });
+                    return;
+                  }
+                } catch(err) {
+                  console.error('[iframe] widgets.onAction error:', err);
+                }
+              }
+            }
+          });
+
+          // Monitor ChatKit initialization (only log if there's an issue)
+          let initCheckAttempts = 0;
+          const checkInit = setInterval(() => {
+            initCheckAttempts++;
+            const root = el.shadowRoot;
+            if (root) {
+              // If ChatKit is ready, stop monitoring silently
+              if (isChatKitReady(el)) {
+                clearInterval(checkInit);
+                return;
+              }
+              
+              // Only log if we've checked many times without success
+              if (initCheckAttempts > 50 && initCheckAttempts % 20 === 0) {
+                const totalElements = root.querySelectorAll('*').length;
+                const hasDataKind = root.querySelectorAll('[data-kind]').length > 0;
+                console.warn('[ChatKit] Still initializing... Attempt:', initCheckAttempts, 'totalElements:', totalElements, 'hasDataKind:', hasDataKind);
+              }
+              
+              // Stop after reasonable attempts
+              if (initCheckAttempts > 100) {
+                clearInterval(checkInit);
+                if (!isChatKitReady(el)) {
+                  console.error('[ChatKit] Failed to initialize after 100 checks - may be in error state');
+                }
+              }
+            }
+          }, 500);
+
+          wrapper.appendChild(el);
+          wrapper.appendChild(form);
+
+          // Wait for ChatKit to be fully initialized before injecting
+          // Check if ChatKit has actual UI elements (not just loading state)
+          function isChatKitReady(element) {
+            const root = element.shadowRoot;
+            if (!root) return false;
+            
+            // Check for actual UI elements - if we only have a few elements with no data-kind,
+            // ChatKit is likely still loading or in an error state
+            const totalElements = root.querySelectorAll('*').length;
+            const hasDataKindElements = root.querySelectorAll('[data-kind]').length > 0;
+            const hasComposer = root.querySelector('[data-kind="composer"], [role="textbox"], textarea, [contenteditable="true"]');
+            const hasStartScreen = root.querySelector('[data-kind="start-screen"], [data-part="start-screen"]');
+            
+            // ChatKit is ready if:
+            // 1. Has a reasonable number of elements (more than just a loading spinner)
+            // 2. Has data-kind elements OR has a composer OR has a start screen
+            const isReady = totalElements > 10 && (hasDataKindElements || hasComposer || hasStartScreen);
+            
+            return isReady;
+          }
+
+          // S3 Upload injection
+          let injectS3Button;
+          (function injectS3Upload(){
+            const PROGRESS_HTML = `
+              <div id="s3-progress" style="display:none; position:absolute; left:12px; right:12px; bottom:56px; z-index:101;">
+                <div style="height:6px; background:#e5e7eb; border-radius:9999px; overflow:hidden;">
+                  <div id="s3-bar" style="width:0%; height:6px; background:#4ccf96;"></div>
+                </div>
+                <div id="s3-text" style="font-size:12px; color:#64748b; margin-top:4px;">0%</div>
+              </div>`;
+            
+            let attempts = 0;
+            const inject = () => {
+              attempts++;
+              const root = el.shadowRoot;
+              if (!root) {
+                if (attempts < 100) {
+                  requestAnimationFrame(inject);
+                }
+                return;
+              }
+              
+              // Wait for ChatKit to be fully ready before trying to find composer
+              if (!isChatKitReady(el)) {
+                if (attempts > 50 && attempts % 20 === 0) {
+                  const totalElements = root.querySelectorAll('*').length;
+                  console.warn('[S3] Waiting for ChatKit to initialize... Attempt:', attempts, 'totalElements:', totalElements);
+                }
+                if (attempts < 200) {
+                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
+                  setTimeout(inject, delay);
+                } else {
+                  console.warn('[S3] ChatKit not ready after 200 attempts - may be stuck in loading or error state');
+                }
+                return;
+              }
+              
+              // Try multiple selectors for composer
+              let composer = root.querySelector('[data-kind="composer"]');
+              if (!composer) composer = root.querySelector('[role="textbox"]');
+              if (!composer) composer = root.querySelector('textarea, [contenteditable="true"]');
+              if (!composer) {
+                // Find a composer-like container
+                composer = Array.from(root.querySelectorAll('*')).find(el => {
+                  const text = el.textContent || '';
+                  return text.includes('Message') || text.includes('Type');
+                })?.closest('[data-kind]') || null;
+              }
+              
+              if (!composer) {
+                console.warn('[S3] ChatKit appears ready but composer not found');
+                if (attempts < 250) {
+                  setTimeout(inject, 500);
+                }
+                return;
+              }
+              if (composer.querySelector('[data-fyi-plus]')) {
+                console.log('[S3] Button already exists');
+                return;
+              }
+
+              if (!document.getElementById('s3-progress')) {
+                wrapper.insertAdjacentHTML('beforeend', PROGRESS_HTML);
+              }
+
+              if (composer.style.position === 'static' || !composer.style.position) {
+                composer.style.position = 'relative';
+              }
+
+              let input = document.getElementById('fyi-file');
+              if (!input) {
+                input = document.createElement('input');
+                input.type = 'file';
+                input.id = 'fyi-file';
+                input.accept = 'image/*,application/pdf';
+                input.style.display = 'none';
+                wrapper.appendChild(input);
+              }
+
+              const plus = document.createElement('button');
+              plus.setAttribute('data-fyi-plus', '1');
+              plus.type = 'button';
+              plus.title = 'Attach file';
+              plus.textContent = '+';
+              plus.style.cssText = 'position:absolute; right:8px; bottom:8px; width:32px; height:32px; border-radius:9999px; border:1px solid #cbd5e1; background:#4ccf96; color:#0f172a; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; z-index:999;';
+              composer.appendChild(plus);
+              console.log('[S3] Upload button injected successfully!');
+
+              plus.addEventListener('click', () => input?.click());
+              input.addEventListener('change', async (e) => {
+                const f = e.target?.files?.[0];
+                if (!f) return;
+                const appSessionId = window.appSessionId;
+                if (!appSessionId) { alert('Upload unavailable'); return; }
+                
+                const progress = document.getElementById('s3-progress');
+                const bar = document.getElementById('s3-bar');
+                const text = document.getElementById('s3-text');
+                if (progress) progress.style.display = 'block';
+
+                try {
+                  const baseUrl = window.location.origin;
+                  const presignRes = await fetch(`${baseUrl}/api/attachments/presign`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appSessionId, filename: f.name, mime: f.type || 'application/octet-stream', size: f.size })
+                  });
+                  const presign = await presignRes.json();
+                  if (!presignRes.ok) throw new Error(presign?.error || 'presign failed');
+
+                  await new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('PUT', presign.url, true);
+                    xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
+                    xhr.setRequestHeader('x-amz-server-side-encryption', 'AES256');
+                    xhr.upload.onprogress = (ev) => {
+                      if (ev.lengthComputable && bar && text) {
+                        const pct = Math.round((ev.loaded / ev.total) * 100);
+                        bar.style.width = pct + '%';
+                        text.textContent = pct + '%';
+                      }
+                    };
+                    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('Upload failed: ' + xhr.status));
+                    xhr.onerror = () => reject(new Error('Network error'));
+                    xhr.send(f);
+                  });
+
+                  if (progress) progress.style.display = 'none';
+                  if (el.sendCustomAction) {
+                    await el.sendCustomAction({ type: 'upload', payload: { name: f.name, key: presign.key } });
+                  }
+                  e.target.value = '';
+                } catch (err) {
+                  if (progress) progress.style.display = 'none';
+                  alert('Upload failed: ' + (err?.message || err));
+                }
+              });
+            };
+            injectS3Button = inject;
+            // Start injection attempts after a short delay
+            setTimeout(inject, 500);
+          })();
+
+          // Inject custom prompts (Enhancement request, Report an issue)
+          (function injectCustomPrompts(){
+            const prompts = [
+              { label: 'Enhancement request', icon: 'sparkle', action: () => showForm() },
+              { label: 'Report an issue', icon: 'bug', action: async () => {
+                await el.setComposerValue({ text: 'I want to report the following issue: ' });
+              }}
+            ];
+            
+            const sparkleIcon = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0c.552 0 1 .448 1 1v1c0 .552-.448 1-1 1s-1-.448-1-1V1c0-.552.448-1 1-1zm0 13c.552 0 1 .448 1 1v1c0 .552-.448 1-1 1s-1-.448-1-1v-1c0-.552.448-1 1-1zM3.05 3.05c.39-.39 1.024-.39 1.414 0l.707.707c.39.39.39 1.024 0 1.414-.39.39-1.024.39-1.414 0l-.707-.707c-.39-.39-.39-1.024 0-1.414zm8.9 8.9c.39-.39 1.024-.39 1.414 0l.707.707c.39.39.39 1.024 0 1.414-.39.39-1.024.39-1.414 0l-.707-.707c-.39-.39-.39-1.024 0-1.414zM0 8c0-.552.448-1 1-1h1c.552 0 1 .448 1 1s-.448 1-1 1H1c-.552 0-1-.448-1-1zm13 0c0-.552.448-1 1-1h1c.552 0 1 .448 1 1s-.448 1-1 1h-1c-.552 0-1-.448-1-1zM3.05 12.95c.39.39.39 1.024 0 1.414l-.707.707c-.39.39-1.024.39-1.414 0-.39-.39-.39-1.024 0-1.414l.707-.707c.39-.39 1.024-.39 1.414 0zm8.9-8.9c.39.39.39 1.024 0 1.414l-.707.707c-.39.39-1.024.39-1.414 0-.39-.39-.39-1.024 0-1.414l.707-.707c.39-.39 1.024-.39 1.414 0z"/></svg>`;
+            const bugIcon = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3.825 9h-.65a.175.175 0 0 1-.175-.175v-.35a.175.175 0 0 1 .175-.175h.65V6.337C3.825 5.416 4.617 4.625 5.538 4.625h.962V3.55h-.65a.175.175 0 0 1-.175-.175v-.35a.175.175 0 0 1 .175-.175h.65V1.175c0-.097.079-.175.175-.175h2.65c.096 0 .175.078.175.175V2.85h.65a.175.175 0 0 1 .175.175v.35a.175.175 0 0 1-.175.175h-.65v1.075h.962c.92 0 1.713.791 1.713 1.712V8.3h.65a.175.175 0 0 1 .175.175v.35a.175.175 0 0 1-.175.175h-.65v1.35c0 .92-.792 1.712-1.713 1.712h-.962v1.788c0 .096-.078.175-.175.175h-2.65a.175.175 0 0 1-.175-.175v-1.788h-.962A1.728 1.728 0 0 1 3.825 10.35V9z"/></svg>`;
+            const rightArrow = `<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M7.21 14.77a.75.75 0 0 1 .02-1.06L10.06 11 7.23 8.29a.75.75 0 0 1 1.04-1.08l3.5 3.25a.75.75 0 0 1 0 1.08l-3.5 3.25a.75.75 0 0 1-1.06-.02z"/></svg>`;
+            
+            let attempts = 0;
+            const inject = () => {
+              attempts++;
+              const root = el.shadowRoot;
+              if (!root) { 
+                if (attempts < 300) setTimeout(inject, 100);
+                return; 
+              }
+              
+              // Wait for ChatKit to be fully ready before trying to find start screen
+              if (!isChatKitReady(el)) {
+                if (attempts > 50 && attempts % 20 === 0) {
+                  const totalElements = root.querySelectorAll('*').length;
+                  console.warn('[CustomPrompts] Waiting for ChatKit to initialize... Attempt', attempts, 'totalElements:', totalElements);
+                }
+                if (attempts < 200) {
+                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
+                  setTimeout(inject, delay);
+                } else {
+                  console.warn('[CustomPrompts] ChatKit not ready after 200 attempts - may be stuck in loading or error state');
+                }
+                return;
+              }
+              
+              // Find the start screen prompts container
+              const startScreen = root.querySelector('[data-kind="start-screen"], [data-part="start-screen"]');
+              if (!startScreen) { 
+                if (attempts <= 5 || attempts % 20 === 0) {
+                  console.log('[CustomPrompts] Attempt', attempts, 'No start screen found yet, totalElements:', root.querySelectorAll('*').length);
+                }
+                if (attempts < 250) {
+                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
+                  setTimeout(inject, delay);
+                } else {
+                  console.warn('[CustomPrompts] Start screen not found after 250 attempts');
+                }
+                return; 
+              }
+              
+              // Find the prompts list
+              const promptsList = startScreen.querySelector('[role="list"], .prompts-list, [data-prompts]') || 
+                                  Array.from(startScreen.querySelectorAll('*')).find(el => el.children.length >= 2 && 
+                                    Array.from(el.children).every(c => c.tagName === 'BUTTON'));
+              
+              if (!promptsList) {
+                console.log('[CustomPrompts] Start screen found but no prompts list');
+                if (attempts < 300) setTimeout(inject, 100);
+                return;
+              }
+              
+              // Check if already injected
+              if (promptsList.querySelector('[data-fyi-custom-prompt]')) {
+                console.log('[CustomPrompts] Already injected');
+                return;
+              }
+              
+              // Get a sample native button for styling
+              const sampleBtn = promptsList.querySelector('button');
+              if (!sampleBtn) {
+                console.log('[CustomPrompts] Prompts list found but no buttons yet');
+                if (attempts < 300) setTimeout(inject, 100);
+                return;
+              }
+              
+              console.log('[CustomPrompts] Injecting custom prompts');
+              
+              prompts.forEach(({ label, icon, action }) => {
+                const btn = sampleBtn.cloneNode(true);
+                btn.setAttribute('data-fyi-custom-prompt', '1');
+                
+                // Update the text content
+                const labelSpan = btn.querySelector('[data-part*="label"], .label, span:last-of-type');
+                if (labelSpan) labelSpan.textContent = label;
+                
+                // Update the icon
+                const iconSpan = btn.querySelector('[data-part*="icon"], .icon, span:first-of-type');
+                if (iconSpan) {
+                  iconSpan.innerHTML = icon === 'bug' ? bugIcon : sparkleIcon;
+                }
+                
+                // Wire up the action
+                btn.addEventListener('click', (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  action();
+                });
+                
+                promptsList.appendChild(btn);
+              });
+              
+              console.log('[CustomPrompts] Injection complete');
+            };
+            
+            // Start injection attempts after a short delay
+            setTimeout(inject, 500);
+          })();
+
+          // Force white user text
+          (function forceWhiteText(){
+            const apply = () => {
+              const root = el.shadowRoot;
+              if (!root) { requestAnimationFrame(apply); return; }
+              if (root.querySelector('style[data-fyi-white]')) return;
+              const style = document.createElement('style');
+              style.setAttribute('data-fyi-white', '1');
+              style.textContent = `
+                [data-message-role="user"],
+                [data-role="user"] {
+                  --user-message-text-color: #ffffff !important;
+                  color: #ffffff !important;
+                }
+                [data-message-role="user"] *,
+                [data-role="user"] * {
+                  color: #ffffff !important;
+                }
+              `;
+              root.appendChild(style);
+            };
+            requestAnimationFrame(apply);
+          })();
+
+          // Hide internal header
+          (function hideHeader(){
+            const hide = () => {
+              const root = el.shadowRoot;
+              if (!root) { requestAnimationFrame(hide); return; }
+              const headers = root.querySelectorAll('[part*="header"], [data-kind="header"], header');
+              headers.forEach((h) => {
+                Array.from(h.children).forEach((c) => {
+                  const isAction = (c.getAttribute('part') || '').includes('rightAction') || c.getAttribute('aria-label');
+                  if (!isAction) c.style.display = 'none';
+                });
+                h.style.background = 'transparent';
+                h.style.border = 'none';
+              });
+            };
+            requestAnimationFrame(hide);
+          })();
+
+          // Prevent native uploads
+          el.addEventListener('drop', (ev) => { ev.preventDefault(); ev.stopPropagation(); }, true);
+          el.addEventListener('paste', (ev) => {
+            const items = ev.clipboardData?.items ? Array.from(ev.clipboardData.items) : [];
+            if (items.some((it) => it?.kind === 'file')) {
+              ev.preventDefault();
+              ev.stopPropagation();
+            }
+          }, true);
+
+          // Hide native attach button
+          (function hideNativeAttach(){
+            const hide = () => {
+              const root = el.shadowRoot;
+              if (!root) { requestAnimationFrame(hide); return; }
+              if (root.querySelector('style[data-fyi-hide]')) return;
+              const s = document.createElement('style');
+              s.setAttribute('data-fyi-hide', '1');
+              s.textContent = `[data-kind="composer"] [aria-label*="Attach" i], [data-kind="composer"] [part*="attach" i] { display: none !important; }`;
+              root.appendChild(s);
+            };
+            requestAnimationFrame(hide);
+          })();
+
+        } catch (e) {
+          console.error('[iframe] init failed', e);
+        }
+      })();
+    </script>
+  </body>
+</html>
