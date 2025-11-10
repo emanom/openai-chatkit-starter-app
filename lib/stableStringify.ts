@@ -24,7 +24,7 @@ function stringifyInternal(value: unknown): string {
     return value ? "true" : "false";
   }
   if (type === "bigint") {
-    return value.toString();
+    return (value as bigint).toString();
   }
   if (type === "undefined" || type === "function" || type === "symbol") {
     return "null";
