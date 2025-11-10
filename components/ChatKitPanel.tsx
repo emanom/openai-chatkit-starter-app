@@ -59,6 +59,39 @@ type ErrorState = {
 const isBrowser = typeof window !== "undefined";
 const isDev = process.env.NODE_ENV !== "production";
 
+const CITATION_START = "\uE200";
+const CITATION_PATTERN = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
+
+function sanitizeCitations(root: ShadowRoot) {
+  try {
+    const walker = root.ownerDocument?.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    if (!walker) {
+      return;
+    }
+
+    let current = walker.nextNode();
+    while (current) {
+      const textNode = current as Text;
+      const value = textNode.textContent;
+      if (value && value.includes(CITATION_START)) {
+        const cleaned = value.replace(CITATION_PATTERN, "");
+        if (cleaned !== value) {
+          textNode.textContent = cleaned;
+        }
+      }
+      current = walker.nextNode();
+    }
+  } catch (error) {
+    if (isDev) {
+      console.debug("[ChatKitPanel] sanitizeCitations error", error);
+    }
+  }
+}
+
 const createInitialErrors = (): ErrorState => ({
   script: null,
   session: null,
@@ -672,6 +705,8 @@ export function ChatKitPanel({
           `;
           shadow.appendChild(style);
         }
+
+        sanitizeCitations(shadow);
       } catch (e) {
         if (isDev) console.debug('[ChatKitPanel] style injection error:', e);
       }
