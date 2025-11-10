@@ -11,7 +11,6 @@ import {
   WORKFLOW_ID,
   PROMPT_METADATA_ENDPOINT,
   RESOLVE_TITLE_ENDPOINT,
-  getThemeConfig,
 } from "@/lib/config";
 import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";

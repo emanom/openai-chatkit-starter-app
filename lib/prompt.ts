@@ -62,7 +62,12 @@ function normalizeValue(value: unknown): PromptParameterValue {
     return value as Primitive;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => normalizeValue(item));
+    // Only allow arrays of primitives or objects; flatten/serialize nested arrays
+    const mapped = value.map((item) => normalizeValue(item));
+    const normalized: Array<Primitive | PromptParameters> = mapped.map(
+      (v) => (Array.isArray(v) ? String(v) : (v as Primitive | PromptParameters))
+    );
+    return normalized;
   }
   if (type === "object") {
     return normalizePromptParameters(value);
