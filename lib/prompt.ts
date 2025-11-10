@@ -9,12 +9,14 @@ const DEFAULT_PROMPT_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 type Primitive = string | number | boolean | null;
 
-export type PromptParameters = Record<string, PromptParameterValue>;
+export interface PromptParameters {
+  [key: string]: PromptParameterValue;
+}
 
 export type PromptParameterValue =
   | Primitive
   | PromptParameters
-  | (Primitive | PromptParameters)[];
+  | Array<Primitive | PromptParameters>;
 
 type PromptCacheEntry = {
   key: string;
