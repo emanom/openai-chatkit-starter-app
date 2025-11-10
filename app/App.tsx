@@ -1,12 +1,32 @@
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ChatKitPanel, type FactAction } from "@/components/ChatKitPanel";
 import { useColorScheme } from "@/hooks/useColorScheme";
 
 export default function App() {
   const { scheme, setScheme } = useColorScheme();
   const [isOpen, setIsOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const searchParamsString = searchParams.toString();
+  const userMetadata = useMemo(() => {
+    const params = new URLSearchParams(searchParamsString);
+    const entries: Record<string, string> = {};
+    params.forEach((value, key) => {
+      if (key.startsWith("meta.") || key.startsWith("meta_")) {
+        const normalizedKey = key.startsWith("meta.")
+          ? key.slice(5)
+          : key.slice(5);
+        if (normalizedKey) {
+          entries[normalizedKey] = value;
+        }
+      }
+    });
+    return entries;
+  }, [searchParamsString]);
+  const metadataForChat =
+    Object.keys(userMetadata).length > 0 ? userMetadata : undefined;
   
   // Log modal state changes
   useEffect(() => {
@@ -61,6 +81,7 @@ export default function App() {
                 onWidgetAction={handleWidgetAction}
                 onResponseEnd={handleResponseEnd}
                 onThemeRequest={setScheme}
+                userMetadata={metadataForChat}
               />
             </div>
           </div>

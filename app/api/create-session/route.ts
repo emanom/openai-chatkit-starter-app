@@ -1,4 +1,10 @@
 import { WORKFLOW_ID } from "@/lib/config";
+import {
+  getCompiledPrompt,
+  getPromptByKey,
+  normalizePromptParameters,
+  type PromptParameters,
+} from "@/lib/prompt";
 
 export const runtime = "nodejs";
 
@@ -12,6 +18,11 @@ interface CreateSessionRequestBody {
       enabled?: boolean;
     };
   };
+  prompt_parameters?: Record<string, unknown> | null;
+  prompt_metadata?: {
+    key?: string | null;
+    expiresAt?: number | null;
+  } | null;
 }
 
 const DEFAULT_CHATKIT_BASE = "https://api.openai.com";
@@ -95,14 +106,47 @@ export async function POST(request: Request): Promise<Response> {
       headers["ChatKit-Domain-Key"] = domainKey;
     }
     
-    // Build payload (do not include unsupported fields like custom scope)
-    const payload: Record<string, unknown> = {
-      workflow: { id: resolvedWorkflowId },
-      user: userId,
-    };
+    const normalizedParameters: PromptParameters = normalizePromptParameters(
+      parsedBody?.prompt_parameters
+    );
+
+    const requestedPromptKey = parsedBody?.prompt_metadata?.key ?? undefined;
+    let promptEntry =
+      (requestedPromptKey &&
+        getPromptByKey(resolvedWorkflowId, requestedPromptKey, normalizedParameters)) ||
+      null;
+
+    if (!promptEntry) {
+      promptEntry = await getCompiledPrompt({
+        workflowId: resolvedWorkflowId,
+        parameters: normalizedParameters,
+      });
+    }
+
+    // Build payloads. Some API versions may not support workflow.input yet.
+    // Use env flag to opt-in to sending input to avoid an upstream 400 + retry.
+    const allowWorkflowInput =
+      (process.env.CHATKIT_WORKFLOW_INPUT_ENABLED || "").trim() === "1";
+
+    const payloadWithPrompt: Record<string, unknown> = allowWorkflowInput
+      ? {
+          workflow: {
+            id: resolvedWorkflowId,
+            input: {
+              system_prompt: promptEntry.prompt,
+              prompt_key: promptEntry.key,
+              metadata: normalizedParameters,
+            },
+          },
+          user: userId,
+        }
+      : {
+          workflow: { id: resolvedWorkflowId },
+          user: userId,
+        };
 
     // Include file_upload configuration if provided
-    const finalPayload: Record<string, unknown> = { ...payload };
+    const finalPayload: Record<string, unknown> = { ...payloadWithPrompt };
     if (parsedBody?.chatkit_configuration?.file_upload !== undefined) {
       finalPayload.chatkit_configuration = {
         file_upload: {
@@ -111,11 +155,56 @@ export async function POST(request: Request): Promise<Response> {
       };
     }
 
-    const upstreamResponse = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(finalPayload),
-    });
+    // Fallback payload without prompt input (for legacy workflow compatibility)
+    const fallbackPayload: Record<string, unknown> = {
+      workflow: { id: resolvedWorkflowId },
+      user: userId,
+      ...(finalPayload.chatkit_configuration
+        ? { chatkit_configuration: finalPayload.chatkit_configuration }
+        : {}),
+    };
+
+    // If input is disabled, call upstream once with fallback payload to avoid a 400 + retry.
+    let upstreamResponse =
+      allowWorkflowInput
+        ? await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(finalPayload),
+          })
+        : await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(fallbackPayload),
+          });
+
+    let upstreamJson = (await upstreamResponse.json().catch(() => ({}))) as
+      | Record<string, unknown>
+      | undefined;
+
+    if (
+      allowWorkflowInput &&
+      !upstreamResponse.ok &&
+      shouldRetryWithoutPrompt(upstreamResponse.status, upstreamJson)
+    ) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(
+          "[create-session] Retrying without prompt input due to upstream failure",
+          {
+            status: upstreamResponse.status,
+            body: upstreamJson,
+          }
+        );
+      }
+      upstreamResponse = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(fallbackPayload),
+      });
+      upstreamJson = (await upstreamResponse.json().catch(() => ({}))) as
+        | Record<string, unknown>
+        | undefined;
+    }
 
     if (process.env.NODE_ENV !== "production") {
       console.info("[create-session] upstream response", {
@@ -123,10 +212,6 @@ export async function POST(request: Request): Promise<Response> {
         statusText: upstreamResponse.statusText,
       });
     }
-
-    const upstreamJson = (await upstreamResponse.json().catch(() => ({}))) as
-      | Record<string, unknown>
-      | undefined;
 
     if (!upstreamResponse.ok) {
       const upstreamError = extractUpstreamError(upstreamJson);
@@ -153,7 +238,14 @@ export async function POST(request: Request): Promise<Response> {
       ? `sess_${crypto.randomUUID()}`
       : `sess_${Math.random().toString(36).slice(2)}`);
 
-    const merged = { ...(upstreamJson ?? {}), app_session_id: appSessionId };
+    const merged: Record<string, unknown> = {
+      ...(upstreamJson ?? {}),
+      app_session_id: appSessionId,
+    };
+    if (promptEntry) {
+      merged["prompt_key"] = promptEntry.key;
+      merged["prompt_expires_at"] = Math.floor(promptEntry.expiresAt / 1000);
+    }
 
     return buildJsonResponse(
       merged,
@@ -317,4 +409,28 @@ function extractUpstreamError(
     return payload.message;
   }
   return null;
+}
+
+function shouldRetryWithoutPrompt(
+  status: number,
+  payload: Record<string, unknown> | undefined
+): boolean {
+  if (status < 400 || status >= 500) {
+    return false;
+  }
+  if (!payload) {
+    return true;
+  }
+  const message = extractUpstreamError(payload);
+  if (!message) {
+    return true;
+  }
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("input") ||
+    lower.includes("system_prompt") ||
+    lower.includes("prompt_key") ||
+    lower.includes("metadata") ||
+    lower.includes("additional property")
+  );
 }

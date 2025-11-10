@@ -95,31 +95,455 @@
         return null;
       }
 
+      const PROMPT_METADATA_ENDPOINT = '/api/prompt-metadata';
+      const RESOLVE_TITLE_ENDPOINT = '/api/resolve-title';
+      const PROMPT_STORAGE_KEY = 'chatkit_prompt_key';
+      const PROMPT_STORAGE_EXPIRES_KEY = 'chatkit_prompt_key_expires';
+      const PROMPT_STORAGE_HASH_KEY = 'chatkit_prompt_key_hash';
+      const SECRET_STORAGE_KEY = 'chatkit_client_secret';
+      const SECRET_STORAGE_EXPIRES_KEY = 'chatkit_client_secret_expires';
+      const SESSION_METADATA_HASH_KEY = 'chatkit_session_metadata_hash';
+
+      let cachedSecret = null;
+      let cachedSecretExpires = 0;
+      let sessionMetadataHash = null;
+      let promptCache = null;
+
+      function stableStringify(value) {
+        if (value === null) return 'null';
+        const type = typeof value;
+        if (type === 'string') return JSON.stringify(value);
+        if (type === 'number') return Number.isFinite(value) ? String(value) : 'null';
+        if (type === 'boolean') return value ? 'true' : 'false';
+        if (type === 'undefined' || type === 'function' || type === 'symbol') return 'null';
+        if (Array.isArray(value)) {
+          return '[' + value.map(stableStringify).join(',') + ']';
+        }
+        const entries = Object.entries(value || {})
+          .filter(([, v]) => typeof v !== 'function' && typeof v !== 'symbol')
+          .map(([k, v]) => [k, stableStringify(v)]);
+        entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+        return '{' + entries.map(([k, v]) => JSON.stringify(k) + ':' + v).join(',') + '}';
+      }
+
+      function sanitizeMetadataValue(value) {
+        if (value === null) return null;
+        const type = typeof value;
+        if (type === 'string' || type === 'number' || type === 'boolean') {
+          return value;
+        }
+        if (Array.isArray(value)) {
+          return value.map(sanitizeMetadataValue);
+        }
+        if (type === 'object') {
+          return sanitizeMetadata(value);
+        }
+        return String(value);
+      }
+
+      function sanitizeMetadata(input) {
+        if (!input || typeof input !== 'object') {
+          return {};
+        }
+        const result = {};
+        for (const [key, value] of Object.entries(input)) {
+          if (!key) continue;
+          result[key] = sanitizeMetadataValue(value);
+        }
+        return result;
+      }
+
+      function collectMetadata() {
+        const params = new URLSearchParams(window.location.search || '');
+        const meta = {};
+        params.forEach((value, key) => {
+          if (key.startsWith('meta.') || key.startsWith('meta_')) {
+            const normalized = key.slice(5);
+            if (normalized) {
+              meta[normalized] = value;
+            }
+          }
+        });
+        return meta;
+      }
+
+      const rawMetadata = collectMetadata();
+      const sanitizedMetadata = sanitizeMetadata(rawMetadata);
+      const metadataHash = stableStringify(sanitizedMetadata);
+
+      function enhanceSourceLinks(root) {
+        try {
+          function guessUrlFromLabel(text) {
+            const m = String(text || '').trim().match(/(\d+)-([A-Za-z0-9-]+)(?:\.html)?$/);
+            if (!m) return [];
+            const id = m[1], slug = m[2];
+            return [
+              `https://support.fyi.app/hc/en-us/articles/${id}-${slug}`,
+              `https://support.fyi.app/hc/en-us/sections/${id}-${slug}`,
+              `https://support.fyi.app/hc/en-us/categories/${id}-${slug}`,
+            ];
+          }
+
+          const sourceItemSelectors = [
+            '[data-kind="source"]',
+            '[data-part="source"]',
+            '[data-kind="source-list"] [data-kind]',
+            '[data-part="source-list"] [data-part]',
+          ];
+          const items = root.querySelectorAll(sourceItemSelectors.join(','));
+          items.forEach((item) => {
+            if (item.getAttribute('data-fyi-source-upgraded') === '1') return;
+            // Prefer an anchor href
+            let href =
+              (item.querySelector('a[href]') || null)?.getAttribute('href') ||
+              null;
+            // Fallbacks
+            if (!href) {
+              const urlEl =
+                (item.matches('[data-url]') ? item : null) ||
+                item.querySelector('[data-url]') ||
+                item.querySelector('[title*="http"]') ||
+                item.querySelector('[title*="https"]');
+              href =
+                (urlEl && (urlEl.getAttribute('data-url') || urlEl.getAttribute('title'))) ||
+                null;
+              if (!href) {
+                const titleNode =
+                  item.querySelector('[data-kind="source-title"], [data-part="source-title"]') ||
+                  item.querySelector('span, [role="button"]');
+                const guesses = titleNode ? guessUrlFromLabel(titleNode.textContent || '') : [];
+                // We won't validate here to keep the page simple; pick the first guess if any
+                if (guesses.length > 0) href = guesses[0];
+              }
+            }
+            if (!href) return;
+
+            let formatted = href;
+            try { formatted = new URL(href, window.location.origin).toString(); } catch(_){}
+
+            const titleEl =
+              item.querySelector('[data-kind="source-title"]') ||
+              item.querySelector('[data-part="source-title"]') ||
+              item.querySelector('span, [role="button"]');
+            if (titleEl && (titleEl.textContent || '').trim() !== formatted) {
+              titleEl.textContent = formatted;
+              // Make non-anchor act as link
+              if (!(titleEl).closest('a[href]')) {
+                titleEl.setAttribute('role', 'link');
+                titleEl.setAttribute('tabindex', '0');
+                titleEl.setAttribute('title', formatted);
+                if (!titleEl.getAttribute('data-fyi-link-handler')) {
+                  titleEl.setAttribute('data-fyi-link-handler', '1');
+                  titleEl.addEventListener('click', () => {
+                    try { window.open(formatted, '_blank', 'noopener,noreferrer'); } catch(_){}
+                  });
+                  titleEl.addEventListener('keydown', (ev) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      try { window.open(formatted, '_blank', 'noopener,noreferrer'); } catch(_){}
+                    }
+                  });
+                }
+              }
+            } else {
+              const anchors = item.querySelectorAll('a[href]');
+              anchors.forEach((a) => {
+                if ((a.textContent || '').trim() !== formatted) {
+                  a.textContent = formatted;
+                }
+                a.setAttribute('title', formatted);
+                try {
+                  const abs = new URL(a.getAttribute('href') || '', window.location.origin);
+                  if (abs.origin !== window.location.origin) {
+                    a.target = '_blank';
+                    a.rel = 'noopener noreferrer';
+                  }
+                } catch(_){}
+              });
+            }
+
+            const anchors = item.querySelectorAll('a[href]');
+            anchors.forEach((a) => {
+              try {
+                const abs = new URL(a.getAttribute('href') || '', window.location.origin).toString();
+                if (a.getAttribute('title') !== abs) a.setAttribute('title', abs);
+              } catch(_){}
+            });
+
+            item.setAttribute('data-fyi-source-upgraded', '1');
+          });
+        } catch (error) {
+          console.debug('[Sources] enhanceSourceLinks error', error);
+        }
+      }
+
+      const fetchingTitleSet = new Set();
+      function normalizeForCompare(s) {
+        return String(s || '')
+          .replace(/\s+/g, ' ')
+          .replace(/[.\u2014\-–—:\s]+$/g, '')
+          .trim()
+          .toLowerCase();
+      }
+      function dedupeTitleBeforeAnchor(anchor, title) {
+        try {
+          const prev = anchor.previousSibling;
+          if (!prev || prev.nodeType !== Node.TEXT_NODE) return;
+          const original = prev.textContent || '';
+          const normOrig = normalizeForCompare(original);
+          const normTitle = normalizeForCompare(title);
+          if (normOrig.endsWith(normTitle)) {
+            const idx = original.toLowerCase().lastIndexOf(title.toLowerCase());
+            if (idx >= 0) {
+              const trimmed = original.slice(0, idx).replace(/[.\u2014\-–—:\s]+$/g, '');
+              prev.textContent = trimmed.length ? trimmed + ' ' : '';
+            }
+          }
+        } catch(_) {}
+      }
+      function enhanceInlineLinks(root) {
+        try {
+          const anchors = root.querySelectorAll('[data-thread-turn] a[href]');
+          anchors.forEach(async (a) => {
+            const href = a.getAttribute('href') || '';
+            if (!href || a.getAttribute('data-fyi-title-upgraded') === '1') return;
+            const label = (a.textContent || '').trim();
+            const looksLikeUrl = /^https?:/i.test(label) || label === href || label.includes('http');
+            if (!looksLikeUrl) {
+              try {
+                const abs = new URL(href, window.location.origin);
+                if (abs.origin !== window.location.origin) {
+                  a.target = '_blank';
+                  a.rel = 'noopener noreferrer';
+                }
+              } catch(_){}
+              return;
+            }
+            if (fetchingTitleSet.has(href)) return;
+            fetchingTitleSet.add(href);
+            try {
+              const res = await fetch(RESOLVE_TITLE_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: href }),
+              });
+              const data = await res.json().catch(() => ({}));
+              const title = (typeof data?.title === 'string' && data.title.trim()) || null;
+              if (title && a.isConnected) {
+                a.textContent = title;
+                dedupeTitleBeforeAnchor(a, title);
+              }
+              try {
+                const abs = new URL(href, window.location.origin);
+                if (abs.origin !== window.location.origin) {
+                  a.target = '_blank';
+                  a.rel = 'noopener noreferrer';
+                }
+              } catch(_){}
+              a.setAttribute('data-fyi-title-upgraded', '1');
+            } catch(_){
+            } finally {
+              fetchingTitleSet.delete(href);
+            }
+          });
+        } catch (e) {
+          console.debug('[InlineLinks] error', e);
+        }
+      }
+
+      function sanitizeCitationsDeep(root) {
+        try {
+          const CITATION_PATTERN = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+          let node = walker.nextNode();
+          while (node) {
+            const text = node.nodeValue || '';
+            if (text.indexOf('\uE200') !== -1) {
+              const cleaned = text.replace(CITATION_PATTERN, '');
+              if (cleaned !== text) node.nodeValue = cleaned;
+            }
+            node = walker.nextNode();
+          }
+        } catch(_) {}
+      }
+      function storeSecret(secret, expiresAtMs) {
+        cachedSecret = secret;
+        cachedSecretExpires = expiresAtMs;
+        sessionMetadataHash = metadataHash;
+        try {
+          window.localStorage.setItem(SECRET_STORAGE_KEY, secret);
+          window.localStorage.setItem(SECRET_STORAGE_EXPIRES_KEY, String(expiresAtMs));
+          window.localStorage.setItem(SESSION_METADATA_HASH_KEY, metadataHash);
+        } catch (_) {}
+      }
+
+      function storePromptMetadata(entry) {
+        promptCache = entry;
+        try {
+          window.localStorage.setItem(PROMPT_STORAGE_KEY, entry.key);
+          window.localStorage.setItem(PROMPT_STORAGE_EXPIRES_KEY, String(entry.expiresAt));
+          window.localStorage.setItem(PROMPT_STORAGE_HASH_KEY, entry.hash);
+        } catch (_) {}
+      }
+
+      async function ensurePromptMetadata() {
+        const now = Date.now();
+        if (
+          promptCache &&
+          promptCache.hash === metadataHash &&
+          promptCache.expiresAt > now
+        ) {
+          return promptCache;
+        }
+        try {
+          const storedKey = window.localStorage.getItem(PROMPT_STORAGE_KEY);
+          const storedExpires = Number(window.localStorage.getItem(PROMPT_STORAGE_EXPIRES_KEY));
+          const storedHash = window.localStorage.getItem(PROMPT_STORAGE_HASH_KEY);
+          if (
+            storedKey &&
+            storedHash === metadataHash &&
+            Number.isFinite(storedExpires) &&
+            storedExpires > now
+          ) {
+            const entry = { key: storedKey, expiresAt: storedExpires, hash: storedHash };
+            storePromptMetadata(entry);
+            return entry;
+          }
+        } catch (error) {
+          console.debug('[PromptMetadata] localStorage unavailable', error);
+        }
+        try {
+          const res = await fetch(PROMPT_METADATA_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              parameters: sanitizedMetadata,
+            }),
+          });
+          if (!res.ok) {
+            const txt = await res.text().catch(() => '');
+            throw new Error(txt || res.statusText);
+          }
+          const data = await res.json();
+          if (data && data.promptKey) {
+            const entry = {
+              key: data.promptKey,
+              expiresAt:
+                typeof data.expiresAt === 'number' && Number.isFinite(data.expiresAt)
+                  ? data.expiresAt
+                  : Date.now() + 5 * 60 * 1000,
+              hash: metadataHash,
+            };
+            storePromptMetadata(entry);
+            return entry;
+          }
+        } catch (error) {
+          console.warn('[PromptMetadata] fetch failed', error);
+        }
+        return null;
+      }
+
       async function getClientSecret(currentSecret) {
-        // If ChatKit provides an existing secret, reuse it to maintain session continuity
+        const now = Date.now();
+
         if (currentSecret) {
+          if (!cachedSecretExpires || cachedSecretExpires < now) {
+            cachedSecretExpires = now + 5 * 60 * 1000;
+          }
+          storeSecret(currentSecret, cachedSecretExpires);
+          ensurePromptMetadata().catch(() => {});
           return currentSecret;
         }
-        
+
+        if (
+          cachedSecret &&
+          cachedSecretExpires > now &&
+          sessionMetadataHash === metadataHash
+        ) {
+          ensurePromptMetadata().catch(() => {});
+          return cachedSecret;
+        }
+
+        try {
+          const lsSecret = window.localStorage.getItem(SECRET_STORAGE_KEY);
+          const lsExpires = Number(
+            window.localStorage.getItem(SECRET_STORAGE_EXPIRES_KEY)
+          );
+          const lsHash = window.localStorage.getItem(SESSION_METADATA_HASH_KEY);
+          if (
+            lsSecret &&
+            Number.isFinite(lsExpires) &&
+            lsExpires > now &&
+            lsHash === metadataHash
+          ) {
+            storeSecret(lsSecret, lsExpires);
+            ensurePromptMetadata().catch(() => {});
+            return lsSecret;
+          }
+        } catch (error) {
+          console.debug('[Session] localStorage unavailable', error);
+        }
+
+        const promptEntry = await ensurePromptMetadata();
+
         try {
           const res = await fetch('/api/create-session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+            body: JSON.stringify({
+              prompt_parameters: sanitizedMetadata,
+              ...(promptEntry
+                ? {
+                    prompt_metadata: {
+                      key: promptEntry.key,
+                      expiresAt: promptEntry.expiresAt,
+                    },
+                  }
+                : {}),
+            }),
           });
           if (!res.ok) {
             const t = await res.text().catch(() => '');
-            const errorMsg = 'Failed to create ChatKit session: ' + (t || res.statusText);
+            const errorMsg =
+              'Failed to create ChatKit session: ' + (t || res.statusText);
             console.error('[Session]', errorMsg);
             throw new Error(errorMsg);
           }
           const data = await res.json();
-          try { window.appSessionId = data.app_session_id || null; } catch(_) {}
+          try {
+            window.appSessionId = data.app_session_id || null;
+          } catch (_) {}
           if (!data || !data.client_secret) {
             const errorMsg = 'Missing client_secret in response';
             console.error('[Session]', errorMsg);
             throw new Error(errorMsg);
           }
+          const expiresAtSeconds = typeof data.expires_at === 'number'
+            ? data.expires_at
+            : null;
+          const expiresAtMs = expiresAtSeconds
+            ? expiresAtSeconds * 1000
+            : Date.now() + 5 * 60 * 1000;
+          storeSecret(data.client_secret, expiresAtMs);
+
+          const responsePromptKey =
+            typeof data.prompt_key === 'string' ? data.prompt_key : null;
+          const responsePromptExpires =
+            typeof data.prompt_expires_at === 'number'
+              ? data.prompt_expires_at * 1000
+              : null;
+          const promptKeyToPersist =
+            responsePromptKey || (promptEntry && promptEntry.key) || null;
+          if (promptKeyToPersist) {
+            storePromptMetadata({
+              key: promptKeyToPersist,
+              expiresAt:
+                responsePromptExpires ||
+                (promptEntry && promptEntry.expiresAt) ||
+                Date.now() + 5 * 60 * 1000,
+              hash: metadataHash,
+            });
+          }
+
           return data.client_secret;
         } catch (error) {
           console.error('[Session] Error creating session:', error);
@@ -349,9 +773,32 @@
                 requestAnimationFrame(attemptAttach);
                 return;
               }
-              scrub(root);
+            scrub(root);
+            // Debounce content enhancements to avoid interfering during renders
+            if (window.__fyiEnhanceTimer) clearTimeout(window.__fyiEnhanceTimer);
+            window.__fyiEnhanceTimer = setTimeout(() => {
+              try {
+                const total = root.querySelectorAll('*').length;
+                const hasKind = !!root.querySelector('[data-kind]');
+                if (total > 20 || hasKind) {
+                  enhanceSourceLinks(root);
+                  enhanceInlineLinks(root);
+                  sanitizeCitationsDeep(root);
+                }
+              } catch(_){}
+            }, 250);
               if (!observer) {
-                observer = new MutationObserver(() => scrub(root));
+                observer = new MutationObserver(() => {
+                  scrub(root);
+                  if (window.__fyiEnhanceTimer) clearTimeout(window.__fyiEnhanceTimer);
+                  window.__fyiEnhanceTimer = setTimeout(() => {
+                    try {
+                      enhanceSourceLinks(root);
+                      enhanceInlineLinks(root);
+                      sanitizeCitationsDeep(root);
+                    } catch(_){}
+                  }, 250);
+                });
                 observer.observe(root, { childList: true, subtree: true });
               }
             };

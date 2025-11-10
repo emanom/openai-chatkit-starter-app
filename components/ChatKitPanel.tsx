@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatKit, useChatKit } from "@openai/chatkit-react";
 import type { UseChatKitOptions } from "@openai/chatkit-react";
 import {
@@ -9,10 +9,13 @@ import {
   GREETING,
   CREATE_SESSION_ENDPOINT,
   WORKFLOW_ID,
+  PROMPT_METADATA_ENDPOINT,
+  RESOLVE_TITLE_ENDPOINT,
   getThemeConfig,
 } from "@/lib/config";
 import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";
+import { stableStringify } from "@/lib/stableStringify";
 
 // Component to auto-hide loading overlay after timeout
 function LoadingTimeoutHandler({ 
@@ -46,6 +49,7 @@ type ChatKitPanelProps = {
   onThemeRequest: (scheme: ColorScheme) => void;
   initialQuery?: string;
   hideComposer?: boolean;
+  userMetadata?: Record<string, unknown>;
   onChatKitReady?: (chatkit: { setComposerValue: (value: { text: string }) => Promise<void>; focusComposer: () => Promise<void> }) => void;
 };
 
@@ -61,6 +65,17 @@ const isDev = process.env.NODE_ENV !== "production";
 
 const CITATION_START = "\uE200";
 const CITATION_PATTERN = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
+const CITATION_PATTERN_GLOBAL = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
+const PROMPT_STORAGE_KEY = "chatkit_prompt_key";
+const PROMPT_STORAGE_EXPIRES_KEY = "chatkit_prompt_key_expires";
+const PROMPT_STORAGE_HASH_KEY = "chatkit_prompt_key_hash";
+const SESSION_METADATA_HASH_KEY = "chatkit_session_metadata_hash";
+
+type PromptCacheInfo = {
+  key: string;
+  expiresAt: number;
+  hash: string;
+};
 
 function sanitizeCitations(root: ShadowRoot) {
   try {
@@ -92,6 +107,317 @@ function sanitizeCitations(root: ShadowRoot) {
   }
 }
 
+function sanitizeCitationsDeep(root: ShadowRoot) {
+  try {
+    const walker = root.ownerDocument?.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    if (!walker) return;
+    let node = walker.nextNode();
+    while (node) {
+      const text = (node as Text).nodeValue;
+      if (text && text.includes(CITATION_START)) {
+        const cleaned = text.replace(CITATION_PATTERN_GLOBAL, "");
+        if (cleaned !== text) {
+          (node as Text).nodeValue = cleaned;
+        }
+      }
+      node = walker.nextNode();
+    }
+  } catch (error) {
+    if (isDev) console.debug("[ChatKitPanel] sanitizeCitationsDeep error", error);
+  }
+}
+function enhanceSourceLinks(root: ShadowRoot) {
+  try {
+    const guessUrlsFromLabel = (label: string): string[] => {
+      const text = label.trim();
+      // Zendesk export-style filename: 360041994511-Title-Here.html
+      const m = text.match(/(\d+)-([A-Za-z0-9-]+)(?:\.html)?$/);
+      if (m) {
+        const id = m[1];
+        const slug = m[2];
+        // Try article first, then section, then category
+        return [
+          `https://support.fyi.app/hc/en-us/articles/${id}-${slug}`,
+          `https://support.fyi.app/hc/en-us/sections/${id}-${slug}`,
+          `https://support.fyi.app/hc/en-us/categories/${id}-${slug}`,
+        ];
+      }
+      return [];
+    };
+    const resolverCache = new Map<string, boolean>();
+    const validateUrl = async (url: string): Promise<boolean> => {
+      if (resolverCache.has(url)) return resolverCache.get(url)!;
+      try {
+        const res = await fetch(`${RESOLVE_TITLE_ENDPOINT}?url=${encodeURIComponent(url)}`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+        const ok =
+          res.ok &&
+          (await res
+            .json()
+            .then((d: unknown) => Boolean((d as { title?: unknown })?.title))
+            .catch(() => false));
+        resolverCache.set(url, ok);
+        return ok;
+      } catch {
+        resolverCache.set(url, false);
+        return false;
+      }
+    };
+
+    // For each source item, try to find a usable URL and then update the visible title text
+    const sourceItemSelectors = [
+      '[data-kind="source"]',
+      '[data-part="source"]',
+      '[data-kind="source-list"] [data-kind]',
+      '[data-part="source-list"] [data-part]',
+    ];
+    const sourceItems = root.querySelectorAll<HTMLElement>(
+      sourceItemSelectors.join(",")
+    );
+    sourceItems.forEach((item) => {
+      if (item.hasAttribute("data-fyi-source-upgraded")) return;
+
+      // 1) Prefer an explicit anchor
+      let href: string | null =
+        item.querySelector<HTMLAnchorElement>("a[href]")?.getAttribute("href") ??
+        null;
+
+      // 2) Look for data-url or title attributes on the item or descendants
+      const upgradeItem = async () => {
+        if (!href) {
+        const urlEl =
+          (item.matches("[data-url]") ? item : null) ||
+          item.querySelector<HTMLElement>("[data-url]") ||
+          item.querySelector<HTMLElement>('[title*="http"]') ||
+          item.querySelector<HTMLElement>('[title*="https"]');
+          href =
+            (urlEl?.getAttribute("data-url") ||
+              urlEl?.getAttribute("title")) ??
+            null;
+          if (!href) {
+            // Try to infer from any visible filename-like label
+            const labelNode =
+              item.querySelector<HTMLElement>('[data-kind="source-title"], [data-part="source-title"]') ||
+              item.querySelector<HTMLElement>("span, [role='button']");
+            const guesses =
+              (labelNode &&
+                labelNode.textContent &&
+                guessUrlsFromLabel(labelNode.textContent)) ||
+              [];
+            for (const g of guesses) {
+              // Pick the first resolvable URL
+              // eslint-disable-next-line no-await-in-loop
+              if (await validateUrl(g)) {
+                href = g;
+                break;
+              }
+            }
+            // If none validated, still use first guess as best effort
+            if (!href && guesses.length > 0) {
+              href = guesses[0];
+            }
+          }
+        }
+
+        if (!href) return;
+
+        // Normalize to absolute
+        let formatted = href;
+        try {
+          formatted = new URL(href, window.location.origin).toString();
+        } catch {}
+
+        // 3) Update a dedicated title node if present, otherwise anchors
+        const titleEl =
+          item.querySelector<HTMLElement>('[data-kind="source-title"]') ||
+          item.querySelector<HTMLElement>('[data-part="source-title"]') ||
+          item.querySelector<HTMLElement>('span, [role="button"]');
+        if (titleEl) {
+          const current = (titleEl.textContent || "").trim();
+          if (current !== formatted) {
+            titleEl.textContent = formatted;
+          }
+          // If not an anchor, make it behave as a link
+          if (!(titleEl as HTMLAnchorElement).href) {
+            titleEl.setAttribute("role", "link");
+            titleEl.setAttribute("tabindex", "0");
+            titleEl.setAttribute("title", formatted);
+            // Only attach once
+            if (!titleEl.getAttribute("data-fyi-link-handler")) {
+              titleEl.setAttribute("data-fyi-link-handler", "1");
+              titleEl.addEventListener("click", () => {
+                try {
+                  window.open(formatted, "_blank", "noopener,noreferrer");
+                } catch {}
+              });
+              titleEl.addEventListener("keydown", (ev: KeyboardEvent) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                  try {
+                    window.open(formatted, "_blank", "noopener,noreferrer");
+                  } catch {}
+                }
+              });
+            }
+          }
+        } else {
+          // Fallback: update all anchor texts under this item to the full URL
+          const anchors = item.querySelectorAll<HTMLAnchorElement>("a[href]");
+          anchors.forEach((a) => {
+            if ((a.textContent || "").trim() !== formatted) {
+              a.textContent = formatted;
+            }
+            a.setAttribute("title", formatted);
+            try {
+              const abs = new URL(a.getAttribute("href") || "", window.location.origin);
+              if (abs.origin !== window.location.origin) {
+                a.target = "_blank";
+                a.rel = "noopener noreferrer";
+              }
+            } catch {}
+          });
+        }
+
+        // 4) Ensure the anchor title shows the full URL globally for this item
+        const allAnchors = item.querySelectorAll<HTMLAnchorElement>("a[href]");
+        allAnchors.forEach((a) => {
+          try {
+            const abs = new URL(a.getAttribute("href") || "", window.location.origin).toString();
+            if (a.getAttribute("title") !== abs) a.setAttribute("title", abs);
+          } catch {}
+        });
+
+        item.setAttribute("data-fyi-source-upgraded", "1");
+      };
+      void upgradeItem();
+    });
+  } catch (error) {
+    if (isDev) {
+      console.debug("[ChatKitPanel] enhanceSourceLinks error", error);
+    }
+  }
+}
+
+const fetchingTitleSet = new Set<string>();
+function normalizeForCompare(s: string): string {
+  return s.replace(/\s+/g, " ").replace(/[.\u2014\-–—:\s]+$/g, "").trim().toLowerCase();
+}
+function dedupeTitleBeforeAnchor(anchor: HTMLAnchorElement, title: string) {
+  try {
+    const parent = anchor.parentNode as (HTMLElement | null);
+    if (!parent) return;
+    const prev = anchor.previousSibling;
+    if (!prev || prev.nodeType !== Node.TEXT_NODE) return;
+    const textNode = prev as Text;
+    const original = textNode.textContent || "";
+    const normOrig = normalizeForCompare(original);
+    const normTitle = normalizeForCompare(title);
+    if (normOrig.endsWith(normTitle)) {
+      // remove the trailing duplicate title (and trailing punctuation/spaces)
+      const idx = original.toLowerCase().lastIndexOf(title.toLowerCase());
+      if (idx >= 0) {
+        const trimmed = original.slice(0, idx).replace(/[.\u2014\-–—:\s]+$/g, "");
+        textNode.textContent = trimmed.length ? trimmed + " " : "";
+      }
+    }
+  } catch {}
+}
+async function enhanceInlineLinks(root: ShadowRoot) {
+  try {
+    const anchors = root.querySelectorAll<HTMLAnchorElement>(
+      '[data-thread-turn] a[href]'
+    );
+    anchors.forEach(async (a) => {
+      const href = a.getAttribute("href") || "";
+      if (!href || a.hasAttribute("data-fyi-title-upgraded")) return;
+      const label = (a.textContent || "").trim();
+      const looksLikeUrl = /^https?:/i.test(label) || label === href || label.includes("http");
+      if (!looksLikeUrl) {
+        // Ensure external links open in new tab
+        try {
+          const abs = new URL(href, window.location.origin);
+          if (abs.origin !== window.location.origin) {
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+          }
+        } catch {}
+        return;
+      }
+
+      // Avoid duplicate fetches
+      if (fetchingTitleSet.has(href)) return;
+      fetchingTitleSet.add(href);
+      try {
+        const res = await fetch(RESOLVE_TITLE_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: href }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          title?: string;
+        };
+        const title =
+          (typeof data?.title === "string" && data.title.trim()) || null;
+        if (title && a.isConnected) {
+          a.textContent = title;
+          dedupeTitleBeforeAnchor(a, title);
+        }
+        // Open external in new tab
+        try {
+          const abs = new URL(href, window.location.origin);
+          if (abs.origin !== window.location.origin) {
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+          }
+        } catch {}
+        a.setAttribute("data-fyi-title-upgraded", "1");
+      } catch {
+        // noop
+      } finally {
+        fetchingTitleSet.delete(href);
+      }
+    });
+  } catch (e) {
+    if (isDev) console.debug("[ChatKitPanel] enhanceInlineLinks error:", e);
+  }
+}
+
+function sanitizeMetadata(
+  input: Record<string, unknown> | null | undefined
+): Record<string, unknown> {
+  if (!input || typeof input !== "object") {
+    return {};
+  }
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!key) continue;
+    result[key] = sanitizeMetadataValue(value);
+  }
+  return result;
+}
+
+function sanitizeMetadataValue(value: unknown): unknown {
+  if (value === null) {
+    return null;
+  }
+  const type = typeof value;
+  if (type === "string" || type === "number" || type === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeMetadataValue(item));
+  }
+  if (type === "object") {
+    return sanitizeMetadata(value as Record<string, unknown>);
+  }
+  return String(value);
+}
+
 const createInitialErrors = (): ErrorState => ({
   script: null,
   session: null,
@@ -106,6 +432,7 @@ export function ChatKitPanel({
   onThemeRequest,
   initialQuery,
   hideComposer = false,
+  userMetadata,
   onChatKitReady,
 }: ChatKitPanelProps) {
   const processedFacts = useRef(new Set<string>());
@@ -117,6 +444,9 @@ export function ChatKitPanel({
   const cachedSecretRef = useRef<string | null>(null); // Cache the client secret
   const secretExpiresRef = useRef<number>(0); // Track when secret expires
   const hasActiveSessionRef = useRef<boolean>(false); // Tracks if a usable session exists
+  const promptCacheRef = useRef<PromptCacheInfo | null>(null);
+  const sessionMetadataHashRef = useRef<string | null>(null);
+  const metadataHashRef = useRef<string>("");
   const [scriptStatus, setScriptStatus] = useState<
     "pending" | "ready" | "error"
   >(() =>
@@ -134,6 +464,14 @@ export function ChatKitPanel({
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const responseStartRef = useRef<number>(0);
   const responseSeqRef = useRef<number>(0);
+  const cleanedMetadata = useMemo(
+    () => sanitizeMetadata(userMetadata),
+    [userMetadata]
+  );
+  const metadataHash = useMemo(
+    () => stableStringify(cleanedMetadata),
+    [cleanedMetadata]
+  );
 
   const setErrorState = useCallback((updates: Partial<ErrorState>) => {
     setErrors((current) => ({ ...current, ...updates }));
@@ -224,7 +562,17 @@ export function ChatKitPanel({
     lastSessionCreatedRef.current = 0; // Reset cooldown timer
     cachedSecretRef.current = null; // Clear cached secret
     secretExpiresRef.current = 0; // Clear expiration
+    promptCacheRef.current = null;
+    sessionMetadataHashRef.current = null;
     if (isBrowser) {
+      try {
+        window.localStorage.removeItem("chatkit_client_secret");
+        window.localStorage.removeItem("chatkit_client_secret_expires");
+        window.localStorage.removeItem(PROMPT_STORAGE_KEY);
+        window.localStorage.removeItem(PROMPT_STORAGE_EXPIRES_KEY);
+        window.localStorage.removeItem(PROMPT_STORAGE_HASH_KEY);
+        window.localStorage.removeItem(SESSION_METADATA_HASH_KEY);
+      } catch {}
       setScriptStatus(
         window.customElements?.get("openai-chatkit") ? "ready" : "pending"
       );
@@ -234,6 +582,126 @@ export function ChatKitPanel({
     setWidgetInstanceKey((prev) => prev + 1);
   }, []);
 
+  useEffect(() => {
+    if (!metadataHashRef.current) {
+      metadataHashRef.current = metadataHash;
+      return;
+    }
+    if (metadataHashRef.current !== metadataHash) {
+      if (isDev) {
+        console.info("[ChatKitPanel] Metadata changed - resetting session");
+      }
+      metadataHashRef.current = metadataHash;
+      handleResetChat();
+    }
+  }, [handleResetChat, metadataHash]);
+
+  const storeSessionMetadataHash = useCallback((hash: string) => {
+    sessionMetadataHashRef.current = hash;
+    if (isBrowser) {
+      try {
+        window.localStorage.setItem(SESSION_METADATA_HASH_KEY, hash);
+      } catch {}
+    }
+  }, []);
+
+  const persistPromptMetadata = useCallback((entry: PromptCacheInfo) => {
+    promptCacheRef.current = entry;
+    if (isBrowser) {
+      try {
+        window.localStorage.setItem(PROMPT_STORAGE_KEY, entry.key);
+        window.localStorage.setItem(
+          PROMPT_STORAGE_EXPIRES_KEY,
+          String(entry.expiresAt)
+        );
+        window.localStorage.setItem(PROMPT_STORAGE_HASH_KEY, entry.hash);
+      } catch {}
+    }
+  }, []);
+
+  const ensurePromptMetadata = useCallback(async (): Promise<PromptCacheInfo | null> => {
+    const now = Date.now();
+    const cached = promptCacheRef.current;
+    if (
+      cached &&
+      cached.hash === metadataHash &&
+      cached.expiresAt > now
+    ) {
+      return cached;
+    }
+
+    if (isBrowser) {
+      try {
+        const lsKey = window.localStorage.getItem(PROMPT_STORAGE_KEY);
+        const lsExpiresRaw = window.localStorage.getItem(
+          PROMPT_STORAGE_EXPIRES_KEY
+        );
+        const lsHash = window.localStorage.getItem(PROMPT_STORAGE_HASH_KEY);
+        const lsExpires = lsExpiresRaw ? Number(lsExpiresRaw) : 0;
+        if (
+          lsKey &&
+          lsHash === metadataHash &&
+          Number.isFinite(lsExpires) &&
+          lsExpires > now
+        ) {
+          const entry: PromptCacheInfo = {
+            key: lsKey,
+            expiresAt: lsExpires,
+            hash: lsHash,
+          };
+          persistPromptMetadata(entry);
+          return entry;
+        }
+      } catch (error) {
+        if (isDev) {
+          console.debug(
+            "[ChatKitPanel] prompt metadata localStorage error",
+            error
+          );
+        }
+      }
+    }
+
+    try {
+      const response = await fetch(PROMPT_METADATA_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workflowId: WORKFLOW_ID,
+          parameters: cleanedMetadata,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(text || response.statusText);
+      }
+      const data = (await response.json().catch(() => ({}))) as {
+        promptKey?: string;
+        expiresAt?: number;
+      };
+      if (!data.promptKey) {
+        throw new Error("Missing prompt metadata key");
+      }
+      const entry: PromptCacheInfo = {
+        key: data.promptKey,
+        expiresAt:
+          typeof data.expiresAt === "number" && Number.isFinite(data.expiresAt)
+            ? data.expiresAt
+            : Date.now() + 5 * 60 * 1000,
+        hash: metadataHash,
+      };
+      persistPromptMetadata(entry);
+      return entry;
+    } catch (error) {
+      if (isDev) {
+        console.warn("[ChatKitPanel] Failed to fetch prompt metadata", error);
+      }
+      return null;
+    }
+  }, [cleanedMetadata, metadataHash, persistPromptMetadata]);
+
   const getClientSecret = useCallback(
     async (currentSecret: string | null) => {
       if (isDev) {
@@ -242,6 +710,7 @@ export function ChatKitPanel({
           hasCached: Boolean(cachedSecretRef.current),
         });
       }
+      const now = Date.now();
 
       // CRITICAL: If ChatKit is passing us an existing secret, validate and return it!
       // ChatKit will pass the current secret when it wants to reuse the same session
@@ -249,11 +718,13 @@ export function ChatKitPanel({
         console.info("[ChatKitPanel] ✅ ChatKit provided existing secret, returning it to maintain session continuity");
         // Store it in our cache for future use
         cachedSecretRef.current = currentSecret;
-        if (!secretExpiresRef.current || secretExpiresRef.current < Date.now()) {
+        if (!secretExpiresRef.current || secretExpiresRef.current < now) {
           // Set a reasonable expiration if we don't have one (5 minutes from now)
-          secretExpiresRef.current = Date.now() + (5 * 60 * 1000);
+          secretExpiresRef.current = now + (5 * 60 * 1000);
         }
         hasActiveSessionRef.current = true;
+        storeSessionMetadataHash(metadataHash);
+        void ensurePromptMetadata();
         if (isMountedRef.current) {
           isInitializingRef.current = false;
           setIsInitializingSession(false);
@@ -263,7 +734,11 @@ export function ChatKitPanel({
       }
 
       // If we have a cached secret in-memory that hasn't expired, return it immediately
-      if (cachedSecretRef.current && Date.now() < secretExpiresRef.current) {
+      if (
+        cachedSecretRef.current &&
+        now < secretExpiresRef.current &&
+        sessionMetadataHashRef.current === metadataHash
+      ) {
         if (isDev) console.info("[ChatKitPanel] returning cached secret");
         // ALWAYS clear initializing state when returning cached secret
         isInitializingRef.current = false;
@@ -273,6 +748,7 @@ export function ChatKitPanel({
           setIsInitializingSession(false);
           setErrorState({ session: null, integration: null });
         }, 0);
+        void ensurePromptMetadata();
         return cachedSecretRef.current;
       }
 
@@ -281,18 +757,26 @@ export function ChatKitPanel({
         try {
           const lsSecret = window.localStorage.getItem("chatkit_client_secret");
           const lsExpires = Number(window.localStorage.getItem("chatkit_client_secret_expires"));
-          if (lsSecret && Number.isFinite(lsExpires) && Date.now() < lsExpires) {
+          const lsHash = window.localStorage.getItem(SESSION_METADATA_HASH_KEY);
+          if (
+            lsSecret &&
+            Number.isFinite(lsExpires) &&
+            now < lsExpires &&
+            lsHash === metadataHash
+          ) {
             cachedSecretRef.current = lsSecret;
             secretExpiresRef.current = lsExpires;
             if (isDev) console.info("[ChatKitPanel] returning localStorage cached secret");
             // ALWAYS clear initializing state when returning cached secret
             isInitializingRef.current = false;
             hasActiveSessionRef.current = true;
+            storeSessionMetadataHash(metadataHash);
             // Use setTimeout to ensure state update happens even if component remounts
             setTimeout(() => {
               setIsInitializingSession(false);
               setErrorState({ session: null, integration: null });
             }, 0);
+            void ensurePromptMetadata();
             return lsSecret;
           }
         } catch (e) {
@@ -311,8 +795,8 @@ export function ChatKitPanel({
       }
 
       // Prevent rapid successive session creation calls (cooldown: 2 seconds)
-      const now = Date.now();
-      const timeSinceLastSession = now - lastSessionCreatedRef.current;
+      const cooldownNow = Date.now();
+      const timeSinceLastSession = cooldownNow - lastSessionCreatedRef.current;
       if (isDev) console.info("[ChatKitPanel] cooldown", { sinceMs: timeSinceLastSession });
       
       if (!currentSecret && timeSinceLastSession < 2000 && lastSessionCreatedRef.current > 0) {
@@ -351,6 +835,7 @@ export function ChatKitPanel({
       }
 
       try {
+        const promptEntry = await ensurePromptMetadata();
         const response = await fetch(CREATE_SESSION_ENDPOINT, {
           method: "POST",
           headers: {
@@ -364,6 +849,15 @@ export function ChatKitPanel({
                 enabled: true,
               },
             },
+            prompt_parameters: cleanedMetadata,
+            ...(promptEntry
+              ? {
+                  prompt_metadata: {
+                    key: promptEntry.key,
+                    expiresAt: promptEntry.expiresAt,
+                  },
+                }
+              : {}),
           }),
         });
 
@@ -400,6 +894,7 @@ export function ChatKitPanel({
         }
         cachedSecretRef.current = clientSecret;
         hasActiveSessionRef.current = true;
+        storeSessionMetadataHash(metadataHash);
 
         // Persist to localStorage for robustness against re-mounts/re-inits
         if (isBrowser) {
@@ -407,6 +902,26 @@ export function ChatKitPanel({
             window.localStorage.setItem("chatkit_client_secret", clientSecret);
             window.localStorage.setItem("chatkit_client_secret_expires", String(secretExpiresRef.current));
           } catch {}
+        }
+
+        const responsePromptKey =
+          typeof data?.prompt_key === "string" ? data.prompt_key : undefined;
+        const responsePromptExpires =
+          typeof data?.prompt_expires_at === "number"
+            ? data.prompt_expires_at * 1000
+            : undefined;
+        const resolvedPromptKey =
+          responsePromptKey ?? promptEntry?.key ?? null;
+        if (resolvedPromptKey) {
+          const resolvedExpires =
+            responsePromptExpires ??
+            promptEntry?.expiresAt ??
+            Date.now() + 5 * 60 * 1000;
+          persistPromptMetadata({
+            key: resolvedPromptKey,
+            expiresAt: resolvedExpires,
+            hash: metadataHash,
+          });
         }
 
         if (isMountedRef.current) {
@@ -434,7 +949,15 @@ export function ChatKitPanel({
         }
       }
     },
-    [isWorkflowConfigured, setErrorState]
+    [
+      cleanedMetadata,
+      ensurePromptMetadata,
+      isWorkflowConfigured,
+      metadataHash,
+      setErrorState,
+      storeSessionMetadataHash,
+      persistPromptMetadata,
+    ]
   );
 
   const chatkitConfig: UseChatKitOptions = {
@@ -706,10 +1229,37 @@ export function ChatKitPanel({
           shadow.appendChild(style);
         }
 
-        sanitizeCitations(shadow);
       } catch (e) {
         if (isDev) console.debug('[ChatKitPanel] style injection error:', e);
       }
+    };
+
+    let enhanceTimer: number | null = null;
+    const scheduleEnhancements = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) return;
+        if (enhanceTimer) {
+          window.clearTimeout(enhanceTimer);
+          enhanceTimer = null;
+        }
+        enhanceTimer = window.setTimeout(() => {
+          try {
+            // Only run content enhancements when the component has rendered real UI
+            const totalElements = shadow.querySelectorAll("*").length;
+            const hasDataKind = shadow.querySelector("[data-kind]") !== null;
+            if (totalElements > 20 || hasDataKind) {
+              sanitizeCitations(shadow);
+              sanitizeCitationsDeep(shadow);
+              enhanceSourceLinks(shadow);
+              void enhanceInlineLinks(shadow);
+            }
+          } catch (err) {
+            if (isDev) console.debug('[ChatKitPanel] enhancement error:', err);
+          }
+        }, 250);
+      } catch {}
     };
 
     // Observe updates in the shadow DOM and apply styles
@@ -726,7 +1276,12 @@ export function ChatKitPanel({
           mo?.disconnect();
         } catch {}
         applyStyles();
-        mo = new MutationObserver(() => applyStyles());
+        scheduleEnhancements();
+        mo = new MutationObserver((mutations) => {
+          // Only re-inject style when needed; run content enhancers debounced
+          applyStyles();
+          scheduleEnhancements();
+        });
         mo.observe(shadow, {
           childList: true,
           subtree: true,
@@ -740,6 +1295,10 @@ export function ChatKitPanel({
     return () => {
       try {
         mo?.disconnect();
+        if (enhanceTimer) {
+          window.clearTimeout(enhanceTimer);
+          enhanceTimer = null;
+        }
       } catch {}
     };
   }, [hideComposer]);
@@ -1044,3 +1603,4 @@ function extractErrorDetail(
 
   return fallback;
 }
+

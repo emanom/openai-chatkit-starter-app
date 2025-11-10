@@ -4,6 +4,8 @@ export const WORKFLOW_ID =
   process.env.NEXT_PUBLIC_CHATKIT_WORKFLOW_ID?.trim() ?? "";
 
 export const CREATE_SESSION_ENDPOINT = "/api/create-session";
+export const PROMPT_METADATA_ENDPOINT = "/api/prompt-metadata";
+export const RESOLVE_TITLE_ENDPOINT = "/api/resolve-title";
 
 export const STARTER_PROMPTS: StartScreenPrompt[] = [
   {
