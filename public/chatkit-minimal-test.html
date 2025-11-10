@@ -352,17 +352,42 @@
 
       function sanitizeCitationsDeep(root) {
         try {
+          const CITATION_START = "\uE200";
+          const CITATION_DELIM = "\uE202";
           const CITATION_PATTERN = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
+          const CITATION_PARTIAL_START = /\uE200(?:file|url)cite/g;
+          const CITATION_PARTIAL_END = /\uE201/g;
           const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
           let node = walker.nextNode();
           while (node) {
             const text = node.nodeValue || '';
-            if (text.indexOf('\uE200') !== -1) {
-              const cleaned = text.replace(CITATION_PATTERN, '');
+            if (text.indexOf(CITATION_START) !== -1 || text.indexOf(CITATION_DELIM) !== -1) {
+              // Try full pattern first
+              let cleaned = text.replace(CITATION_PATTERN, '');
+              // If that didn't catch everything, also remove any remaining start markers and delimiters
+              if (cleaned.indexOf(CITATION_START) !== -1 || cleaned.indexOf(CITATION_DELIM) !== -1) {
+                cleaned = cleaned.replace(CITATION_PARTIAL_START, '').replace(CITATION_DELIM, '').replace(CITATION_PARTIAL_END, '');
+              }
               if (cleaned !== text) node.nodeValue = cleaned;
             }
             node = walker.nextNode();
           }
+          // Also check all elements' textContent for any remaining markers
+          const allElements = root.querySelectorAll("*");
+          allElements.forEach((el) => {
+            if (el.textContent && (el.textContent.indexOf(CITATION_START) !== -1 || el.textContent.indexOf(CITATION_DELIM) !== -1)) {
+              // Only clean leaf nodes to avoid double-processing
+              if (el.children.length === 0) {
+                let cleaned = el.textContent.replace(CITATION_PATTERN, '');
+                if (cleaned.indexOf(CITATION_START) !== -1 || cleaned.indexOf(CITATION_DELIM) !== -1) {
+                  cleaned = cleaned.replace(CITATION_PARTIAL_START, '').replace(CITATION_DELIM, '').replace(CITATION_PARTIAL_END, '');
+                }
+                if (cleaned !== el.textContent) {
+                  el.textContent = cleaned;
+                }
+              }
+            }
+          });
         } catch(_) {}
       }
       function storeSecret(secret, expiresAtMs) {
@@ -745,22 +770,49 @@
           // Remove private citation markers until ChatKit exposes structured citation UI
           (function sanitizeAssistantCitations() {
             const CITATION_START = "\uE200";
+            const CITATION_END = "\uE201";
+            const CITATION_DELIM = "\uE202";
             const CITATION_PATTERN = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
+            const CITATION_PARTIAL_START = /\uE200(?:file|url)cite/g;
+            const CITATION_PARTIAL_END = /\uE201/g;
 
             const scrub = (root) => {
               try {
+                // First pass: clean text nodes
                 const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
                 let node = walker.nextNode();
                 while (node) {
                   const textValue = node.textContent;
-                  if (textValue && textValue.includes(CITATION_START)) {
-                    const cleaned = textValue.replace(CITATION_PATTERN, "");
+                  if (textValue && (textValue.includes(CITATION_START) || textValue.includes(CITATION_DELIM))) {
+                    // Try full pattern first
+                    let cleaned = textValue.replace(CITATION_PATTERN, "");
+                    // If that didn't catch everything, also remove any remaining start markers and delimiters
+                    if (cleaned.includes(CITATION_START) || cleaned.includes(CITATION_DELIM)) {
+                      cleaned = cleaned.replace(CITATION_PARTIAL_START, "").replace(CITATION_DELIM, "").replace(CITATION_PARTIAL_END, "");
+                    }
                     if (cleaned !== textValue) {
                       node.textContent = cleaned;
                     }
                   }
                   node = walker.nextNode();
                 }
+                // Second pass: clean any HTML elements that might contain markers
+                const allElements = root.querySelectorAll("*");
+                allElements.forEach((el) => {
+                  const text = el.textContent || "";
+                  if (text.includes(CITATION_START) || text.includes(CITATION_DELIM)) {
+                    // Only clean leaf nodes to avoid double-processing
+                    if (el.children.length === 0 && el.textContent) {
+                      let cleaned = el.textContent.replace(CITATION_PATTERN, "");
+                      if (cleaned.includes(CITATION_START) || cleaned.includes(CITATION_DELIM)) {
+                        cleaned = cleaned.replace(CITATION_PARTIAL_START, "").replace(CITATION_DELIM, "").replace(CITATION_PARTIAL_END, "");
+                      }
+                      if (cleaned !== el.textContent) {
+                        el.textContent = cleaned;
+                      }
+                    }
+                  }
+                });
               } catch (err) {
                 console.debug("[minimal] sanitizeAssistantCitations error:", err);
               }
@@ -781,9 +833,16 @@
                 const total = root.querySelectorAll('*').length;
                 const hasKind = !!root.querySelector('[data-kind]');
                 if (total > 20 || hasKind) {
+                  // Run sanitization first and more aggressively
+                  scrub(root);
+                  sanitizeCitationsDeep(root);
+                  // Run again after a short delay to catch any markers added during streaming
+                  setTimeout(() => {
+                    scrub(root);
+                    sanitizeCitationsDeep(root);
+                  }, 100);
                   enhanceSourceLinks(root);
                   enhanceInlineLinks(root);
-                  sanitizeCitationsDeep(root);
                 }
               } catch(_){}
             }, 250);
@@ -793,9 +852,20 @@
                   if (window.__fyiEnhanceTimer) clearTimeout(window.__fyiEnhanceTimer);
                   window.__fyiEnhanceTimer = setTimeout(() => {
                     try {
-                      enhanceSourceLinks(root);
-                      enhanceInlineLinks(root);
-                      sanitizeCitationsDeep(root);
+                      const total = root.querySelectorAll('*').length;
+                      const hasKind = !!root.querySelector('[data-kind]');
+                      if (total > 20 || hasKind) {
+                        // Run sanitization first and more aggressively
+                        scrub(root);
+                        sanitizeCitationsDeep(root);
+                        // Run again after a short delay to catch any markers added during streaming
+                        setTimeout(() => {
+                          scrub(root);
+                          sanitizeCitationsDeep(root);
+                        }, 100);
+                        enhanceSourceLinks(root);
+                        enhanceInlineLinks(root);
+                      }
                     } catch(_){}
                   }, 250);
                 });

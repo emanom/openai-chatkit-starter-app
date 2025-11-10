@@ -63,8 +63,14 @@ const isBrowser = typeof window !== "undefined";
 const isDev = process.env.NODE_ENV !== "production";
 
 const CITATION_START = "\uE200";
+const CITATION_END = "\uE201";
+const CITATION_DELIM = "\uE202";
+// Match citation markers: \uE200(file|url)cite followed by any content (including delimiters \uE202) until \uE201
 const CITATION_PATTERN = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
 const CITATION_PATTERN_GLOBAL = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
+// Also match partial patterns that might be split across nodes
+const CITATION_PARTIAL_START = /\uE200(?:file|url)cite/g;
+const CITATION_PARTIAL_END = /\uE201/g;
 const PROMPT_STORAGE_KEY = "chatkit_prompt_key";
 const PROMPT_STORAGE_EXPIRES_KEY = "chatkit_prompt_key_expires";
 const PROMPT_STORAGE_HASH_KEY = "chatkit_prompt_key_hash";
@@ -78,6 +84,7 @@ type PromptCacheInfo = {
 
 function sanitizeCitations(root: ShadowRoot) {
   try {
+    // First pass: clean text nodes with complete patterns
     const walker = root.ownerDocument?.createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT,
@@ -92,13 +99,38 @@ function sanitizeCitations(root: ShadowRoot) {
       const textNode = current as Text;
       const value = textNode.textContent;
       if (value && value.includes(CITATION_START)) {
-        const cleaned = value.replace(CITATION_PATTERN, "");
+        // Try full pattern first
+        let cleaned = value.replace(CITATION_PATTERN_GLOBAL, "");
+        // If that didn't catch everything, also remove any remaining start markers and delimiters
+        if (cleaned.includes(CITATION_START) || cleaned.includes(CITATION_DELIM)) {
+          cleaned = cleaned.replace(CITATION_PARTIAL_START, "").replace(CITATION_DELIM, "").replace(CITATION_PARTIAL_END, "");
+        }
         if (cleaned !== value) {
           textNode.textContent = cleaned;
         }
       }
       current = walker.nextNode();
     }
+
+    // Second pass: clean any HTML content that might contain markers
+    // This handles cases where markers are in attributes or split across elements
+    const allElements = root.querySelectorAll("*");
+    allElements.forEach((el) => {
+      // Check textContent for any remaining markers
+      const text = el.textContent || "";
+      if (text.includes(CITATION_START) || text.includes(CITATION_DELIM)) {
+        // If the element only contains text (no children), clean it directly
+        if (el.children.length === 0 && el.textContent) {
+          let cleaned = el.textContent.replace(CITATION_PATTERN_GLOBAL, "");
+          if (cleaned.includes(CITATION_START) || cleaned.includes(CITATION_DELIM)) {
+            cleaned = cleaned.replace(CITATION_PARTIAL_START, "").replace(CITATION_DELIM, "").replace(CITATION_PARTIAL_END, "");
+          }
+          if (cleaned !== el.textContent) {
+            el.textContent = cleaned;
+          }
+        }
+      }
+    });
   } catch (error) {
     if (isDev) {
       console.debug("[ChatKitPanel] sanitizeCitations error", error);
@@ -108,6 +140,7 @@ function sanitizeCitations(root: ShadowRoot) {
 
 function sanitizeCitationsDeep(root: ShadowRoot) {
   try {
+    // Walk all text nodes
     const walker = root.ownerDocument?.createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT,
@@ -117,14 +150,37 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
     let node = walker.nextNode();
     while (node) {
       const text = (node as Text).nodeValue;
-      if (text && text.includes(CITATION_START)) {
-        const cleaned = text.replace(CITATION_PATTERN_GLOBAL, "");
+      if (text && (text.includes(CITATION_START) || text.includes(CITATION_DELIM))) {
+        // Try full pattern first
+        let cleaned = text.replace(CITATION_PATTERN_GLOBAL, "");
+        // If that didn't catch everything, also remove any remaining start markers and delimiters
+        if (cleaned.includes(CITATION_START) || cleaned.includes(CITATION_DELIM)) {
+          cleaned = cleaned.replace(CITATION_PARTIAL_START, "").replace(CITATION_DELIM, "").replace(CITATION_PARTIAL_END, "");
+        }
         if (cleaned !== text) {
           (node as Text).nodeValue = cleaned;
         }
       }
       node = walker.nextNode();
     }
+
+    // Also check all elements' textContent for any remaining markers
+    // This catches cases where markers span multiple nodes
+    const allElements = root.querySelectorAll("*");
+    allElements.forEach((el) => {
+      if (el.textContent && (el.textContent.includes(CITATION_START) || el.textContent.includes(CITATION_DELIM))) {
+        // Only clean leaf nodes to avoid double-processing
+        if (el.children.length === 0) {
+          let cleaned = el.textContent.replace(CITATION_PATTERN_GLOBAL, "");
+          if (cleaned.includes(CITATION_START) || cleaned.includes(CITATION_DELIM)) {
+            cleaned = cleaned.replace(CITATION_PARTIAL_START, "").replace(CITATION_DELIM, "").replace(CITATION_PARTIAL_END, "");
+          }
+          if (cleaned !== el.textContent) {
+            el.textContent = cleaned;
+          }
+        }
+      }
+    });
   } catch (error) {
     if (isDev) console.debug("[ChatKitPanel] sanitizeCitationsDeep error", error);
   }
@@ -1249,8 +1305,14 @@ export function ChatKitPanel({
             const totalElements = shadow.querySelectorAll("*").length;
             const hasDataKind = shadow.querySelector("[data-kind]") !== null;
             if (totalElements > 20 || hasDataKind) {
+              // Run sanitization first and more aggressively
               sanitizeCitations(shadow);
               sanitizeCitationsDeep(shadow);
+              // Run again after a short delay to catch any markers added during streaming
+              setTimeout(() => {
+                sanitizeCitations(shadow);
+                sanitizeCitationsDeep(shadow);
+              }, 100);
               enhanceSourceLinks(shadow);
               void enhanceInlineLinks(shadow);
             }
