@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChatKitPanel, type FactAction } from "@/components/ChatKitPanel";
 import { useColorScheme } from "@/hooks/useColorScheme";
 
-export default function App() {
+function AppContent() {
   const { scheme, setScheme } = useColorScheme();
   const [isOpen, setIsOpen] = useState(false);
   const searchParams = useSearchParams();
@@ -88,5 +88,17 @@ export default function App() {
         </div>
       ) : null}
     </main>
+  );
+}
+
+export default function App() {
+  return (
+    <Suspense fallback={
+      <main className="flex min-h-screen flex-col items-center justify-center bg-slate-100 px-6 py-6 dark:bg-slate-950">
+        <div className="text-slate-600 dark:text-slate-400">Loading...</div>
+      </main>
+    }>
+      <AppContent />
+    </Suspense>
   );
 }
