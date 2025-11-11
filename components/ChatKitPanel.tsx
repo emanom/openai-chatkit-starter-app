@@ -62,15 +62,8 @@ type ErrorState = {
 const isBrowser = typeof window !== "undefined";
 const isDev = process.env.NODE_ENV !== "production";
 
-const CITATION_START = "\uE200";
-const CITATION_END = "\uE201";
-const CITATION_DELIM = "\uE202";
-// Match citation markers: \uE200(file|url)cite followed by any content (including delimiters \uE202) until \uE201
-const CITATION_PATTERN = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
-const CITATION_PATTERN_GLOBAL = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
-// Also match partial patterns that might be split across nodes
-const CITATION_PARTIAL_START = /\uE200(?:file|url)cite/g;
-const CITATION_PARTIAL_END = /\uE201/g;
+// Disable custom post-processing that mutates ChatKit output to avoid conflicts with built-in rendering
+const DISABLE_CUSTOM_POSTPROCESSING = true;
 const PROMPT_STORAGE_KEY = "chatkit_prompt_key";
 const PROMPT_STORAGE_EXPIRES_KEY = "chatkit_prompt_key_expires";
 const PROMPT_STORAGE_HASH_KEY = "chatkit_prompt_key_hash";
@@ -382,64 +375,8 @@ function dedupeTitleBeforeAnchor(anchor: HTMLAnchorElement, title: string) {
     }
   } catch {}
 }
-async function enhanceInlineLinks(root: ShadowRoot) {
-  try {
-    const anchors = root.querySelectorAll<HTMLAnchorElement>(
-      '[data-thread-turn] a[href]'
-    );
-    anchors.forEach(async (a) => {
-      const href = a.getAttribute("href") || "";
-      if (!href || a.hasAttribute("data-fyi-title-upgraded")) return;
-      const label = (a.textContent || "").trim();
-      const looksLikeUrl = /^https?:/i.test(label) || label === href || label.includes("http");
-      if (!looksLikeUrl) {
-        // Ensure external links open in new tab
-        try {
-          const abs = new URL(href, window.location.origin);
-          if (abs.origin !== window.location.origin) {
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-          }
-        } catch {}
-        return;
-      }
-
-      // Avoid duplicate fetches
-      if (fetchingTitleSet.has(href)) return;
-      fetchingTitleSet.add(href);
-      try {
-        const res = await fetch(RESOLVE_TITLE_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: href }),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          title?: string;
-        };
-        const title =
-          (typeof data?.title === "string" && data.title.trim()) || null;
-        if (title && a.isConnected) {
-          a.textContent = title;
-          dedupeTitleBeforeAnchor(a, title);
-        }
-        // Open external in new tab
-        try {
-          const abs = new URL(href, window.location.origin);
-          if (abs.origin !== window.location.origin) {
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-          }
-        } catch {}
-        a.setAttribute("data-fyi-title-upgraded", "1");
-      } catch {
-        // noop
-      } finally {
-        fetchingTitleSet.delete(href);
-      }
-    });
-  } catch (e) {
-    if (isDev) console.debug("[ChatKitPanel] enhanceInlineLinks error:", e);
-  }
+async function enhanceInlineLinks(_root: ShadowRoot) {
+  if (DISABLE_CUSTOM_POSTPROCESSING) return;
 }
 
 function sanitizeMetadata(
@@ -1291,6 +1228,7 @@ export function ChatKitPanel({
 
     let enhanceTimer: number | null = null;
     const scheduleEnhancements = () => {
+      if (DISABLE_CUSTOM_POSTPROCESSING) return;
       try {
         const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
         const shadow = wc?.shadowRoot;

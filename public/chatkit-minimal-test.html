@@ -173,6 +173,8 @@
 
       function enhanceSourceLinks(root) {
         try {
+          // Disabled: rely on ChatKit's built-in rendering to avoid conflicts
+          return;
           function guessUrlFromLabel(text) {
             const m = String(text || '').trim().match(/(\d+)-([A-Za-z0-9-]+)(?:\.html)?$/);
             if (!m) return [];
@@ -302,6 +304,8 @@
       }
       function enhanceInlineLinks(root) {
         try {
+          // Disabled: avoid altering ChatKit message content at runtime
+          return;
           const anchors = root.querySelectorAll('[data-thread-turn] a[href]');
           anchors.forEach(async (a) => {
             const href = a.getAttribute('href') || '';
@@ -351,44 +355,8 @@
       }
 
       function sanitizeCitationsDeep(root) {
-        try {
-          const CITATION_START = "\uE200";
-          const CITATION_DELIM = "\uE202";
-          const CITATION_PATTERN = /\uE200(?:file|url)cite[\s\S]*?\uE201/g;
-          const CITATION_PARTIAL_START = /\uE200(?:file|url)cite/g;
-          const CITATION_PARTIAL_END = /\uE201/g;
-          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-          let node = walker.nextNode();
-          while (node) {
-            const text = node.nodeValue || '';
-            if (text.indexOf(CITATION_START) !== -1 || text.indexOf(CITATION_DELIM) !== -1) {
-              // Try full pattern first
-              let cleaned = text.replace(CITATION_PATTERN, '');
-              // If that didn't catch everything, also remove any remaining start markers and delimiters
-              if (cleaned.indexOf(CITATION_START) !== -1 || cleaned.indexOf(CITATION_DELIM) !== -1) {
-                cleaned = cleaned.replace(CITATION_PARTIAL_START, '').replace(CITATION_DELIM, '').replace(CITATION_PARTIAL_END, '');
-              }
-              if (cleaned !== text) node.nodeValue = cleaned;
-            }
-            node = walker.nextNode();
-          }
-          // Also check all elements' textContent for any remaining markers
-          const allElements = root.querySelectorAll("*");
-          allElements.forEach((el) => {
-            if (el.textContent && (el.textContent.indexOf(CITATION_START) !== -1 || el.textContent.indexOf(CITATION_DELIM) !== -1)) {
-              // Only clean leaf nodes to avoid double-processing
-              if (el.children.length === 0) {
-                let cleaned = el.textContent.replace(CITATION_PATTERN, '');
-                if (cleaned.indexOf(CITATION_START) !== -1 || cleaned.indexOf(CITATION_DELIM) !== -1) {
-                  cleaned = cleaned.replace(CITATION_PARTIAL_START, '').replace(CITATION_DELIM, '').replace(CITATION_PARTIAL_END, '');
-                }
-                if (cleaned !== el.textContent) {
-                  el.textContent = cleaned;
-                }
-              }
-            }
-          });
-        } catch(_) {}
+        // Disabled: use ChatKit's native rendering without DOM scrubbing
+        return;
       }
       function storeSecret(secret, expiresAtMs) {
         cachedSecret = secret;
@@ -767,8 +735,9 @@
             return isReady;
           }
 
-          // Remove private citation markers until ChatKit exposes structured citation UI
+          // Disabled: rely on ChatKit's native rendering (no DOM sanitization)
           (function sanitizeAssistantCitations() {
+            return;
             const CITATION_START = "\uE200";
             const CITATION_END = "\uE201";
             const CITATION_DELIM = "\uE202";
