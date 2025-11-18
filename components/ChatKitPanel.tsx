@@ -93,34 +93,51 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
     let node: Node | null;
     while (node = walker.nextNode()) {
       const textNode = node as Text;
-      if (textNode.textContent && /filecite/.test(textNode.textContent)) {
+      if (textNode.textContent && /filecite/i.test(textNode.textContent)) {
         textNodes.push(textNode);
       }
     }
     
+    if (textNodes.length === 0) return;
+    
+    let totalRemoved = 0;
     textNodes.forEach(textNode => {
       const text = textNode.textContent || '';
-      // Match pattern: filecite turn0file2 turn0file5 (with special Unicode characters)
-      // The Unicode characters are: \uE000 (filecite start), \uE001 (separator), \uE002 (filecite end)
-      // Pattern: filecite followed by turn0file followed by numbers
       let cleaned = text;
       
-      // Remove with Unicode control characters (most common case)
-      cleaned = cleaned.replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]/g, '');
-      cleaned = cleaned.replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]/g, '');
+      // Pattern 1: Unicode control characters around filecite (most common)
+      // Matches: [Unicode]filecite[Unicode]turn0file6[Unicode]turn0file18[Unicode]
+      cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*/gi, '');
+      cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*/gi, '');
       
-      // Remove without Unicode characters (fallback)
-      cleaned = cleaned.replace(/filecite\s+turn\d+file\d+\s+turn\d+file\d+/g, '');
-      cleaned = cleaned.replace(/filecite\s+turn\d+file\d+/g, '');
+      // Pattern 2: Multiple filecite markers with spaces/Unicode separators
+      // Matches: filecite turn0file6 turn0file18 (with or without Unicode)
+      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
+      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
       
-      // Remove any remaining filecite markers with any characters between
-      cleaned = cleaned.replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF][\s\S]*?[\uE000-\uF8FF]/g, '');
+      // Pattern 3: Simple text pattern (fallback for plain text)
+      cleaned = cleaned.replace(/filecite\s+turn\d+file\d+\s+turn\d+file\d+/gi, '');
+      cleaned = cleaned.replace(/filecite\s+turn\d+file\d+/gi, '');
+      
+      // Pattern 4: Any filecite marker with Unicode characters anywhere
+      cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]+[^\uE000-\uF8FF]*[\uE000-\uF8FF]+/gi, '');
+      
+      // Pattern 5: Catch-all for any remaining filecite patterns
+      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*/gi, '');
+      
+      // Clean up any trailing/leading Unicode control characters
+      cleaned = cleaned.replace(/^[\uE000-\uF8FF\s]+|[\uE000-\uF8FF\s]+$/g, '');
       
       if (cleaned !== text) {
         textNode.textContent = cleaned;
-        if (isDev) console.debug('[Citations] Removed citation markers from text');
+        totalRemoved++;
+        if (isDev) console.debug('[Citations] Removed citation markers:', text.substring(0, 50));
       }
     });
+    
+    if (totalRemoved > 0 && isDev) {
+      console.info(`[Citations] Removed ${totalRemoved} citation marker(s) from text nodes`);
+    }
   } catch (error) {
     if (isDev) console.debug('[Citations] sanitizeCitationsDeep error', error);
   }
@@ -1159,19 +1176,35 @@ export function ChatKitPanel({
         }
         enhanceTimer = window.setTimeout(() => {
           try {
-            // Only run content enhancements when the component has rendered real UI
             const totalElements = shadow.querySelectorAll("*").length;
             const hasDataKind = shadow.querySelector("[data-kind]") !== null;
-            if (totalElements > 20 || hasDataKind) {
-              // Always remove raw citation markers and enhance source links
+            const hasFileciteMarkers = shadow.textContent?.includes('filecite') || false;
+            
+            // Run sanitization if:
+            // 1. There's substantial content (20+ elements), OR
+            // 2. ChatKit has rendered data attributes, OR
+            // 3. We detect filecite markers (even with minimal content)
+            if (totalElements > 20 || hasDataKind || hasFileciteMarkers) {
+              // Always remove raw citation markers first (critical for user experience)
               sanitizeCitationsDeep(shadow);
-              enhanceSourceLinks(shadow);
               
-              // Run again after a delay to catch markers added during streaming
+              // Then enhance source links if there's enough content
+              if (totalElements > 20 || hasDataKind) {
+                enhanceSourceLinks(shadow);
+              }
+              
+              // Run again after delays to catch markers added during streaming
               setTimeout(() => {
                 sanitizeCitationsDeep(shadow);
-                enhanceSourceLinks(shadow);
+                if (totalElements > 20 || hasDataKind) {
+                  enhanceSourceLinks(shadow);
+                }
               }, 100);
+              
+              // Additional cleanup pass for streaming content
+              setTimeout(() => {
+                sanitizeCitationsDeep(shadow);
+              }, 500);
               
               // Other enhancements are disabled to avoid conflicts
               if (!DISABLE_CUSTOM_POSTPROCESSING) {
@@ -1205,13 +1238,40 @@ export function ChatKitPanel({
         applyStyles();
         scheduleEnhancements();
         mo = new MutationObserver((mutations) => {
-          // Only re-inject style when needed; run content enhancers debounced
+          // Check if any mutations added text content that might contain filecite markers
+          const hasTextMutations = mutations.some(mutation => {
+            if (mutation.type === 'childList') {
+              return Array.from(mutation.addedNodes).some(node => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                  return node.textContent?.includes('filecite') || false;
+                }
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                  return (node as Element).textContent?.includes('filecite') || false;
+                }
+                return false;
+              });
+            }
+            if (mutation.type === 'characterData') {
+              return mutation.target.textContent?.includes('filecite') || false;
+            }
+            return false;
+          });
+          
+          // Re-inject styles when needed
           applyStyles();
+          
+          // If we detect filecite markers, run sanitization immediately (don't wait for debounce)
+          if (hasTextMutations) {
+            sanitizeCitationsDeep(shadow);
+          }
+          
+          // Run content enhancers debounced
           scheduleEnhancements();
         });
         mo.observe(shadow, {
           childList: true,
           subtree: true,
+          characterData: true, // Also observe text content changes
         });
       } catch (e) {
         if (isDev) console.debug('[ChatKitPanel] style observer error:', e);

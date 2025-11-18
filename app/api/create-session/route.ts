@@ -39,6 +39,17 @@ export async function POST(request: Request): Promise<Response> {
   console.log("[create-session] ===== REQUEST START =====");
   console.log("[create-session] Timestamp:", new Date().toISOString());
   
+  // Check and log domain key status early
+  const domainKey = process.env.OPENAI_DOMAIN_KEY || process.env.CHATKIT_DOMAIN_KEY;
+  console.log("[create-session] ===== DOMAIN KEY STATUS =====");
+  console.log("[create-session] OPENAI_DOMAIN_KEY:", process.env.OPENAI_DOMAIN_KEY ? `SET (${process.env.OPENAI_DOMAIN_KEY.slice(0, 8)}...)` : "NOT SET");
+  console.log("[create-session] CHATKIT_DOMAIN_KEY:", process.env.CHATKIT_DOMAIN_KEY ? `SET (${process.env.CHATKIT_DOMAIN_KEY.slice(0, 8)}...)` : "NOT SET");
+  console.log("[create-session] Domain key resolved:", domainKey ? `✅ FOUND (${domainKey.slice(0, 8)}...)` : "❌ NOT FOUND");
+  if (!domainKey) {
+    console.warn("[create-session] ⚠️ WARNING: No domain key configured - file citations may not render properly!");
+  }
+  console.log("[create-session] ============================");
+  
   try {
     const openaiApiKey = process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
@@ -109,23 +120,12 @@ export async function POST(request: Request): Promise<Response> {
     }
     
     // Add domain key for domain verification in production
-    // Support both OPENAI_DOMAIN_KEY and CHATKIT_DOMAIN_KEY for compatibility
-    const domainKey = process.env.OPENAI_DOMAIN_KEY || process.env.CHATKIT_DOMAIN_KEY;
-    
-    // Use console.log instead of console.info/warn for better CloudWatch visibility
-    console.log("[create-session] Checking domain key...");
-    console.log("[create-session] OPENAI_DOMAIN_KEY exists:", !!process.env.OPENAI_DOMAIN_KEY);
-    console.log("[create-session] CHATKIT_DOMAIN_KEY exists:", !!process.env.CHATKIT_DOMAIN_KEY);
-    console.log("[create-session] Domain key value:", domainKey ? domainKey.slice(0, 8) + "..." : "NOT FOUND");
-    
+    // Domain key was already checked and logged at the start of the function
     if (domainKey) {
       headers["ChatKit-Domain-Key"] = domainKey;
-      console.log("[create-session] ✅ Domain key found and added to headers");
-      console.log("[create-session] Header ChatKit-Domain-Key set:", !!headers["ChatKit-Domain-Key"]);
+      console.log("[create-session] ✅ Domain key added to request headers");
     } else {
-      console.log("[create-session] ⚠️ WARNING: No domain key found - file citations may not render properly");
-      console.log("[create-session] Checked vars: OPENAI_DOMAIN_KEY, CHATKIT_DOMAIN_KEY");
-      console.log("[create-session] Node env:", process.env.NODE_ENV);
+      console.log("[create-session] ⚠️ No domain key in headers - file citations may not render");
     }
     
     const normalizedParameters: PromptParameters = normalizePromptParameters(
