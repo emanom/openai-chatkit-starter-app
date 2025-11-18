@@ -232,18 +232,30 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
         // Pattern A: filecite followed by any non-letter chars, then turn+digits+file+digits
         finalCleaned = finalCleaned.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
         
-        // Pattern B: More permissive - allow ANY characters between components
+        // Pattern B: More permissive - allow ANY characters between components (non-greedy)
         finalCleaned = finalCleaned.replace(/filecite.*?turn\d+file\d+.*?(?:turn\d+file\d+.*?)*/gi, '');
         
-        // Pattern C: If still not cleaned, try on original text
+        // Pattern C: Ultra-permissive - match filecite followed by anything up to and including the last turnXfileY pattern
+        // This uses a greedy match to catch everything from filecite to the end of the citation pattern
+        finalCleaned = finalCleaned.replace(/filecite.*?turn\d+file\d+(?:.*?turn\d+file\d+)*/gi, '');
+        
+        // Pattern D: If still not cleaned, try on original text with all patterns
         if (finalCleaned === cleaned && text.includes('filecite')) {
           finalCleaned = text.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
           if (finalCleaned === text) {
             finalCleaned = text.replace(/filecite.*?turn\d+file\d+.*?(?:turn\d+file\d+.*?)*/gi, '');
           }
+          if (finalCleaned === text) {
+            finalCleaned = text.replace(/filecite.*?turn\d+file\d+(?:.*?turn\d+file\d+)*/gi, '');
+          }
         }
         
         cleaned = finalCleaned;
+        
+        // If still not cleaned, log for debugging
+        if (cleaned === text && isDev) {
+          console.warn('[Citations] Patterns did not match. Text:', JSON.stringify(text.substring(Math.max(0, text.indexOf('filecite') - 20), text.indexOf('filecite') + 100)));
+        }
       }
       
       if (cleaned !== text) {
