@@ -159,13 +159,24 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
     
     let totalRemoved = 0;
     textNodes.forEach(textNode => {
-      // Skip if there's a rendered citation nearby - ChatKit is handling it
-      if (hasRenderedCitationNearby(textNode)) {
-        if (isDev) console.debug('[Citations] Skipping marker near rendered citation');
+      const text = textNode.textContent || '';
+      
+      // First check: if the text node ONLY contains citation markers (no other content), remove it entirely
+      const onlyCitationMarkers = /^[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*filecite[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*(?:turn\d+file\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*)+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*$/i.test(text);
+      if (onlyCitationMarkers) {
+        textNode.textContent = '';
+        totalRemoved++;
+        if (isDev) console.debug('[Citations] Removed text node containing only citation markers');
         return;
       }
       
-      const text = textNode.textContent || '';
+      // Skip if there's a rendered citation in the same parent - ChatKit is handling it
+      // But only skip if the text contains other content (not just markers)
+      if (hasRenderedCitationNearby(textNode) && text.trim().length > 50) {
+        if (isDev) console.debug('[Citations] Skipping marker near rendered citation (has other content)');
+        // Still try to clean markers even if there's a rendered citation nearby
+      }
+      
       let cleaned = text;
       
       // More comprehensive pattern that handles all variations:
@@ -215,12 +226,24 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
       const hasTurnFile = /turn\d+file\d+/.test(text) || /turn\d+file\d+/.test(cleaned);
       
       if (hasFilecite && hasTurnFile) {
-        // Try multiple aggressive patterns
-        cleaned = cleaned.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
-        // Also try on original text in case cleaned didn't catch it
-        if (text.includes('filecite')) {
-          cleaned = text.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
+        // Try multiple aggressive patterns - work on original text to ensure we catch everything
+        let finalCleaned = cleaned;
+        
+        // Pattern A: filecite followed by any non-letter chars, then turn+digits+file+digits
+        finalCleaned = finalCleaned.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
+        
+        // Pattern B: More permissive - allow ANY characters between components
+        finalCleaned = finalCleaned.replace(/filecite.*?turn\d+file\d+.*?(?:turn\d+file\d+.*?)*/gi, '');
+        
+        // Pattern C: If still not cleaned, try on original text
+        if (finalCleaned === cleaned && text.includes('filecite')) {
+          finalCleaned = text.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
+          if (finalCleaned === text) {
+            finalCleaned = text.replace(/filecite.*?turn\d+file\d+.*?(?:turn\d+file\d+.*?)*/gi, '');
+          }
         }
+        
+        cleaned = finalCleaned;
       }
       
       if (cleaned !== text) {
