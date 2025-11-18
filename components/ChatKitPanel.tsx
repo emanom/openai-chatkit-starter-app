@@ -82,9 +82,135 @@ function sanitizeCitations(_root: ShadowRoot) {
 function sanitizeCitationsDeep(_root: ShadowRoot) {
   // Disabled: rely on ChatKit's native rendering
 }
-function enhanceSourceLinks(_root: ShadowRoot) {
-  if (DISABLE_CUSTOM_POSTPROCESSING) {
-    return;
+function enhanceSourceLinks(root: ShadowRoot) {
+  // Always enable source link enhancement for file citations
+  // This doesn't conflict with ChatKit's rendering, it just adds click handlers
+  
+  try {
+    function guessUrlFromFilename(filename: string): string | null {
+      // Extract ID and slug from filename like "22577302775833-Elite-Plan-Rollout-and-what-it-means-for-your-Practice.html"
+      const m = String(filename || '').trim().match(/(\d+)-([A-Za-z0-9-]+)(?:\.html)?$/);
+      if (!m) return null;
+      const id = m[1], slug = m[2];
+      // Construct the article URL
+      return `https://support.fyi.app/hc/en-us/articles/${id}-${slug}`;
+    }
+
+    // Find file citations - look for elements containing file icons and filenames
+    const fileCitationSelectors = [
+      '[data-kind="source"]',
+      '[data-part="source"]',
+      '[data-kind="source-list"] [data-kind]',
+      '[data-part="source-list"] [data-part]',
+    ];
+    
+    // Also find file citations by structure - look for divs containing "File" text
+    const allDivs = root.querySelectorAll('div');
+    const fileCitations = Array.from(allDivs).filter(div => {
+      const text = div.textContent || '';
+      return text.includes('File') && text.includes('.html') && !div.closest('[data-fyi-source-upgraded]');
+    });
+    
+    const items = [
+      ...Array.from(root.querySelectorAll(fileCitationSelectors.join(','))),
+      ...fileCitations
+    ];
+    
+    items.forEach((item) => {
+      if (item.getAttribute('data-fyi-source-upgraded') === '1') return;
+      
+      // Check if already has a link
+      let href = item.querySelector('a[href]')?.getAttribute('href') || null;
+      
+      // Try to get URL from data attributes
+      if (!href) {
+        const urlEl = item.matches('[data-url]') ? item : item.querySelector('[data-url]');
+        href = urlEl?.getAttribute('data-url') || null;
+      }
+      
+      // Try to extract from title attribute
+      if (!href) {
+        const titleEl = item.querySelector('[title*="http"]');
+        href = titleEl?.getAttribute('title') || null;
+      }
+      
+      // If no URL found, try to guess from filename
+      if (!href) {
+        // Look for filename in the citation - usually in a font-semibold element or similar
+        const filenameEl = item.querySelector('.font-semibold, [class*="font-semibold"]');
+        let filename = filenameEl?.textContent?.trim() || null;
+        
+        // If not found, search all divs for one containing .html
+        if (!filename) {
+          const htmlDiv = Array.from(item.querySelectorAll('div')).find(d => {
+            const text = d.textContent?.trim() || '';
+            return text.includes('.html') && /^\d+-/.test(text);
+          });
+          filename = htmlDiv?.textContent?.trim() || null;
+        }
+        
+        if (filename) {
+          href = guessUrlFromFilename(filename);
+        }
+      }
+      
+      if (!href) return;
+
+      // Make the entire citation clickable
+      if (!item.querySelector('a[href]')) {
+        // Wrap or make clickable
+        (item as HTMLElement).style.cursor = 'pointer';
+        item.setAttribute('role', 'link');
+        item.setAttribute('tabindex', '0');
+        item.setAttribute('title', `Open: ${href}`);
+        
+        if (!item.getAttribute('data-fyi-link-handler')) {
+          item.setAttribute('data-fyi-link-handler', '1');
+          item.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try { 
+              window.open(href, '_blank', 'noopener,noreferrer'); 
+            } catch(err) {
+              if (isDev) console.debug('[Sources] Failed to open link', err);
+            }
+          });
+          item.addEventListener('keydown', (ev) => {
+            const keyEv = ev as KeyboardEvent;
+            if (keyEv.key === 'Enter' || keyEv.key === ' ') {
+              ev.preventDefault();
+              ev.stopPropagation();
+              try { 
+                window.open(href, '_blank', 'noopener,noreferrer'); 
+              } catch(err) {
+                if (isDev) console.debug('[Sources] Failed to open link', err);
+              }
+            }
+          });
+        }
+      } else {
+        // Update existing links
+        const anchors = item.querySelectorAll('a[href]');
+        anchors.forEach((a) => {
+          const anchor = a as HTMLAnchorElement;
+          if (anchor.getAttribute('href') !== href) {
+            anchor.setAttribute('href', href);
+          }
+          anchor.setAttribute('title', href);
+          try {
+            const abs = new URL(href, window.location.origin);
+            if (abs.origin !== window.location.origin) {
+              anchor.target = '_blank';
+              anchor.rel = 'noopener noreferrer';
+            }
+          } catch(_){}
+        });
+      }
+
+      item.setAttribute('data-fyi-source-upgraded', '1');
+    });
+  } catch (error) {
+    if (isDev) console.debug('[Sources] enhanceSourceLinks error', error);
   }
 }
 
@@ -967,7 +1093,7 @@ export function ChatKitPanel({
 
     let enhanceTimer: number | null = null;
     const scheduleEnhancements = () => {
-      if (DISABLE_CUSTOM_POSTPROCESSING) return;
+      // Always enable source link enhancement (doesn't conflict with ChatKit rendering)
       try {
         const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
         const shadow = wc?.shadowRoot;
@@ -982,16 +1108,19 @@ export function ChatKitPanel({
             const totalElements = shadow.querySelectorAll("*").length;
             const hasDataKind = shadow.querySelector("[data-kind]") !== null;
             if (totalElements > 20 || hasDataKind) {
-              // Run sanitization first and more aggressively
-              sanitizeCitations(shadow);
-              sanitizeCitationsDeep(shadow);
-              // Run again after a short delay to catch any markers added during streaming
-              setTimeout(() => {
+              // Always enhance source links to make file citations clickable
+              enhanceSourceLinks(shadow);
+              
+              // Other enhancements are disabled to avoid conflicts
+              if (!DISABLE_CUSTOM_POSTPROCESSING) {
                 sanitizeCitations(shadow);
                 sanitizeCitationsDeep(shadow);
-              }, 100);
-              enhanceSourceLinks(shadow);
-              void enhanceInlineLinks(shadow);
+                setTimeout(() => {
+                  sanitizeCitations(shadow);
+                  sanitizeCitationsDeep(shadow);
+                }, 100);
+                void enhanceInlineLinks(shadow);
+              }
             }
           } catch (err) {
             if (isDev) console.debug('[ChatKitPanel] enhancement error:', err);

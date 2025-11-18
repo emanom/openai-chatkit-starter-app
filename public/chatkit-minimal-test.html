@@ -173,88 +173,116 @@
 
       function enhanceSourceLinks(root) {
         try {
-          // Disabled: rely on ChatKit's built-in rendering to avoid conflicts
-          return;
-          function guessUrlFromLabel(text) {
-            const m = String(text || '').trim().match(/(\d+)-([A-Za-z0-9-]+)(?:\.html)?$/);
-            if (!m) return [];
+          function guessUrlFromFilename(filename) {
+            // Extract ID and slug from filename like "22577302775833-Elite-Plan-Rollout-and-what-it-means-for-your-Practice.html"
+            const m = String(filename || '').trim().match(/(\d+)-([A-Za-z0-9-]+)(?:\.html)?$/);
+            if (!m) return null;
             const id = m[1], slug = m[2];
-            return [
-              `https://support.fyi.app/hc/en-us/articles/${id}-${slug}`,
-              `https://support.fyi.app/hc/en-us/sections/${id}-${slug}`,
-              `https://support.fyi.app/hc/en-us/categories/${id}-${slug}`,
-            ];
+            // Construct the article URL
+            return `https://support.fyi.app/hc/en-us/articles/${id}-${slug}`;
           }
 
-          const sourceItemSelectors = [
+          // Find file citations - look for elements containing file icons and filenames
+          const fileCitationSelectors = [
             '[data-kind="source"]',
             '[data-part="source"]',
             '[data-kind="source-list"] [data-kind]',
             '[data-part="source-list"] [data-part]',
           ];
-          const items = root.querySelectorAll(sourceItemSelectors.join(','));
+          
+          // Also find file citations by structure - look for divs containing "File" text
+          const allDivs = root.querySelectorAll('div');
+          const fileCitations = Array.from(allDivs).filter(div => {
+            const text = div.textContent || '';
+            return text.includes('File') && text.includes('.html') && !div.closest('[data-fyi-source-upgraded]');
+          });
+          
+          const items = [
+            ...root.querySelectorAll(fileCitationSelectors.join(',')),
+            ...fileCitations
+          ];
+          
           items.forEach((item) => {
             if (item.getAttribute('data-fyi-source-upgraded') === '1') return;
-            // Prefer an anchor href
-            let href =
-              (item.querySelector('a[href]') || null)?.getAttribute('href') ||
-              null;
-            // Fallbacks
+            
+            // Check if already has a link
+            let href = item.querySelector('a[href]')?.getAttribute('href') || null;
+            
+            // Try to get URL from data attributes
             if (!href) {
-              const urlEl =
-                (item.matches('[data-url]') ? item : null) ||
-                item.querySelector('[data-url]') ||
-                item.querySelector('[title*="http"]') ||
-                item.querySelector('[title*="https"]');
-              href =
-                (urlEl && (urlEl.getAttribute('data-url') || urlEl.getAttribute('title'))) ||
-                null;
-              if (!href) {
-                const titleNode =
-                  item.querySelector('[data-kind="source-title"], [data-part="source-title"]') ||
-                  item.querySelector('span, [role="button"]');
-                const guesses = titleNode ? guessUrlFromLabel(titleNode.textContent || '') : [];
-                // We won't validate here to keep the page simple; pick the first guess if any
-                if (guesses.length > 0) href = guesses[0];
+              const urlEl = item.matches('[data-url]') ? item : item.querySelector('[data-url]');
+              href = urlEl?.getAttribute('data-url') || null;
+            }
+            
+            // Try to extract from title attribute
+            if (!href) {
+              const titleEl = item.querySelector('[title*="http"]');
+              href = titleEl?.getAttribute('title') || null;
+            }
+            
+            // If no URL found, try to guess from filename
+            if (!href) {
+              // Look for filename in the citation - usually in a font-semibold element or similar
+              const filenameEl = item.querySelector('.font-semibold, [class*="font-semibold"]');
+              let filename = filenameEl?.textContent?.trim() || null;
+              
+              // If not found, search all divs for one containing .html
+              if (!filename) {
+                const htmlDiv = Array.from(item.querySelectorAll('div')).find(d => {
+                  const text = d.textContent?.trim() || '';
+                  return text.includes('.html') && /^\d+-/.test(text);
+                });
+                filename = htmlDiv?.textContent?.trim() || null;
+              }
+              
+              if (filename) {
+                href = guessUrlFromFilename(filename);
               }
             }
+            
             if (!href) return;
 
-            let formatted = href;
-            try { formatted = new URL(href, window.location.origin).toString(); } catch(_){}
-
-            const titleEl =
-              item.querySelector('[data-kind="source-title"]') ||
-              item.querySelector('[data-part="source-title"]') ||
-              item.querySelector('span, [role="button"]');
-            if (titleEl && (titleEl.textContent || '').trim() !== formatted) {
-              titleEl.textContent = formatted;
-              // Make non-anchor act as link
-              if (!(titleEl).closest('a[href]')) {
-                titleEl.setAttribute('role', 'link');
-                titleEl.setAttribute('tabindex', '0');
-                titleEl.setAttribute('title', formatted);
-                if (!titleEl.getAttribute('data-fyi-link-handler')) {
-                  titleEl.setAttribute('data-fyi-link-handler', '1');
-                  titleEl.addEventListener('click', () => {
-                    try { window.open(formatted, '_blank', 'noopener,noreferrer'); } catch(_){}
-                  });
-                  titleEl.addEventListener('keydown', (ev) => {
-                    if (ev.key === 'Enter' || ev.key === ' ') {
-                      try { window.open(formatted, '_blank', 'noopener,noreferrer'); } catch(_){}
+            // Make the entire citation clickable
+            if (!item.querySelector('a[href]')) {
+              // Wrap or make clickable
+              item.style.cursor = 'pointer';
+              item.setAttribute('role', 'link');
+              item.setAttribute('tabindex', '0');
+              item.setAttribute('title', `Open: ${href}`);
+              
+              if (!item.getAttribute('data-fyi-link-handler')) {
+                item.setAttribute('data-fyi-link-handler', '1');
+                item.addEventListener('click', (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try { 
+                    window.open(href, '_blank', 'noopener,noreferrer'); 
+                  } catch(err) {
+                    console.debug('[Sources] Failed to open link', err);
+                  }
+                });
+                item.addEventListener('keydown', (ev) => {
+                  if (ev.key === 'Enter' || ev.key === ' ') {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    try { 
+                      window.open(href, '_blank', 'noopener,noreferrer'); 
+                    } catch(err) {
+                      console.debug('[Sources] Failed to open link', err);
                     }
-                  });
-                }
+                  }
+                });
               }
             } else {
+              // Update existing links
               const anchors = item.querySelectorAll('a[href]');
               anchors.forEach((a) => {
-                if ((a.textContent || '').trim() !== formatted) {
-                  a.textContent = formatted;
+                if (a.getAttribute('href') !== href) {
+                  a.setAttribute('href', href);
                 }
-                a.setAttribute('title', formatted);
+                a.setAttribute('title', href);
                 try {
-                  const abs = new URL(a.getAttribute('href') || '', window.location.origin);
+                  const abs = new URL(href, window.location.origin);
                   if (abs.origin !== window.location.origin) {
                     a.target = '_blank';
                     a.rel = 'noopener noreferrer';
@@ -262,14 +290,6 @@
                 } catch(_){}
               });
             }
-
-            const anchors = item.querySelectorAll('a[href]');
-            anchors.forEach((a) => {
-              try {
-                const abs = new URL(a.getAttribute('href') || '', window.location.origin).toString();
-                if (a.getAttribute('title') !== abs) a.setAttribute('title', abs);
-              } catch(_){}
-            });
 
             item.setAttribute('data-fyi-source-upgraded', '1');
           });
@@ -677,15 +697,23 @@
             }
           });
 
-          // Monitor ChatKit initialization (only log if there's an issue)
+          // Monitor ChatKit initialization and enhance source links
           let initCheckAttempts = 0;
           const checkInit = setInterval(() => {
             initCheckAttempts++;
             const root = el.shadowRoot;
             if (root) {
+              // Enhance source links whenever ChatKit content updates
+              enhanceSourceLinks(root);
+              
               // If ChatKit is ready, stop monitoring silently
               if (isChatKitReady(el)) {
                 clearInterval(checkInit);
+                // Set up mutation observer to enhance links as new content is added
+                const observer = new MutationObserver(() => {
+                  enhanceSourceLinks(root);
+                });
+                observer.observe(root, { childList: true, subtree: true });
                 return;
               }
               
@@ -701,6 +729,12 @@
                 clearInterval(checkInit);
                 if (!isChatKitReady(el)) {
                   console.error('[ChatKit] Failed to initialize after 100 checks - may be in error state');
+                } else {
+                  // Set up mutation observer even if initialization check stopped
+                  const observer = new MutationObserver(() => {
+                    enhanceSourceLinks(root);
+                  });
+                  observer.observe(root, { childList: true, subtree: true });
                 }
               }
             }
