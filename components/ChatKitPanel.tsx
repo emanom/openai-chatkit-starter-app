@@ -79,8 +79,42 @@ function sanitizeCitations(_root: ShadowRoot) {
   // Disabled: rely on ChatKit's native rendering
 }
 
-function sanitizeCitationsDeep(_root: ShadowRoot) {
-  // Disabled: rely on ChatKit's native rendering
+function sanitizeCitationsDeep(root: ShadowRoot) {
+  try {
+    // Remove raw filecite markers like: filecite turn0file2 turn0file5
+    // These appear when ChatKit doesn't render citations properly
+    const textNodes: Text[] = [];
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    
+    let node: Node | null;
+    while (node = walker.nextNode()) {
+      const textNode = node as Text;
+      if (textNode.textContent && /filecite/.test(textNode.textContent)) {
+        textNodes.push(textNode);
+      }
+    }
+    
+    textNodes.forEach(textNode => {
+      const text = textNode.textContent || '';
+      // Match pattern: filecite turn0file2 turn0file5 (with special Unicode characters)
+      // Pattern: filecite followed by turn0file followed by numbers
+      const cleaned = text
+        .replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]/g, '')
+        .replace(/filecite\s+turn\d+file\d+\s+turn\d+file\d+/g, '')
+        .replace(/filecite\s+turn\d+file\d+/g, '')
+        .replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF][\s\S]*?[\uE000-\uF8FF]/g, '');
+      
+      if (cleaned !== text) {
+        textNode.textContent = cleaned;
+      }
+    });
+  } catch (error) {
+    if (isDev) console.debug('[Citations] sanitizeCitationsDeep error', error);
+  }
 }
 function enhanceSourceLinks(root: ShadowRoot) {
   // Always enable source link enhancement for file citations
@@ -1108,16 +1142,21 @@ export function ChatKitPanel({
             const totalElements = shadow.querySelectorAll("*").length;
             const hasDataKind = shadow.querySelector("[data-kind]") !== null;
             if (totalElements > 20 || hasDataKind) {
-              // Always enhance source links to make file citations clickable
+              // Always remove raw citation markers and enhance source links
+              sanitizeCitationsDeep(shadow);
               enhanceSourceLinks(shadow);
+              
+              // Run again after a delay to catch markers added during streaming
+              setTimeout(() => {
+                sanitizeCitationsDeep(shadow);
+                enhanceSourceLinks(shadow);
+              }, 100);
               
               // Other enhancements are disabled to avoid conflicts
               if (!DISABLE_CUSTOM_POSTPROCESSING) {
                 sanitizeCitations(shadow);
-                sanitizeCitationsDeep(shadow);
                 setTimeout(() => {
                   sanitizeCitations(shadow);
-                  sanitizeCitationsDeep(shadow);
                 }, 100);
                 void enhanceInlineLinks(shadow);
               }

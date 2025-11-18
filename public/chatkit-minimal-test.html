@@ -394,8 +394,40 @@
       }
 
       function sanitizeCitationsDeep(root) {
-        // Disabled: use ChatKit's native rendering without DOM scrubbing
-        return;
+        try {
+          // Remove raw filecite markers like: filecite turn0file2 turn0file5
+          // These appear when ChatKit doesn't render citations properly
+          const textNodes = [];
+          const walker = document.createTreeWalker(
+            root,
+            NodeFilter.SHOW_TEXT,
+            null
+          );
+          
+          let node;
+          while (node = walker.nextNode()) {
+            if (node.textContent && /filecite/.test(node.textContent)) {
+              textNodes.push(node);
+            }
+          }
+          
+          textNodes.forEach(textNode => {
+            const text = textNode.textContent || '';
+            // Match pattern: filecite turn0file2 turn0file5 (with special Unicode characters)
+            // Pattern: filecite followed by turn0file followed by numbers
+            const cleaned = text
+              .replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]/g, '')
+              .replace(/filecite\s+turn\d+file\d+\s+turn\d+file\d+/g, '')
+              .replace(/filecite\s+turn\d+file\d+/g, '')
+              .replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF][\s\S]*?[\uE000-\uF8FF]/g, '');
+            
+            if (cleaned !== text) {
+              textNode.textContent = cleaned;
+            }
+          });
+        } catch (error) {
+          console.debug('[Citations] sanitizeCitationsDeep error', error);
+        }
       }
       function storeSecret(secret, expiresAtMs) {
         cachedSecret = secret;
@@ -725,6 +757,7 @@
             const root = el.shadowRoot;
             if (root && !mutationObserver) {
               mutationObserver = new MutationObserver(() => {
+                sanitizeCitationsDeep(root);
                 enhanceSourceLinks(root);
               });
               mutationObserver.observe(root, { childList: true, subtree: true, characterData: true });
@@ -737,6 +770,9 @@
             if (root) {
               // Always try to set up observer
               setupObserver();
+              
+              // Remove raw citation markers
+              sanitizeCitationsDeep(root);
               
               // Enhance source links whenever ChatKit content updates
               enhanceSourceLinks(root);
