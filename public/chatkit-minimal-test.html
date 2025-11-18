@@ -222,21 +222,40 @@
             
             // If no URL found, try to guess from filename
             if (!href) {
-              // Look for filename in the citation - usually in a font-semibold element or similar
-              const filenameEl = item.querySelector('.font-semibold, [class*="font-semibold"]');
-              let filename = filenameEl?.textContent?.trim() || null;
+              // Look for filename in the citation - try multiple selectors
+              let filename = null;
               
-              // If not found, search all divs for one containing .html
+              // Try font-semibold first (common in ChatKit)
+              const filenameEl = item.querySelector('.font-semibold, [class*="font-semibold"]');
+              if (filenameEl) {
+                filename = filenameEl.textContent?.trim() || null;
+              }
+              
+              // If not found, search all divs/spans for one containing .html with ID pattern
               if (!filename) {
-                const htmlDiv = Array.from(item.querySelectorAll('div')).find(d => {
-                  const text = d.textContent?.trim() || '';
-                  return text.includes('.html') && /^\d+-/.test(text);
+                const allTextElements = item.querySelectorAll('div, span, p');
+                const htmlElement = Array.from(allTextElements).find(el => {
+                  const text = el.textContent?.trim() || '';
+                  // Match pattern like "22577302775833-Elite-Plan-Rollout.html"
+                  return text.includes('.html') && /^\d{10,}-/.test(text);
                 });
-                filename = htmlDiv?.textContent?.trim() || null;
+                filename = htmlElement?.textContent?.trim() || null;
+              }
+              
+              // Last resort: extract from entire item text
+              if (!filename) {
+                const itemText = item.textContent || '';
+                const match = itemText.match(/(\d{10,}-[A-Za-z0-9-]+\.html)/);
+                if (match) {
+                  filename = match[1];
+                }
               }
               
               if (filename) {
                 href = guessUrlFromFilename(filename);
+                if (href) {
+                  console.debug('[Sources] Extracted URL from filename:', filename, '->', href);
+                }
               }
             }
             
@@ -699,21 +718,32 @@
 
           // Monitor ChatKit initialization and enhance source links
           let initCheckAttempts = 0;
+          let mutationObserver = null;
+          
+          // Set up mutation observer immediately to catch all content changes
+          const setupObserver = () => {
+            const root = el.shadowRoot;
+            if (root && !mutationObserver) {
+              mutationObserver = new MutationObserver(() => {
+                enhanceSourceLinks(root);
+              });
+              mutationObserver.observe(root, { childList: true, subtree: true, characterData: true });
+            }
+          };
+          
           const checkInit = setInterval(() => {
             initCheckAttempts++;
             const root = el.shadowRoot;
             if (root) {
+              // Always try to set up observer
+              setupObserver();
+              
               // Enhance source links whenever ChatKit content updates
               enhanceSourceLinks(root);
               
               // If ChatKit is ready, stop monitoring silently
               if (isChatKitReady(el)) {
                 clearInterval(checkInit);
-                // Set up mutation observer to enhance links as new content is added
-                const observer = new MutationObserver(() => {
-                  enhanceSourceLinks(root);
-                });
-                observer.observe(root, { childList: true, subtree: true });
                 return;
               }
               
@@ -724,18 +754,13 @@
                 console.warn('[ChatKit] Still initializing... Attempt:', initCheckAttempts, 'totalElements:', totalElements, 'hasDataKind:', hasDataKind);
               }
               
-              // Stop after reasonable attempts
+              // Stop after reasonable attempts but keep observer running
               if (initCheckAttempts > 100) {
                 clearInterval(checkInit);
                 if (!isChatKitReady(el)) {
                   console.error('[ChatKit] Failed to initialize after 100 checks - may be in error state');
-                } else {
-                  // Set up mutation observer even if initialization check stopped
-                  const observer = new MutationObserver(() => {
-                    enhanceSourceLinks(root);
-                  });
-                  observer.observe(root, { childList: true, subtree: true });
                 }
+                // Observer will continue running to catch late content
               }
             }
           }, 500);

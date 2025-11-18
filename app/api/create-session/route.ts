@@ -194,14 +194,14 @@ export async function POST(request: Request): Promise<Response> {
     const requestPayload = allowWorkflowInput ? finalPayload : fallbackPayload;
     
     // Log request details including domain key for debugging
-    if (domainKey) {
-      console.info("[create-session] Sending request to OpenAI ChatKit API", {
-        url,
-        hasDomainKeyHeader: !!headers["ChatKit-Domain-Key"],
-        hasDomainKeyInBody: !!(requestPayload.chatkit_configuration as Record<string, unknown>)?.domain_key,
-        payloadKeys: Object.keys(requestPayload),
-      });
-    }
+    console.info("[create-session] Sending request to OpenAI ChatKit API", {
+      url,
+      hasDomainKey: !!domainKey,
+      hasDomainKeyHeader: !!headers["ChatKit-Domain-Key"],
+      hasDomainKeyInBody: !!(requestPayload.chatkit_configuration as Record<string, unknown>)?.domain_key,
+      payloadKeys: Object.keys(requestPayload),
+      chatkitConfig: requestPayload.chatkit_configuration,
+    });
     
     let upstreamResponse = await fetch(url, {
       method: "POST",
