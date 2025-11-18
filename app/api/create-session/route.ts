@@ -105,18 +105,17 @@ export async function POST(request: Request): Promise<Response> {
     const domainKey = process.env.OPENAI_DOMAIN_KEY || process.env.CHATKIT_DOMAIN_KEY;
     if (domainKey) {
       headers["ChatKit-Domain-Key"] = domainKey;
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[create-session] Domain key found and added to headers", {
-          hasDomainKey: true,
-          keyPrefix: domainKey.slice(0, 8) + "...",
-        });
-      }
+      // Log in both dev and production to verify domain key is being sent
+      console.info("[create-session] Domain key found and added to headers", {
+        hasDomainKey: true,
+        keyPrefix: domainKey.slice(0, 8) + "...",
+        headerName: "ChatKit-Domain-Key",
+      });
     } else {
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("[create-session] No domain key found - file citations may not render properly", {
-          checkedVars: ["OPENAI_DOMAIN_KEY", "CHATKIT_DOMAIN_KEY"],
-        });
-      }
+      console.warn("[create-session] No domain key found - file citations may not render properly", {
+        checkedVars: ["OPENAI_DOMAIN_KEY", "CHATKIT_DOMAIN_KEY"],
+        nodeEnv: process.env.NODE_ENV,
+      });
     }
     
     const normalizedParameters: PromptParameters = normalizePromptParameters(
@@ -192,18 +191,23 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     // If input is disabled, call upstream once with fallback payload to avoid a 400 + retry.
-    let upstreamResponse =
-      allowWorkflowInput
-        ? await fetch(url, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(finalPayload),
-          })
-        : await fetch(url, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(fallbackPayload),
-          });
+    const requestPayload = allowWorkflowInput ? finalPayload : fallbackPayload;
+    
+    // Log request details including domain key for debugging
+    if (domainKey) {
+      console.info("[create-session] Sending request to OpenAI ChatKit API", {
+        url,
+        hasDomainKeyHeader: !!headers["ChatKit-Domain-Key"],
+        hasDomainKeyInBody: !!(requestPayload.chatkit_configuration as Record<string, unknown>)?.domain_key,
+        payloadKeys: Object.keys(requestPayload),
+      });
+    }
+    
+    let upstreamResponse = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestPayload),
+    });
 
     let upstreamJson = (await upstreamResponse.json().catch(() => ({}))) as
       | Record<string, unknown>
@@ -214,15 +218,13 @@ export async function POST(request: Request): Promise<Response> {
       !upstreamResponse.ok &&
       shouldRetryWithoutPrompt(upstreamResponse.status, upstreamJson)
     ) {
-      if (process.env.NODE_ENV !== "production") {
-        console.warn(
-          "[create-session] Retrying without prompt input due to upstream failure",
-          {
-            status: upstreamResponse.status,
-            body: upstreamJson,
-          }
-        );
-      }
+      console.warn(
+        "[create-session] Retrying without prompt input due to upstream failure",
+        {
+          status: upstreamResponse.status,
+          body: upstreamJson,
+        }
+      );
       upstreamResponse = await fetch(url, {
         method: "POST",
         headers,
