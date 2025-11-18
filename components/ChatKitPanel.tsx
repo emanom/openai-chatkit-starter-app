@@ -210,14 +210,26 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
       
       // Final cleanup: remove any remaining filecite markers that might have been missed
       // This is a last resort that matches filecite followed by anything that looks like turnXfileY
-      if (cleaned.includes('filecite') && /turn\d+file\d+/.test(cleaned)) {
+      // Check both original text and cleaned text
+      const hasFilecite = text.includes('filecite') || cleaned.includes('filecite');
+      const hasTurnFile = /turn\d+file\d+/.test(text) || /turn\d+file\d+/.test(cleaned);
+      
+      if (hasFilecite && hasTurnFile) {
+        // Try multiple aggressive patterns
         cleaned = cleaned.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
+        // Also try on original text in case cleaned didn't catch it
+        if (text.includes('filecite')) {
+          cleaned = text.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
+        }
       }
       
       if (cleaned !== text) {
         textNode.textContent = cleaned;
         totalRemoved++;
-        if (isDev) console.debug('[Citations] Removed citation markers:', text.substring(0, 50));
+        if (isDev) console.debug('[Citations] Removed citation markers:', text.substring(0, 100));
+      } else if (hasFilecite && hasTurnFile && isDev) {
+        // Log if we found markers but didn't remove them
+        console.warn('[Citations] Found markers but patterns did not match:', text.substring(0, 100));
       }
     });
     
@@ -1266,11 +1278,12 @@ export function ChatKitPanel({
             const hasDataKind = shadow.querySelector("[data-kind]") !== null;
             const hasFileciteMarkers = shadow.textContent?.includes('filecite') || false;
             
+            // Always run sanitization if there's any content - markers might be added after initial check
             // Run sanitization if:
             // 1. There's substantial content (20+ elements), OR
             // 2. ChatKit has rendered data attributes, OR
             // 3. We detect filecite markers (even with minimal content)
-            if (totalElements > 20 || hasDataKind || hasFileciteMarkers) {
+            if (totalElements > 5 || hasDataKind || hasFileciteMarkers) {
               // Always remove raw citation markers first (critical for user experience)
               sanitizeCitationsDeep(shadow);
               
