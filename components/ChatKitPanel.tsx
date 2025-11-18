@@ -83,6 +83,7 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
   try {
     // Remove raw filecite markers like: filecite turn0file2 turn0file5
     // These appear when ChatKit doesn't render citations properly
+    // IMPORTANT: Only remove markers that don't have corresponding rendered citation elements nearby
     const textNodes: Text[] = [];
     const walker = document.createTreeWalker(
       root,
@@ -100,32 +101,97 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
     
     if (textNodes.length === 0) return;
     
+    // Helper function to check if there's a rendered citation element nearby
+    const hasRenderedCitationNearby = (textNode: Text): boolean => {
+      try {
+        // Check parent and nearby elements for rendered citation indicators
+        let current: Node | null = textNode.parentElement;
+        let depth = 0;
+        const maxDepth = 5; // Check up to 5 levels up
+        
+        while (current && depth < maxDepth) {
+          if (current.nodeType === Node.ELEMENT_NODE) {
+            const el = current as Element;
+            // Check for rendered citation elements (ChatKit uses data-type="file" or similar)
+            if (
+              el.querySelector('[data-type="file"]') ||
+              el.querySelector('[data-kind="source"]') ||
+              el.querySelector('[data-part="source"]') ||
+              el.querySelector('.BX1Wg') ||
+              el.classList.contains('BX1Wg')
+            ) {
+              return true;
+            }
+          }
+          current = current.parentElement;
+          depth++;
+        }
+        
+        // Also check siblings
+        const parent = textNode.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.childNodes);
+          const textIndex = siblings.indexOf(textNode);
+          
+          // Check siblings before and after
+          for (let i = Math.max(0, textIndex - 2); i < Math.min(siblings.length, textIndex + 3); i++) {
+            if (i === textIndex) continue;
+            const sibling = siblings[i];
+            if (sibling.nodeType === Node.ELEMENT_NODE) {
+              const el = sibling as Element;
+              if (
+                el.querySelector('[data-type="file"]') ||
+                el.querySelector('[data-kind="source"]') ||
+                el.querySelector('[data-part="source"]') ||
+                el.classList.contains('BX1Wg')
+              ) {
+                return true;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // If checking fails, assume no rendered citation (safer to remove)
+        return false;
+      }
+      return false;
+    };
+    
     let totalRemoved = 0;
     textNodes.forEach(textNode => {
+      // Skip if there's a rendered citation nearby - ChatKit is handling it
+      if (hasRenderedCitationNearby(textNode)) {
+        if (isDev) console.debug('[Citations] Skipping marker near rendered citation');
+        return;
+      }
+      
       const text = textNode.textContent || '';
       let cleaned = text;
       
-      // Pattern 1: Unicode control characters around filecite (most common)
-      // Matches: [Unicode]filecite[Unicode]turn0file6[Unicode]turn0file18[Unicode]
-      cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*/gi, '');
-      cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*/gi, '');
+      // More comprehensive pattern that handles all variations:
+      // - filecite followed by optional Unicode/spaces
+      // - turn followed by digits, file followed by digits (can repeat multiple times)
+      // - Handles Unicode control characters (\uE000-\uF8FF) anywhere in the pattern
+      // - Handles spaces between components
       
-      // Pattern 2: Multiple filecite markers with spaces/Unicode separators
-      // Matches: filecite turn0file6 turn0file18 (with or without Unicode)
-      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
-      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
+      // Pattern 1: Match multiple citations with Unicode/spaces anywhere
+      // Matches: [unicode/spaces]filecite[unicode/spaces]turn0file3[unicode/spaces]turn0file6[unicode/spaces]
+      // Uses non-greedy matching to handle Unicode characters that might appear between components
+      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*(?:turn\d+file\d+[\uE000-\uF8FF\s]*)+/gi, '');
       
-      // Pattern 3: Simple text pattern (fallback for plain text)
-      cleaned = cleaned.replace(/filecite\s+turn\d+file\d+\s+turn\d+file\d+/gi, '');
-      cleaned = cleaned.replace(/filecite\s+turn\d+file\d+/gi, '');
+      // Pattern 2: Match single citation with Unicode/spaces
+      // Matches: [unicode/spaces]filecite[unicode/spaces]turn0file3[unicode/spaces]
+      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
       
-      // Pattern 4: Any filecite marker with Unicode characters anywhere
-      cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]+[^\uE000-\uF8FF]*[\uE000-\uF8FF]+/gi, '');
+      // Pattern 3: Match with Unicode characters potentially breaking up the pattern
+      // This handles cases where Unicode chars might appear between "turn" and digits, etc.
+      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*(?:turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*)*/gi, '');
       
-      // Pattern 5: Catch-all for any remaining filecite patterns
-      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*/gi, '');
+      // Pattern 4: Plain text fallback (no Unicode, just spaces)
+      // Matches: filecite turn0file3 turn0file6
+      cleaned = cleaned.replace(/filecite\s+(?:turn\d+file\d+\s*)+/gi, '');
       
-      // Clean up any trailing/leading Unicode control characters
+      // Clean up any trailing/leading Unicode control characters or spaces
       cleaned = cleaned.replace(/^[\uE000-\uF8FF\s]+|[\uE000-\uF8FF\s]+$/g, '');
       
       if (cleaned !== text) {
@@ -1260,9 +1326,13 @@ export function ChatKitPanel({
           // Re-inject styles when needed
           applyStyles();
           
-          // If we detect filecite markers, run sanitization immediately (don't wait for debounce)
+          // If we detect filecite markers, wait a bit before sanitizing to give ChatKit time to render citations
+          // ChatKit processes citations asynchronously, so we need to delay removal
           if (hasTextMutations) {
-            sanitizeCitationsDeep(shadow);
+            // Delay to allow ChatKit to render citations first
+            setTimeout(() => {
+              sanitizeCitationsDeep(shadow);
+            }, 300); // 300ms delay gives ChatKit time to process
           }
           
           // Run content enhancers debounced

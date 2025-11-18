@@ -418,27 +418,30 @@
             const text = textNode.textContent || '';
             let cleaned = text;
             
-            // Pattern 1: Unicode control characters around filecite (most common)
-            // Matches: [Unicode]filecite[Unicode]turn0file6[Unicode]turn0file18[Unicode]
-            cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*/gi, '');
-            cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]*turn\d+file\d+[\uE000-\uF8FF]*/gi, '');
+            // More comprehensive pattern that handles all variations:
+            // - filecite followed by optional Unicode/spaces
+            // - turn followed by digits, file followed by digits (can repeat multiple times)
+            // - Handles Unicode control characters (\uE000-\uF8FF) anywhere in the pattern
+            // - Handles spaces between components
             
-            // Pattern 2: Multiple filecite markers with spaces/Unicode separators
-            // Matches: filecite turn0file6 turn0file18 (with or without Unicode)
-            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
-            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]+turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
+            // Pattern 1: Match multiple citations with Unicode/spaces anywhere
+            // Matches: [unicode/spaces]filecite[unicode/spaces]turn0file3[unicode/spaces]turn0file6[unicode/spaces]
+            // Uses non-greedy matching to handle Unicode characters that might appear between components
+            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*(?:turn\d+file\d+[\uE000-\uF8FF\s]*)+/gi, '');
             
-            // Pattern 3: Simple text pattern (fallback for plain text)
-            cleaned = cleaned.replace(/filecite\s+turn\d+file\d+\s+turn\d+file\d+/gi, '');
-            cleaned = cleaned.replace(/filecite\s+turn\d+file\d+/gi, '');
+            // Pattern 2: Match single citation with Unicode/spaces
+            // Matches: [unicode/spaces]filecite[unicode/spaces]turn0file3[unicode/spaces]
+            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
             
-            // Pattern 4: Any filecite marker with Unicode characters anywhere
-            cleaned = cleaned.replace(/[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]+[^\uE000-\uF8FF]*[\uE000-\uF8FF]+/gi, '');
+            // Pattern 3: Match with Unicode characters potentially breaking up the pattern
+            // This handles cases where Unicode chars might appear between "turn" and digits, etc.
+            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*(?:turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*)*/gi, '');
             
-            // Pattern 5: Catch-all for any remaining filecite patterns
-            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*/gi, '');
+            // Pattern 4: Plain text fallback (no Unicode, just spaces)
+            // Matches: filecite turn0file3 turn0file6
+            cleaned = cleaned.replace(/filecite\s+(?:turn\d+file\d+\s*)+/gi, '');
             
-            // Clean up any trailing/leading Unicode control characters
+            // Clean up any trailing/leading Unicode control characters or spaces
             cleaned = cleaned.replace(/^[\uE000-\uF8FF\s]+|[\uE000-\uF8FF\s]+$/g, '');
             
             if (cleaned !== text) {
@@ -802,14 +805,20 @@
                   return false;
                 });
                 
-                // If we detect filecite markers, run sanitization immediately (don't wait)
+                // If we detect filecite markers, wait a bit before sanitizing to give ChatKit time to render citations
+                // ChatKit processes citations asynchronously, so we need to delay removal
                 if (hasTextMutations) {
-                  sanitizeCitationsDeep(root);
+                  // Delay to allow ChatKit to render citations first
+                  setTimeout(() => {
+                    sanitizeCitationsDeep(root);
+                  }, 300); // 300ms delay gives ChatKit time to process
                 }
                 
-                // Always run enhancements
-                sanitizeCitationsDeep(root);
-                enhanceSourceLinks(root);
+                // Always run enhancements (but debounced)
+                setTimeout(() => {
+                  sanitizeCitationsDeep(root);
+                  enhanceSourceLinks(root);
+                }, 250);
               });
               mutationObserver.observe(root, { childList: true, subtree: true, characterData: true });
             }
