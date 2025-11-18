@@ -101,7 +101,8 @@ export async function POST(request: Request): Promise<Response> {
     }
     
     // Add domain key for domain verification in production
-    const domainKey = process.env.CHATKIT_DOMAIN_KEY;
+    // Support both OPENAI_DOMAIN_KEY and CHATKIT_DOMAIN_KEY for compatibility
+    const domainKey = process.env.OPENAI_DOMAIN_KEY || process.env.CHATKIT_DOMAIN_KEY;
     if (domainKey) {
       headers["ChatKit-Domain-Key"] = domainKey;
     }
