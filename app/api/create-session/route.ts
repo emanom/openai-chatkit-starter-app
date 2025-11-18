@@ -168,18 +168,13 @@ export async function POST(request: Request): Promise<Response> {
         };
 
     // Include file_upload configuration if provided
+    // NOTE: Domain key should ONLY be in headers, NOT in the request body
     const finalPayload: Record<string, unknown> = { ...payloadWithPrompt };
-    if (parsedBody?.chatkit_configuration?.file_upload !== undefined || domainKey) {
+    if (parsedBody?.chatkit_configuration?.file_upload !== undefined) {
       finalPayload.chatkit_configuration = {
-        ...(parsedBody?.chatkit_configuration?.file_upload !== undefined
-          ? {
-              file_upload: {
-                enabled: parsedBody.chatkit_configuration.file_upload?.enabled ?? false,
-              },
-            }
-          : {}),
-        // Include domain key in configuration for file citation rendering
-        ...(domainKey ? { domain_key: domainKey } : {}),
+        file_upload: {
+          enabled: parsedBody.chatkit_configuration.file_upload?.enabled ?? false,
+        },
       };
     }
 
@@ -191,14 +186,6 @@ export async function POST(request: Request): Promise<Response> {
         ? { chatkit_configuration: finalPayload.chatkit_configuration }
         : {}),
     };
-    
-    // Ensure domain key is included in both payloads if present
-    if (domainKey && !finalPayload.chatkit_configuration) {
-      finalPayload.chatkit_configuration = { domain_key: domainKey };
-    }
-    if (domainKey && !fallbackPayload.chatkit_configuration) {
-      fallbackPayload.chatkit_configuration = { domain_key: domainKey };
-    }
 
     // If input is disabled, call upstream once with fallback payload to avoid a 400 + retry.
     const requestPayload = allowWorkflowInput ? finalPayload : fallbackPayload;
@@ -208,9 +195,9 @@ export async function POST(request: Request): Promise<Response> {
     console.log("[create-session] URL:", url);
     console.log("[create-session] Has domain key:", !!domainKey);
     console.log("[create-session] Domain key in header:", !!headers["ChatKit-Domain-Key"]);
-    console.log("[create-session] Domain key in body:", !!(requestPayload.chatkit_configuration as Record<string, unknown>)?.domain_key);
     console.log("[create-session] Payload keys:", Object.keys(requestPayload));
     console.log("[create-session] ChatKit config:", JSON.stringify(requestPayload.chatkit_configuration));
+    console.log("[create-session] Headers:", Object.keys(headers));
     
     let upstreamResponse = await fetch(url, {
       method: "POST",
