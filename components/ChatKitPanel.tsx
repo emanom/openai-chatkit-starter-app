@@ -201,8 +201,18 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
       // This handles cases where Unicode chars might be in unexpected places
       cleaned = cleaned.replace(/filecite[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*(?:turn[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*file[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*)+/gi, '');
       
+      // Pattern 7: Most aggressive catch-all - matches filecite followed by ANY non-alphanumeric chars and citation pattern
+      // This should catch absolutely everything, including unknown Unicode characters
+      cleaned = cleaned.replace(/filecite[^a-zA-Z0-9]*(?:turn[^a-zA-Z0-9]*\d+[^a-zA-Z0-9]*file[^a-zA-Z0-9]*\d+[^a-zA-Z0-9]*)+/gi, '');
+      
       // Clean up any trailing/leading Unicode control characters or spaces
       cleaned = cleaned.replace(/^[\uE000-\uF8FF\s]+|[\uE000-\uF8FF\s]+$/g, '');
+      
+      // Final cleanup: remove any remaining filecite markers that might have been missed
+      // This is a last resort that matches filecite followed by anything that looks like turnXfileY
+      if (cleaned.includes('filecite') && /turn\d+file\d+/.test(cleaned)) {
+        cleaned = cleaned.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
+      }
       
       if (cleaned !== text) {
         textNode.textContent = cleaned;
@@ -1339,10 +1349,18 @@ export function ChatKitPanel({
           // If we detect filecite markers, wait a bit before sanitizing to give ChatKit time to render citations
           // ChatKit processes citations asynchronously, so we need to delay removal
           if (hasTextMutations) {
-            // Delay to allow ChatKit to render citations first
+            // Delay to allow ChatKit to render citations first, then run multiple cleanup passes
             setTimeout(() => {
               sanitizeCitationsDeep(shadow);
             }, 300); // 300ms delay gives ChatKit time to process
+            
+            // Additional cleanup passes to catch markers that might appear later
+            setTimeout(() => {
+              sanitizeCitationsDeep(shadow);
+            }, 800);
+            setTimeout(() => {
+              sanitizeCitationsDeep(shadow);
+            }, 1500);
           }
           
           // Run content enhancers debounced
