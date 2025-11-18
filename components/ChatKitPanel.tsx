@@ -862,6 +862,18 @@ export function ChatKitPanel({
 
   const chatkitConfig: UseChatKitOptions = {
     api: { getClientSecret },
+    onReady: () => {
+      // ChatKit is fully initialized and ready
+      if (isDev) {
+        console.info("[ChatKitPanel] ChatKit is ready");
+      }
+      // Ensure initialization state is cleared when ChatKit is ready
+      if (isMountedRef.current) {
+        isInitializingRef.current = false;
+        setIsInitializingSession(false);
+        setErrorState({ session: null, integration: null });
+      }
+    },
     theme: {
       colorScheme: theme,
       color: {
