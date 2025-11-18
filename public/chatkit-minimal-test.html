@@ -444,7 +444,12 @@
             
             // Pattern 5: Catch-all for any filecite pattern that might have been missed
             // This is a very permissive pattern to catch edge cases
+            // Matches: filecite followed by any non-word chars, then turn+digits+file+digits pattern
             cleaned = cleaned.replace(/filecite[^\w]*(?:turn[^\w]*\d+[^\w]*file[^\w]*\d+[^\w]*)+/gi, '');
+            
+            // Pattern 6: Ultra-permissive catch-all - matches filecite followed by anything that looks like citation refs
+            // This handles cases where Unicode chars might be in unexpected places
+            cleaned = cleaned.replace(/filecite[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*(?:turn[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*file[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*)+/gi, '');
             
             // Clean up any trailing/leading Unicode control characters or spaces
             cleaned = cleaned.replace(/^[\uE000-\uF8FF\s]+|[\uE000-\uF8FF\s]+$/g, '');
