@@ -34,9 +34,15 @@ export async function POST(request: Request): Promise<Response> {
     return methodNotAllowedResponse();
   }
   let sessionCookie: string | null = null;
+  
+  // Log immediately to verify logging works
+  console.log("[create-session] ===== REQUEST START =====");
+  console.log("[create-session] Timestamp:", new Date().toISOString());
+  
   try {
     const openaiApiKey = process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
+      console.error("[create-session] ERROR: Missing OPENAI_API_KEY");
       return new Response(
         JSON.stringify({
           error: "Missing OPENAI_API_KEY environment variable",
@@ -47,6 +53,8 @@ export async function POST(request: Request): Promise<Response> {
         }
       );
     }
+    
+    console.log("[create-session] API key found:", openaiApiKey.slice(0, 7) + "...");
 
     const parsedBody = await safeParseJson<CreateSessionRequestBody>(request);
     const { userId, sessionCookie: resolvedSessionCookie } =
@@ -103,19 +111,21 @@ export async function POST(request: Request): Promise<Response> {
     // Add domain key for domain verification in production
     // Support both OPENAI_DOMAIN_KEY and CHATKIT_DOMAIN_KEY for compatibility
     const domainKey = process.env.OPENAI_DOMAIN_KEY || process.env.CHATKIT_DOMAIN_KEY;
+    
+    // Use console.log instead of console.info/warn for better CloudWatch visibility
+    console.log("[create-session] Checking domain key...");
+    console.log("[create-session] OPENAI_DOMAIN_KEY exists:", !!process.env.OPENAI_DOMAIN_KEY);
+    console.log("[create-session] CHATKIT_DOMAIN_KEY exists:", !!process.env.CHATKIT_DOMAIN_KEY);
+    console.log("[create-session] Domain key value:", domainKey ? domainKey.slice(0, 8) + "..." : "NOT FOUND");
+    
     if (domainKey) {
       headers["ChatKit-Domain-Key"] = domainKey;
-      // Log in both dev and production to verify domain key is being sent
-      console.info("[create-session] Domain key found and added to headers", {
-        hasDomainKey: true,
-        keyPrefix: domainKey.slice(0, 8) + "...",
-        headerName: "ChatKit-Domain-Key",
-      });
+      console.log("[create-session] ✅ Domain key found and added to headers");
+      console.log("[create-session] Header ChatKit-Domain-Key set:", !!headers["ChatKit-Domain-Key"]);
     } else {
-      console.warn("[create-session] No domain key found - file citations may not render properly", {
-        checkedVars: ["OPENAI_DOMAIN_KEY", "CHATKIT_DOMAIN_KEY"],
-        nodeEnv: process.env.NODE_ENV,
-      });
+      console.log("[create-session] ⚠️ WARNING: No domain key found - file citations may not render properly");
+      console.log("[create-session] Checked vars: OPENAI_DOMAIN_KEY, CHATKIT_DOMAIN_KEY");
+      console.log("[create-session] Node env:", process.env.NODE_ENV);
     }
     
     const normalizedParameters: PromptParameters = normalizePromptParameters(
@@ -194,14 +204,13 @@ export async function POST(request: Request): Promise<Response> {
     const requestPayload = allowWorkflowInput ? finalPayload : fallbackPayload;
     
     // Log request details including domain key for debugging
-    console.info("[create-session] Sending request to OpenAI ChatKit API", {
-      url,
-      hasDomainKey: !!domainKey,
-      hasDomainKeyHeader: !!headers["ChatKit-Domain-Key"],
-      hasDomainKeyInBody: !!(requestPayload.chatkit_configuration as Record<string, unknown>)?.domain_key,
-      payloadKeys: Object.keys(requestPayload),
-      chatkitConfig: requestPayload.chatkit_configuration,
-    });
+    console.log("[create-session] ===== SENDING REQUEST =====");
+    console.log("[create-session] URL:", url);
+    console.log("[create-session] Has domain key:", !!domainKey);
+    console.log("[create-session] Domain key in header:", !!headers["ChatKit-Domain-Key"]);
+    console.log("[create-session] Domain key in body:", !!(requestPayload.chatkit_configuration as Record<string, unknown>)?.domain_key);
+    console.log("[create-session] Payload keys:", Object.keys(requestPayload));
+    console.log("[create-session] ChatKit config:", JSON.stringify(requestPayload.chatkit_configuration));
     
     let upstreamResponse = await fetch(url, {
       method: "POST",
@@ -235,12 +244,10 @@ export async function POST(request: Request): Promise<Response> {
         | undefined;
     }
 
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[create-session] upstream response", {
-        status: upstreamResponse.status,
-        statusText: upstreamResponse.statusText,
-      });
-    }
+    // Always log response for debugging
+    console.log("[create-session] ===== RESPONSE RECEIVED =====");
+    console.log("[create-session] Status:", upstreamResponse.status);
+    console.log("[create-session] Status text:", upstreamResponse.statusText);
 
     if (!upstreamResponse.ok) {
       const upstreamError = extractUpstreamError(upstreamJson);
