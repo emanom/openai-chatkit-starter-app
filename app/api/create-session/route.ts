@@ -105,6 +105,18 @@ export async function POST(request: Request): Promise<Response> {
     const domainKey = process.env.OPENAI_DOMAIN_KEY || process.env.CHATKIT_DOMAIN_KEY;
     if (domainKey) {
       headers["ChatKit-Domain-Key"] = domainKey;
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[create-session] Domain key found and added to headers", {
+          hasDomainKey: true,
+          keyPrefix: domainKey.slice(0, 8) + "...",
+        });
+      }
+    } else {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[create-session] No domain key found - file citations may not render properly", {
+          checkedVars: ["OPENAI_DOMAIN_KEY", "CHATKIT_DOMAIN_KEY"],
+        });
+      }
     }
     
     const normalizedParameters: PromptParameters = normalizePromptParameters(
@@ -148,11 +160,17 @@ export async function POST(request: Request): Promise<Response> {
 
     // Include file_upload configuration if provided
     const finalPayload: Record<string, unknown> = { ...payloadWithPrompt };
-    if (parsedBody?.chatkit_configuration?.file_upload !== undefined) {
+    if (parsedBody?.chatkit_configuration?.file_upload !== undefined || domainKey) {
       finalPayload.chatkit_configuration = {
-        file_upload: {
-          enabled: parsedBody.chatkit_configuration.file_upload?.enabled ?? false,
-        },
+        ...(parsedBody?.chatkit_configuration?.file_upload !== undefined
+          ? {
+              file_upload: {
+                enabled: parsedBody.chatkit_configuration.file_upload?.enabled ?? false,
+              },
+            }
+          : {}),
+        // Include domain key in configuration for file citation rendering
+        ...(domainKey ? { domain_key: domainKey } : {}),
       };
     }
 
@@ -164,6 +182,14 @@ export async function POST(request: Request): Promise<Response> {
         ? { chatkit_configuration: finalPayload.chatkit_configuration }
         : {}),
     };
+    
+    // Ensure domain key is included in both payloads if present
+    if (domainKey && !finalPayload.chatkit_configuration) {
+      finalPayload.chatkit_configuration = { domain_key: domainKey };
+    }
+    if (domainKey && !fallbackPayload.chatkit_configuration) {
+      fallbackPayload.chatkit_configuration = { domain_key: domainKey };
+    }
 
     // If input is disabled, call upstream once with fallback payload to avoid a 400 + retry.
     let upstreamResponse =
