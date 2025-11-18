@@ -437,9 +437,14 @@
             // This handles cases where Unicode chars might appear between "turn" and digits, etc.
             cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*(?:turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*)*/gi, '');
             
-            // Pattern 4: Plain text fallback (no Unicode, just spaces)
-            // Matches: filecite turn0file3 turn0file6
-            cleaned = cleaned.replace(/filecite\s+(?:turn\d+file\d+\s*)+/gi, '');
+            // Pattern 4: Plain text fallback (no Unicode, just spaces) - more flexible
+            // Matches: filecite turn0file3 turn0file6 or filecite turn0file3 turn0file12
+            // Allow optional spaces/Unicode between filecite and first turn
+            cleaned = cleaned.replace(/filecite[\s\uE000-\uF8FF]*(?:turn\d+file\d+[\s\uE000-\uF8FF]*)+/gi, '');
+            
+            // Pattern 5: Catch-all for any filecite pattern that might have been missed
+            // This is a very permissive pattern to catch edge cases
+            cleaned = cleaned.replace(/filecite[^\w]*(?:turn[^\w]*\d+[^\w]*file[^\w]*\d+[^\w]*)+/gi, '');
             
             // Clean up any trailing/leading Unicode control characters or spaces
             cleaned = cleaned.replace(/^[\uE000-\uF8FF\s]+|[\uE000-\uF8FF\s]+$/g, '');
