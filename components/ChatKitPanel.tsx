@@ -101,15 +101,24 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
     textNodes.forEach(textNode => {
       const text = textNode.textContent || '';
       // Match pattern: filecite turn0file2 turn0file5 (with special Unicode characters)
+      // The Unicode characters are: \uE000 (filecite start), \uE001 (separator), \uE002 (filecite end)
       // Pattern: filecite followed by turn0file followed by numbers
-      const cleaned = text
-        .replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]/g, '')
-        .replace(/filecite\s+turn\d+file\d+\s+turn\d+file\d+/g, '')
-        .replace(/filecite\s+turn\d+file\d+/g, '')
-        .replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF][\s\S]*?[\uE000-\uF8FF]/g, '');
+      let cleaned = text;
+      
+      // Remove with Unicode control characters (most common case)
+      cleaned = cleaned.replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]/g, '');
+      cleaned = cleaned.replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF]turn\d+file\d+[\uE000-\uF8FF]/g, '');
+      
+      // Remove without Unicode characters (fallback)
+      cleaned = cleaned.replace(/filecite\s+turn\d+file\d+\s+turn\d+file\d+/g, '');
+      cleaned = cleaned.replace(/filecite\s+turn\d+file\d+/g, '');
+      
+      // Remove any remaining filecite markers with any characters between
+      cleaned = cleaned.replace(/[\uE000-\uF8FF]filecite[\uE000-\uF8FF][\s\S]*?[\uE000-\uF8FF]/g, '');
       
       if (cleaned !== text) {
         textNode.textContent = cleaned;
+        if (isDev) console.debug('[Citations] Removed citation markers from text');
       }
     });
   } catch (error) {

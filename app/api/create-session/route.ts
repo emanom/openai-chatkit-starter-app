@@ -301,7 +301,18 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 export async function GET(): Promise<Response> {
-  return methodNotAllowedResponse();
+  // Provide helpful info for debugging
+  return new Response(
+    JSON.stringify({
+      error: "Method Not Allowed",
+      message: "This endpoint only accepts POST requests. ChatKit will call it automatically when creating a session.",
+      method: "Use POST to create a ChatKit session",
+    }),
+    {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
 }
 
 function methodNotAllowedResponse(): Response {
