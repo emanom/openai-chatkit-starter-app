@@ -171,151 +171,7 @@
       const sanitizedMetadata = sanitizeMetadata(rawMetadata);
       const metadataHash = stableStringify(sanitizedMetadata);
 
-      function enhanceSourceLinks(root) {
-        try {
-          function guessUrlFromFilename(filename) {
-            // Extract ID and slug from filename like "22577302775833-Elite-Plan-Rollout-and-what-it-means-for-your-Practice.html"
-            const m = String(filename || '').trim().match(/(\d+)-([A-Za-z0-9-]+)(?:\.html)?$/);
-            if (!m) return null;
-            const id = m[1], slug = m[2];
-            // Construct the article URL
-            return `https://support.fyi.app/hc/en-us/articles/${id}-${slug}`;
-          }
-
-          // Find file citations - look for elements containing file icons and filenames
-          const fileCitationSelectors = [
-            '[data-kind="source"]',
-            '[data-part="source"]',
-            '[data-kind="source-list"] [data-kind]',
-            '[data-part="source-list"] [data-part]',
-          ];
-          
-          // Also find file citations by structure - look for divs containing "File" text
-          const allDivs = root.querySelectorAll('div');
-          const fileCitations = Array.from(allDivs).filter(div => {
-            const text = div.textContent || '';
-            return text.includes('File') && text.includes('.html') && !div.closest('[data-fyi-source-upgraded]');
-          });
-          
-          const items = [
-            ...root.querySelectorAll(fileCitationSelectors.join(',')),
-            ...fileCitations
-          ];
-          
-          items.forEach((item) => {
-            if (item.getAttribute('data-fyi-source-upgraded') === '1') return;
-            
-            // Check if already has a link
-            let href = item.querySelector('a[href]')?.getAttribute('href') || null;
-            
-            // Try to get URL from data attributes
-            if (!href) {
-              const urlEl = item.matches('[data-url]') ? item : item.querySelector('[data-url]');
-              href = urlEl?.getAttribute('data-url') || null;
-            }
-            
-            // Try to extract from title attribute
-            if (!href) {
-              const titleEl = item.querySelector('[title*="http"]');
-              href = titleEl?.getAttribute('title') || null;
-            }
-            
-            // If no URL found, try to guess from filename
-            if (!href) {
-              // Look for filename in the citation - try multiple selectors
-              let filename = null;
-              
-              // Try font-semibold first (common in ChatKit)
-              const filenameEl = item.querySelector('.font-semibold, [class*="font-semibold"]');
-              if (filenameEl) {
-                filename = filenameEl.textContent?.trim() || null;
-              }
-              
-              // If not found, search all divs/spans for one containing .html with ID pattern
-              if (!filename) {
-                const allTextElements = item.querySelectorAll('div, span, p');
-                const htmlElement = Array.from(allTextElements).find(el => {
-                  const text = el.textContent?.trim() || '';
-                  // Match pattern like "22577302775833-Elite-Plan-Rollout.html"
-                  return text.includes('.html') && /^\d{10,}-/.test(text);
-                });
-                filename = htmlElement?.textContent?.trim() || null;
-              }
-              
-              // Last resort: extract from entire item text
-              if (!filename) {
-                const itemText = item.textContent || '';
-                const match = itemText.match(/(\d{10,}-[A-Za-z0-9-]+\.html)/);
-                if (match) {
-                  filename = match[1];
-                }
-              }
-              
-              if (filename) {
-                href = guessUrlFromFilename(filename);
-                if (href) {
-                  console.debug('[Sources] Extracted URL from filename:', filename, '->', href);
-                }
-              }
-            }
-            
-            if (!href) return;
-
-            // Make the entire citation clickable
-            if (!item.querySelector('a[href]')) {
-              // Wrap or make clickable
-              item.style.cursor = 'pointer';
-              item.setAttribute('role', 'link');
-              item.setAttribute('tabindex', '0');
-              item.setAttribute('title', `Open: ${href}`);
-              
-              if (!item.getAttribute('data-fyi-link-handler')) {
-                item.setAttribute('data-fyi-link-handler', '1');
-                item.addEventListener('click', (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  try { 
-                    window.open(href, '_blank', 'noopener,noreferrer'); 
-                  } catch(err) {
-                    console.debug('[Sources] Failed to open link', err);
-                  }
-                });
-                item.addEventListener('keydown', (ev) => {
-                  if (ev.key === 'Enter' || ev.key === ' ') {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    try { 
-                      window.open(href, '_blank', 'noopener,noreferrer'); 
-                    } catch(err) {
-                      console.debug('[Sources] Failed to open link', err);
-                    }
-                  }
-                });
-              }
-            } else {
-              // Update existing links
-              const anchors = item.querySelectorAll('a[href]');
-              anchors.forEach((a) => {
-                if (a.getAttribute('href') !== href) {
-                  a.setAttribute('href', href);
-                }
-                a.setAttribute('title', href);
-                try {
-                  const abs = new URL(href, window.location.origin);
-                  if (abs.origin !== window.location.origin) {
-                    a.target = '_blank';
-                    a.rel = 'noopener noreferrer';
-                  }
-                } catch(_){}
-              });
-            }
-
-            item.setAttribute('data-fyi-source-upgraded', '1');
-          });
-        } catch (error) {
-          console.debug('[Sources] enhanceSourceLinks error', error);
-        }
-      }
+      function enhanceSourceLinks(_root) {}
 
       const fetchingTitleSet = new Set();
       function normalizeForCompare(s) {
@@ -395,141 +251,32 @@
 
       function sanitizeCitationsDeep(root) {
         try {
-          // Remove raw filecite markers like: filecite turn0file2 turn0file5
-          // These appear when ChatKit doesn't render citations properly
-          const textNodes = [];
           const walker = document.createTreeWalker(
             root,
             NodeFilter.SHOW_TEXT,
             null
           );
-          
+          const filecitePattern = /filecite[\s\u200B-\u200D\uFEFF]*/gi;
+          const turnPattern = /turn\d+file\d+/gi;
           let node;
-          while (node = walker.nextNode()) {
-            if (node.textContent && /filecite/i.test(node.textContent)) {
-              textNodes.push(node);
+          while ((node = walker.nextNode())) {
+            const textNode = node;
+            const original = textNode.textContent || "";
+            if (!original || (!original.includes("filecite") && !turnPattern.test(original))) {
+              continue;
             }
-          }
-          
-          if (textNodes.length === 0) {
-            if (root.textContent && root.textContent.includes('filecite')) {
-              console.warn('[Citations] Found filecite in root.textContent but no text nodes found');
-            }
-            return;
-          }
-          
-          console.debug('[Citations] Found ' + textNodes.length + ' text node(s) with filecite markers');
-          
-          let totalRemoved = 0;
-          textNodes.forEach(textNode => {
-            const text = textNode.textContent || '';
-            
-            // First check: if the text node ONLY contains citation markers (no other content), remove it entirely
-            const onlyCitationMarkers = /^[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*filecite[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*(?:turn\d+file\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*)+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*$/i.test(text);
-            if (onlyCitationMarkers) {
-              textNode.textContent = '';
-              totalRemoved++;
-              console.debug('[Citations] Removed text node containing only citation markers');
-              return;
-            }
-            
-            let cleaned = text;
-            
-            // More comprehensive pattern that handles all variations:
-            // - filecite followed by optional Unicode/spaces
-            // - turn followed by digits, file followed by digits (can repeat multiple times)
-            // - Handles Unicode control characters (\uE000-\uF8FF) anywhere in the pattern
-            // - Handles spaces between components
-            
-            // Pattern 1: Match multiple citations with Unicode/spaces anywhere
-            // Matches: [unicode/spaces]filecite[unicode/spaces]turn0file3[unicode/spaces]turn0file6[unicode/spaces]
-            // Uses non-greedy matching to handle Unicode characters that might appear between components
-            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*(?:turn\d+file\d+[\uE000-\uF8FF\s]*)+/gi, '');
-            
-            // Pattern 2: Match single citation with Unicode/spaces
-            // Matches: [unicode/spaces]filecite[unicode/spaces]turn0file3[unicode/spaces]
-            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
-            
-            // Pattern 3: Match with Unicode characters potentially breaking up the pattern
-            // This handles cases where Unicode chars might appear between "turn" and digits, etc.
-            cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*(?:turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*)*/gi, '');
-            
-            // Pattern 4: Plain text fallback (no Unicode, just spaces) - more flexible
-            // Matches: filecite turn0file3 turn0file6 or filecite turn0file3 turn0file12
-            // Allow optional spaces/Unicode between filecite and first turn
-            cleaned = cleaned.replace(/filecite[\s\uE000-\uF8FF]*(?:turn\d+file\d+[\s\uE000-\uF8FF]*)+/gi, '');
-            
-            // Pattern 5: Catch-all for any filecite pattern that might have been missed
-            // This is a very permissive pattern to catch edge cases
-            // Matches: filecite followed by any non-word chars, then turn+digits+file+digits pattern
-            cleaned = cleaned.replace(/filecite[^\w]*(?:turn[^\w]*\d+[^\w]*file[^\w]*\d+[^\w]*)+/gi, '');
-            
-            // Pattern 6: Ultra-permissive catch-all - matches filecite followed by anything that looks like citation refs
-            // This handles cases where Unicode chars might be in unexpected places
-            cleaned = cleaned.replace(/filecite[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*(?:turn[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*file[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*)+/gi, '');
-            
-            // Pattern 7: Most aggressive catch-all - matches filecite followed by ANY non-alphanumeric chars and citation pattern
-            // This should catch absolutely everything, including unknown Unicode characters
-            cleaned = cleaned.replace(/filecite[^a-zA-Z0-9]*(?:turn[^a-zA-Z0-9]*\d+[^a-zA-Z0-9]*file[^a-zA-Z0-9]*\d+[^a-zA-Z0-9]*)+/gi, '');
-            
-            // Clean up any trailing/leading Unicode control characters or spaces
-            cleaned = cleaned.replace(/^[\uE000-\uF8FF\s]+|[\uE000-\uF8FF\s]+$/g, '');
-            
-            // Final cleanup: remove any remaining filecite markers that might have been missed
-            // This is a last resort that matches filecite followed by anything that looks like turnXfileY
-            // Check both original text and cleaned text
-            const hasFilecite = text.includes('filecite') || cleaned.includes('filecite');
-            const hasTurnFile = /turn\d+file\d+/.test(text) || /turn\d+file\d+/.test(cleaned);
-            
-            if (hasFilecite && hasTurnFile) {
-              // Try multiple aggressive patterns - work on original text to ensure we catch everything
-              let finalCleaned = cleaned;
-              
-              // Pattern A: filecite followed by any non-letter chars, then turn+digits+file+digits
-              finalCleaned = finalCleaned.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
-              
-              // Pattern B: More permissive - allow ANY characters between components (non-greedy)
-              finalCleaned = finalCleaned.replace(/filecite.*?turn\d+file\d+.*?(?:turn\d+file\d+.*?)*/gi, '');
-              
-              // Pattern C: Ultra-permissive - match filecite followed by anything up to and including the last turnXfileY pattern
-              // This uses a greedy match to catch everything from filecite to the end of the citation pattern
-              finalCleaned = finalCleaned.replace(/filecite.*?turn\d+file\d+(?:.*?turn\d+file\d+)*/gi, '');
-              
-              // Pattern D: If still not cleaned, try on original text with all patterns
-              if (finalCleaned === cleaned && text.includes('filecite')) {
-                finalCleaned = text.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
-                if (finalCleaned === text) {
-                  finalCleaned = text.replace(/filecite.*?turn\d+file\d+.*?(?:turn\d+file\d+.*?)*/gi, '');
-                }
-                if (finalCleaned === text) {
-                  finalCleaned = text.replace(/filecite.*?turn\d+file\d+(?:.*?turn\d+file\d+)*/gi, '');
-                }
-              }
-              
-              cleaned = finalCleaned;
-              
-              // If still not cleaned, log for debugging
-              if (cleaned === text) {
-                const fileciteIndex = text.indexOf('filecite');
-                console.warn('[Citations] Patterns did not match. Text:', JSON.stringify(text.substring(Math.max(0, fileciteIndex - 20), fileciteIndex + 100)));
-              }
-            }
-            
-            if (cleaned !== text) {
+            turnPattern.lastIndex = 0;
+            const cleaned = original
+              .replace(filecitePattern, "")
+              .replace(turnPattern, "")
+              .replace(/\s{2,}/g, " ")
+              .trim();
+            if (cleaned !== original.trim()) {
               textNode.textContent = cleaned;
-              totalRemoved++;
-              console.debug('[Citations] Removed citation markers:', text.substring(0, 100));
-            } else if (hasFilecite && hasTurnFile) {
-              // Log if we found markers but didn't remove them
-              console.warn('[Citations] Found markers but patterns did not match:', text.substring(0, 100));
             }
-          });
-          
-          if (totalRemoved > 0) {
-            console.info('[Citations] Removed ' + totalRemoved + ' citation marker(s) from text nodes');
           }
         } catch (error) {
-          console.debug('[Citations] sanitizeCitationsDeep error', error);
+          console.debug("[Citations] sanitizeCitationsDeep error", error);
         }
       }
       function storeSecret(secret, expiresAtMs) {
@@ -898,56 +645,18 @@
             }
           });
 
-          // Monitor ChatKit initialization and enhance source links
+          // Monitor ChatKit initialization
           let initCheckAttempts = 0;
           let mutationObserver = null;
-          
-          // Set up mutation observer immediately to catch all content changes
           const setupObserver = () => {
             const root = el.shadowRoot;
             if (root && !mutationObserver) {
-              mutationObserver = new MutationObserver((mutations) => {
-                // Check if any mutations added text content that might contain filecite markers
-                const hasTextMutations = mutations.some(mutation => {
-                  if (mutation.type === 'childList') {
-                    return Array.from(mutation.addedNodes).some(node => {
-                      if (node.nodeType === Node.TEXT_NODE) {
-                        return node.textContent && node.textContent.includes('filecite');
-                      }
-                      if (node.nodeType === Node.ELEMENT_NODE) {
-                        return node.textContent && node.textContent.includes('filecite');
-                      }
-                      return false;
-                    });
-                  }
-                  if (mutation.type === 'characterData') {
-                    return mutation.target.textContent && mutation.target.textContent.includes('filecite');
-                  }
-                  return false;
-                });
-                
-                // If we detect filecite markers, wait a bit before sanitizing to give ChatKit time to render citations
-                // ChatKit processes citations asynchronously, so we need to delay removal
-                if (hasTextMutations) {
-                  // Delay to allow ChatKit to render citations first, then run multiple cleanup passes
-                  setTimeout(() => {
-                    sanitizeCitationsDeep(root);
-                  }, 300); // 300ms delay gives ChatKit time to process
-                  
-                  // Additional cleanup passes to catch markers that might appear later
-                  setTimeout(() => {
-                    sanitizeCitationsDeep(root);
-                  }, 800);
-                  setTimeout(() => {
-                    sanitizeCitationsDeep(root);
-                  }, 1500);
+              sanitizeCitationsDeep(root);
+              mutationObserver = new MutationObserver(() => {
+                const latestRoot = el.shadowRoot;
+                if (latestRoot) {
+                  sanitizeCitationsDeep(latestRoot);
                 }
-                
-                // Always run enhancements (but debounced)
-                setTimeout(() => {
-                  sanitizeCitationsDeep(root);
-                  enhanceSourceLinks(root);
-                }, 250);
               });
               mutationObserver.observe(root, { childList: true, subtree: true, characterData: true });
             }
@@ -957,46 +666,25 @@
             initCheckAttempts++;
             const root = el.shadowRoot;
             if (root) {
-              // Always try to set up observer
               setupObserver();
-              
-              // Check if filecite markers are present (even with minimal content)
-              const hasFileciteMarkers = root.textContent && root.textContent.includes('filecite');
-              
-              // Remove raw citation markers (run even with minimal content if markers detected)
               sanitizeCitationsDeep(root);
-              
-              // Enhance source links whenever ChatKit content updates
               const totalElements = root.querySelectorAll('*').length;
               const hasDataKind = root.querySelectorAll('[data-kind]').length > 0;
-              if (totalElements > 20 || hasDataKind) {
-                enhanceSourceLinks(root);
-              }
-              
-              // If ChatKit is ready, stop monitoring silently
+
               if (isChatKitReady(el)) {
                 clearInterval(checkInit);
-                // Run one final cleanup pass
-                setTimeout(() => sanitizeCitationsDeep(root), 100);
-                setTimeout(() => sanitizeCitationsDeep(root), 500);
                 return;
               }
-              
-              // Only log if we've checked many times without success
+
               if (initCheckAttempts > 50 && initCheckAttempts % 20 === 0) {
-                console.warn('[ChatKit] Still initializing... Attempt:', initCheckAttempts, 'totalElements:', totalElements, 'hasDataKind:', hasDataKind, 'hasFilecite:', hasFileciteMarkers);
+                console.warn('[ChatKit] Still initializing... Attempt:', initCheckAttempts, 'totalElements:', totalElements, 'hasDataKind:', hasDataKind);
               }
-              
-              // Stop after reasonable attempts but keep observer running
+
               if (initCheckAttempts > 100) {
                 clearInterval(checkInit);
                 if (!isChatKitReady(el)) {
                   console.error('[ChatKit] Failed to initialize after 100 checks - may be in error state');
                 }
-                // Observer will continue running to catch late content
-                // Run additional cleanup passes
-                setTimeout(() => sanitizeCitationsDeep(root), 100);
-                setTimeout(() => sanitizeCitationsDeep(root), 500);
               }
             }
           }, 500);

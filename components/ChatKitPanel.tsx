@@ -10,7 +10,6 @@ import {
   CREATE_SESSION_ENDPOINT,
   WORKFLOW_ID,
   PROMPT_METADATA_ENDPOINT,
-  RESOLVE_TITLE_ENDPOINT,
 } from "@/lib/config";
 import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";
@@ -62,8 +61,6 @@ type ErrorState = {
 const isBrowser = typeof window !== "undefined";
 const isDev = process.env.NODE_ENV !== "production";
 
-// Disable custom post-processing that mutates ChatKit output to avoid conflicts with built-in rendering
-const DISABLE_CUSTOM_POSTPROCESSING = true;
 const PROMPT_STORAGE_KEY = "chatkit_prompt_key";
 const PROMPT_STORAGE_EXPIRES_KEY = "chatkit_prompt_key_expires";
 const PROMPT_STORAGE_HASH_KEY = "chatkit_prompt_key_hash";
@@ -75,365 +72,32 @@ type PromptCacheInfo = {
   hash: string;
 };
 
-function sanitizeCitations(_root: ShadowRoot) {
-  // Disabled: rely on ChatKit's native rendering
-}
-
 function sanitizeCitationsDeep(root: ShadowRoot) {
   try {
-    // Remove raw filecite markers like: filecite turn0file2 turn0file5
-    // These appear when ChatKit doesn't render citations properly
-    // IMPORTANT: Only remove markers that don't have corresponding rendered citation elements nearby
-    const textNodes: Text[] = [];
-    const walker = document.createTreeWalker(
-      root,
-      NodeFilter.SHOW_TEXT,
-      null
-    );
-    
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const filecitePattern = /filecite[\s\u200B-\u200D\uFEFF]*/gi;
+    const turnPattern = /turn\d+file\d+/gi;
     let node: Node | null;
-    while (node = walker.nextNode()) {
+    while ((node = walker.nextNode())) {
       const textNode = node as Text;
-      if (textNode.textContent && /filecite/i.test(textNode.textContent)) {
-        textNodes.push(textNode);
+      const original = textNode.textContent ?? "";
+      if (!original || (!original.includes("filecite") && !turnPattern.test(original))) {
+        continue;
       }
-    }
-    
-    if (textNodes.length === 0) return;
-    
-    // Helper function to check if there's a rendered citation element nearby
-    const hasRenderedCitationNearby = (textNode: Text): boolean => {
-      try {
-        // Check parent and nearby elements for rendered citation indicators
-        let current: Node | null = textNode.parentElement;
-        let depth = 0;
-        const maxDepth = 5; // Check up to 5 levels up
-        
-        while (current && depth < maxDepth) {
-          if (current.nodeType === Node.ELEMENT_NODE) {
-            const el = current as Element;
-            // Check for rendered citation elements (ChatKit uses data-type="file" or similar)
-            if (
-              el.querySelector('[data-type="file"]') ||
-              el.querySelector('[data-kind="source"]') ||
-              el.querySelector('[data-part="source"]') ||
-              el.querySelector('.BX1Wg') ||
-              el.classList.contains('BX1Wg')
-            ) {
-              return true;
-            }
-          }
-          current = current.parentElement;
-          depth++;
-        }
-        
-        // Also check siblings
-        const parent = textNode.parentElement;
-        if (parent) {
-          const siblings = Array.from(parent.childNodes);
-          const textIndex = siblings.indexOf(textNode);
-          
-          // Check siblings before and after
-          for (let i = Math.max(0, textIndex - 2); i < Math.min(siblings.length, textIndex + 3); i++) {
-            if (i === textIndex) continue;
-            const sibling = siblings[i];
-            if (sibling.nodeType === Node.ELEMENT_NODE) {
-              const el = sibling as Element;
-              if (
-                el.querySelector('[data-type="file"]') ||
-                el.querySelector('[data-kind="source"]') ||
-                el.querySelector('[data-part="source"]') ||
-                el.classList.contains('BX1Wg')
-              ) {
-                return true;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // If checking fails, assume no rendered citation (safer to remove)
-        return false;
-      }
-      return false;
-    };
-    
-    let totalRemoved = 0;
-    textNodes.forEach(textNode => {
-      const text = textNode.textContent || '';
-      
-      // First check: if the text node ONLY contains citation markers (no other content), remove it entirely
-      const onlyCitationMarkers = /^[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*filecite[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*(?:turn\d+file\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*)+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*$/i.test(text);
-      if (onlyCitationMarkers) {
-        textNode.textContent = '';
-        totalRemoved++;
-        if (isDev) console.debug('[Citations] Removed text node containing only citation markers');
-        return;
-      }
-      
-      // Skip if there's a rendered citation in the same parent - ChatKit is handling it
-      // But only skip if the text contains other content (not just markers)
-      if (hasRenderedCitationNearby(textNode) && text.trim().length > 50) {
-        if (isDev) console.debug('[Citations] Skipping marker near rendered citation (has other content)');
-        // Still try to clean markers even if there's a rendered citation nearby
-      }
-      
-      let cleaned = text;
-      
-      // More comprehensive pattern that handles all variations:
-      // - filecite followed by optional Unicode/spaces
-      // - turn followed by digits, file followed by digits (can repeat multiple times)
-      // - Handles Unicode control characters (\uE000-\uF8FF) anywhere in the pattern
-      // - Handles spaces between components
-      
-      // Pattern 1: Match multiple citations with Unicode/spaces anywhere
-      // Matches: [unicode/spaces]filecite[unicode/spaces]turn0file3[unicode/spaces]turn0file6[unicode/spaces]
-      // Uses non-greedy matching to handle Unicode characters that might appear between components
-      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*(?:turn\d+file\d+[\uE000-\uF8FF\s]*)+/gi, '');
-      
-      // Pattern 2: Match single citation with Unicode/spaces
-      // Matches: [unicode/spaces]filecite[unicode/spaces]turn0file3[unicode/spaces]
-      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn\d+file\d+[\uE000-\uF8FF\s]*/gi, '');
-      
-      // Pattern 3: Match with Unicode characters potentially breaking up the pattern
-      // This handles cases where Unicode chars might appear between "turn" and digits, etc.
-      cleaned = cleaned.replace(/[\uE000-\uF8FF\s]*filecite[\uE000-\uF8FF\s]*turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*(?:turn[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*file[\uE000-\uF8FF\s]*\d+[\uE000-\uF8FF\s]*)*/gi, '');
-      
-      // Pattern 4: Plain text fallback (no Unicode, just spaces) - more flexible
-      // Matches: filecite turn0file3 turn0file6 or filecite turn0file3 turn0file12
-      // Allow optional spaces/Unicode between filecite and first turn
-      cleaned = cleaned.replace(/filecite[\s\uE000-\uF8FF]*(?:turn\d+file\d+[\s\uE000-\uF8FF]*)+/gi, '');
-      
-      // Pattern 5: Catch-all for any filecite pattern that might have been missed
-      // This is a very permissive pattern to catch edge cases
-      // Matches: filecite followed by any non-word chars, then turn+digits+file+digits pattern
-      cleaned = cleaned.replace(/filecite[^\w]*(?:turn[^\w]*\d+[^\w]*file[^\w]*\d+[^\w]*)+/gi, '');
-      
-      // Pattern 6: Ultra-permissive catch-all - matches filecite followed by anything that looks like citation refs
-      // This handles cases where Unicode chars might be in unexpected places
-      cleaned = cleaned.replace(/filecite[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*(?:turn[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*file[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*\d+[\s\uE000-\uF8FF\u200B-\u200D\uFEFF]*)+/gi, '');
-      
-      // Pattern 7: Most aggressive catch-all - matches filecite followed by ANY non-alphanumeric chars and citation pattern
-      // This should catch absolutely everything, including unknown Unicode characters
-      cleaned = cleaned.replace(/filecite[^a-zA-Z0-9]*(?:turn[^a-zA-Z0-9]*\d+[^a-zA-Z0-9]*file[^a-zA-Z0-9]*\d+[^a-zA-Z0-9]*)+/gi, '');
-      
-      // Clean up any trailing/leading Unicode control characters or spaces
-      cleaned = cleaned.replace(/^[\uE000-\uF8FF\s]+|[\uE000-\uF8FF\s]+$/g, '');
-      
-      // Final cleanup: remove any remaining filecite markers that might have been missed
-      // This is a last resort that matches filecite followed by anything that looks like turnXfileY
-      // Check both original text and cleaned text
-      const hasFilecite = text.includes('filecite') || cleaned.includes('filecite');
-      const hasTurnFile = /turn\d+file\d+/.test(text) || /turn\d+file\d+/.test(cleaned);
-      
-      if (hasFilecite && hasTurnFile) {
-        // Try multiple aggressive patterns - work on original text to ensure we catch everything
-        let finalCleaned = cleaned;
-        
-        // Pattern A: filecite followed by any non-letter chars, then turn+digits+file+digits
-        finalCleaned = finalCleaned.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
-        
-        // Pattern B: More permissive - allow ANY characters between components (non-greedy)
-        finalCleaned = finalCleaned.replace(/filecite.*?turn\d+file\d+.*?(?:turn\d+file\d+.*?)*/gi, '');
-        
-        // Pattern C: Ultra-permissive - match filecite followed by anything up to and including the last turnXfileY pattern
-        // This uses a greedy match to catch everything from filecite to the end of the citation pattern
-        finalCleaned = finalCleaned.replace(/filecite.*?turn\d+file\d+(?:.*?turn\d+file\d+)*/gi, '');
-        
-        // Pattern D: If still not cleaned, try on original text with all patterns
-        if (finalCleaned === cleaned && text.includes('filecite')) {
-          finalCleaned = text.replace(/filecite[^a-zA-Z]*turn\d+file\d+[^a-zA-Z]*(?:turn\d+file\d+[^a-zA-Z]*)*/gi, '');
-          if (finalCleaned === text) {
-            finalCleaned = text.replace(/filecite.*?turn\d+file\d+.*?(?:turn\d+file\d+.*?)*/gi, '');
-          }
-          if (finalCleaned === text) {
-            finalCleaned = text.replace(/filecite.*?turn\d+file\d+(?:.*?turn\d+file\d+)*/gi, '');
-          }
-        }
-        
-        cleaned = finalCleaned;
-        
-        // If still not cleaned, log for debugging
-        if (cleaned === text && isDev) {
-          console.warn('[Citations] Patterns did not match. Text:', JSON.stringify(text.substring(Math.max(0, text.indexOf('filecite') - 20), text.indexOf('filecite') + 100)));
-        }
-      }
-      
-      if (cleaned !== text) {
+      turnPattern.lastIndex = 0;
+      const cleaned = original
+        .replace(filecitePattern, "")
+        .replace(turnPattern, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      if (cleaned !== original.trim()) {
         textNode.textContent = cleaned;
-        totalRemoved++;
-        if (isDev) console.debug('[Citations] Removed citation markers:', text.substring(0, 100));
-      } else if (hasFilecite && hasTurnFile && isDev) {
-        // Log if we found markers but didn't remove them
-        console.warn('[Citations] Found markers but patterns did not match:', text.substring(0, 100));
       }
-    });
-    
-    if (totalRemoved > 0 && isDev) {
-      console.info(`[Citations] Removed ${totalRemoved} citation marker(s) from text nodes`);
     }
   } catch (error) {
-    if (isDev) console.debug('[Citations] sanitizeCitationsDeep error', error);
-  }
-}
-function enhanceSourceLinks(root: ShadowRoot) {
-  // Always enable source link enhancement for file citations
-  // This doesn't conflict with ChatKit's rendering, it just adds click handlers
-  
-  try {
-    function guessUrlFromFilename(filename: string): string | null {
-      // Extract ID and slug from filename like "22577302775833-Elite-Plan-Rollout-and-what-it-means-for-your-Practice.html"
-      const m = String(filename || '').trim().match(/(\d+)-([A-Za-z0-9-]+)(?:\.html)?$/);
-      if (!m) return null;
-      const id = m[1], slug = m[2];
-      // Construct the article URL
-      return `https://support.fyi.app/hc/en-us/articles/${id}-${slug}`;
+    if (isDev) {
+      console.debug("[ChatKitPanel] sanitizeCitationsDeep error", error);
     }
-
-    // Find file citations - look for elements containing file icons and filenames
-    const fileCitationSelectors = [
-      '[data-kind="source"]',
-      '[data-part="source"]',
-      '[data-kind="source-list"] [data-kind]',
-      '[data-part="source-list"] [data-part]',
-    ];
-    
-    // Also find file citations by structure - look for divs containing "File" text
-    const allDivs = root.querySelectorAll('div');
-    const fileCitations = Array.from(allDivs).filter(div => {
-      const text = div.textContent || '';
-      return text.includes('File') && text.includes('.html') && !div.closest('[data-fyi-source-upgraded]');
-    });
-    
-    const items = [
-      ...Array.from(root.querySelectorAll(fileCitationSelectors.join(','))),
-      ...fileCitations
-    ];
-    
-    items.forEach((item) => {
-      if (item.getAttribute('data-fyi-source-upgraded') === '1') return;
-      
-      // Check if already has a link
-      let href = item.querySelector('a[href]')?.getAttribute('href') || null;
-      
-      // Try to get URL from data attributes
-      if (!href) {
-        const urlEl = item.matches('[data-url]') ? item : item.querySelector('[data-url]');
-        href = urlEl?.getAttribute('data-url') || null;
-      }
-      
-      // Try to extract from title attribute
-      if (!href) {
-        const titleEl = item.querySelector('[title*="http"]');
-        href = titleEl?.getAttribute('title') || null;
-      }
-      
-      // If no URL found, try to guess from filename
-      if (!href) {
-        // Look for filename in the citation - usually in a font-semibold element or similar
-        const filenameEl = item.querySelector('.font-semibold, [class*="font-semibold"]');
-        let filename = filenameEl?.textContent?.trim() || null;
-        
-        // If not found, search all divs for one containing .html
-        if (!filename) {
-          const htmlDiv = Array.from(item.querySelectorAll('div')).find(d => {
-            const text = d.textContent?.trim() || '';
-            return text.includes('.html') && /^\d+-/.test(text);
-          });
-          filename = htmlDiv?.textContent?.trim() || null;
-        }
-        
-        if (filename) {
-          href = guessUrlFromFilename(filename);
-        }
-      }
-      
-      if (!href) return;
-
-      // Make the entire citation clickable
-      if (!item.querySelector('a[href]')) {
-        // Wrap or make clickable
-        (item as HTMLElement).style.cursor = 'pointer';
-        item.setAttribute('role', 'link');
-        item.setAttribute('tabindex', '0');
-        item.setAttribute('title', `Open: ${href}`);
-        
-        if (!item.getAttribute('data-fyi-link-handler')) {
-          item.setAttribute('data-fyi-link-handler', '1');
-          item.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try { 
-              window.open(href, '_blank', 'noopener,noreferrer'); 
-            } catch(err) {
-              if (isDev) console.debug('[Sources] Failed to open link', err);
-            }
-          });
-          item.addEventListener('keydown', (ev) => {
-            const keyEv = ev as KeyboardEvent;
-            if (keyEv.key === 'Enter' || keyEv.key === ' ') {
-              ev.preventDefault();
-              ev.stopPropagation();
-              try { 
-                window.open(href, '_blank', 'noopener,noreferrer'); 
-              } catch(err) {
-                if (isDev) console.debug('[Sources] Failed to open link', err);
-              }
-            }
-          });
-        }
-      } else {
-        // Update existing links
-        const anchors = item.querySelectorAll('a[href]');
-        anchors.forEach((a) => {
-          const anchor = a as HTMLAnchorElement;
-          if (anchor.getAttribute('href') !== href) {
-            anchor.setAttribute('href', href);
-          }
-          anchor.setAttribute('title', href);
-          try {
-            const abs = new URL(href, window.location.origin);
-            if (abs.origin !== window.location.origin) {
-              anchor.target = '_blank';
-              anchor.rel = 'noopener noreferrer';
-            }
-          } catch(_){}
-        });
-      }
-
-      item.setAttribute('data-fyi-source-upgraded', '1');
-    });
-  } catch (error) {
-    if (isDev) console.debug('[Sources] enhanceSourceLinks error', error);
-  }
-}
-
-const fetchingTitleSet = new Set<string>();
-function normalizeForCompare(s: string): string {
-  return s.replace(/\s+/g, " ").replace(/[.\u2014\-–—:\s]+$/g, "").trim().toLowerCase();
-}
-function dedupeTitleBeforeAnchor(anchor: HTMLAnchorElement, title: string) {
-  try {
-    const parent = anchor.parentNode as (HTMLElement | null);
-    if (!parent) return;
-    const prev = anchor.previousSibling;
-    if (!prev || prev.nodeType !== Node.TEXT_NODE) return;
-    const textNode = prev as Text;
-    const original = textNode.textContent || "";
-    const normOrig = normalizeForCompare(original);
-    const normTitle = normalizeForCompare(title);
-    if (normOrig.endsWith(normTitle)) {
-      // remove the trailing duplicate title (and trailing punctuation/spaces)
-      const idx = original.toLowerCase().lastIndexOf(title.toLowerCase());
-      if (idx >= 0) {
-        const trimmed = original.slice(0, idx).replace(/[.\u2014\-–—:\s]+$/g, "");
-        textNode.textContent = trimmed.length ? trimmed + " " : "";
-      }
-    }
-  } catch {}
-}
-async function enhanceInlineLinks(_root: ShadowRoot) {
-  if (DISABLE_CUSTOM_POSTPROCESSING) {
-    return;
   }
 }
 
@@ -1296,67 +960,18 @@ export function ChatKitPanel({
       }
     };
 
-    let enhanceTimer: number | null = null;
-    const scheduleEnhancements = () => {
-      // Always enable source link enhancement (doesn't conflict with ChatKit rendering)
+    // Observe updates in the shadow DOM and apply styles
+    const sanitizeShadow = () => {
       try {
-        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const wc = rootNode.querySelector<HTMLElement>("openai-chatkit");
         const shadow = wc?.shadowRoot;
         if (!shadow) return;
-        if (enhanceTimer) {
-          window.clearTimeout(enhanceTimer);
-          enhanceTimer = null;
-        }
-        enhanceTimer = window.setTimeout(() => {
-          try {
-            const totalElements = shadow.querySelectorAll("*").length;
-            const hasDataKind = shadow.querySelector("[data-kind]") !== null;
-            const hasFileciteMarkers = shadow.textContent?.includes('filecite') || false;
-            
-            // Always run sanitization if there's any content - markers might be added after initial check
-            // Run sanitization if:
-            // 1. There's substantial content (20+ elements), OR
-            // 2. ChatKit has rendered data attributes, OR
-            // 3. We detect filecite markers (even with minimal content)
-            if (totalElements > 5 || hasDataKind || hasFileciteMarkers) {
-              // Always remove raw citation markers first (critical for user experience)
-              sanitizeCitationsDeep(shadow);
-              
-              // Then enhance source links if there's enough content
-              if (totalElements > 20 || hasDataKind) {
-                enhanceSourceLinks(shadow);
-              }
-              
-              // Run again after delays to catch markers added during streaming
-              setTimeout(() => {
-                sanitizeCitationsDeep(shadow);
-                if (totalElements > 20 || hasDataKind) {
-                  enhanceSourceLinks(shadow);
-                }
-              }, 100);
-              
-              // Additional cleanup pass for streaming content
-              setTimeout(() => {
-                sanitizeCitationsDeep(shadow);
-              }, 500);
-              
-              // Other enhancements are disabled to avoid conflicts
-              if (!DISABLE_CUSTOM_POSTPROCESSING) {
-                sanitizeCitations(shadow);
-                setTimeout(() => {
-                  sanitizeCitations(shadow);
-                }, 100);
-                void enhanceInlineLinks(shadow);
-              }
-            }
-          } catch (err) {
-            if (isDev) console.debug('[ChatKitPanel] enhancement error:', err);
-          }
-        }, 250);
-      } catch {}
+        sanitizeCitationsDeep(shadow);
+      } catch (error) {
+        if (isDev) console.debug("[ChatKitPanel] sanitize shadow error", error);
+      }
     };
 
-    // Observe updates in the shadow DOM and apply styles
     let mo: MutationObserver | null = null;
     const attachObserver = () => {
       try {
@@ -1370,49 +985,10 @@ export function ChatKitPanel({
           mo?.disconnect();
         } catch {}
         applyStyles();
-        scheduleEnhancements();
-        mo = new MutationObserver((mutations) => {
-          // Check if any mutations added text content that might contain filecite markers
-          const hasTextMutations = mutations.some(mutation => {
-            if (mutation.type === 'childList') {
-              return Array.from(mutation.addedNodes).some(node => {
-                if (node.nodeType === Node.TEXT_NODE) {
-                  return node.textContent?.includes('filecite') || false;
-                }
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                  return (node as Element).textContent?.includes('filecite') || false;
-                }
-                return false;
-              });
-            }
-            if (mutation.type === 'characterData') {
-              return mutation.target.textContent?.includes('filecite') || false;
-            }
-            return false;
-          });
-          
-          // Re-inject styles when needed
+        sanitizeShadow();
+        mo = new MutationObserver(() => {
           applyStyles();
-          
-          // If we detect filecite markers, wait a bit before sanitizing to give ChatKit time to render citations
-          // ChatKit processes citations asynchronously, so we need to delay removal
-          if (hasTextMutations) {
-            // Delay to allow ChatKit to render citations first, then run multiple cleanup passes
-            setTimeout(() => {
-              sanitizeCitationsDeep(shadow);
-            }, 300); // 300ms delay gives ChatKit time to process
-            
-            // Additional cleanup passes to catch markers that might appear later
-            setTimeout(() => {
-              sanitizeCitationsDeep(shadow);
-            }, 800);
-            setTimeout(() => {
-              sanitizeCitationsDeep(shadow);
-            }, 1500);
-          }
-          
-          // Run content enhancers debounced
-          scheduleEnhancements();
+          sanitizeShadow();
         });
         mo.observe(shadow, {
           childList: true,
@@ -1428,10 +1004,6 @@ export function ChatKitPanel({
     return () => {
       try {
         mo?.disconnect();
-        if (enhanceTimer) {
-          window.clearTimeout(enhanceTimer);
-          enhanceTimer = null;
-        }
       } catch {}
     };
   }, [hideComposer]);
