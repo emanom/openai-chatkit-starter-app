@@ -411,7 +411,14 @@
             }
           }
           
-          if (textNodes.length === 0) return;
+          if (textNodes.length === 0) {
+            if (root.textContent && root.textContent.includes('filecite')) {
+              console.warn('[Citations] Found filecite in root.textContent but no text nodes found');
+            }
+            return;
+          }
+          
+          console.debug('[Citations] Found ' + textNodes.length + ' text node(s) with filecite markers');
           
           let totalRemoved = 0;
           textNodes.forEach(textNode => {
@@ -712,8 +719,54 @@
       }
 
       (async function initWhenReady(){
-        if (!(window.customElements && window.customElements.get('openai-chatkit'))) {
-          requestAnimationFrame(initWhenReady);
+        async function waitForCustomElement(name, timeoutMs = 10000) {
+          if (window.customElements?.get(name)) return;
+          if (window.customElements?.whenDefined) {
+            await window.customElements.whenDefined(name);
+            return;
+          }
+          await new Promise((resolve, reject) => {
+            const started = Date.now();
+            const poll = () => {
+              if (window.customElements?.get(name)) {
+                resolve();
+                return;
+              }
+              if (Date.now() - started > timeoutMs) {
+                reject(new Error(`${name} custom element not available`));
+                return;
+              }
+              setTimeout(poll, 250);
+            };
+            poll();
+          });
+        }
+
+        async function waitForChatKitReady(element, { timeoutMs = 20000, pollMs = 250 } = {}) {
+          if (isChatKitReady(element)) {
+            return element.shadowRoot;
+          }
+          return new Promise((resolve, reject) => {
+            const started = Date.now();
+            const poll = () => {
+              if (isChatKitReady(element)) {
+                resolve(element.shadowRoot);
+                return;
+              }
+              if (Date.now() - started >= timeoutMs) {
+                reject(new Error("ChatKit did not finish initializing"));
+                return;
+              }
+              setTimeout(poll, pollMs);
+            };
+            poll();
+          });
+        }
+
+        try {
+          await waitForCustomElement('openai-chatkit');
+        } catch (err) {
+          console.error('[ChatKit] web component unavailable', err);
           return;
         }
         try {
@@ -992,32 +1045,15 @@
                 <div id="s3-text" style="font-size:12px; color:#64748b; margin-top:4px;">0%</div>
               </div>`;
             
-            let attempts = 0;
-            const inject = () => {
-              attempts++;
-              const root = el.shadowRoot;
-              if (!root) {
-                if (attempts < 100) {
-                  requestAnimationFrame(inject);
-                }
+            const mount = async () => {
+              let root;
+              try {
+                root = await waitForChatKitReady(el, { timeoutMs: 20000, pollMs: 250 });
+              } catch (readyError) {
+                console.warn('[S3] Skipping injection - ChatKit never became ready', readyError);
                 return;
               }
-              
-              // Wait for ChatKit to be fully ready before trying to find composer
-              if (!isChatKitReady(el)) {
-                if (attempts > 50 && attempts % 20 === 0) {
-                  const totalElements = root.querySelectorAll('*').length;
-                  console.warn('[S3] Waiting for ChatKit to initialize... Attempt:', attempts, 'totalElements:', totalElements);
-                }
-                if (attempts < 200) {
-                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
-                  setTimeout(inject, delay);
-                } else {
-                  console.warn('[S3] ChatKit not ready after 200 attempts - may be stuck in loading or error state');
-                }
-                return;
-              }
-              
+
               // Try multiple selectors for composer
               let composer = root.querySelector('[data-kind="composer"]');
               if (!composer) composer = root.querySelector('[role="textbox"]');
@@ -1029,12 +1065,8 @@
                   return text.includes('Message') || text.includes('Type');
                 })?.closest('[data-kind]') || null;
               }
-              
               if (!composer) {
-                console.warn('[S3] ChatKit appears ready but composer not found');
-                if (attempts < 250) {
-                  setTimeout(inject, 500);
-                }
+                console.warn('[S3] ChatKit ready but composer not found - aborting custom inject');
                 return;
               }
               if (composer.querySelector('[data-fyi-plus]')) {
@@ -1118,9 +1150,9 @@
                 }
               });
             };
-            injectS3Button = inject;
-            // Start injection attempts after a short delay
-            setTimeout(inject, 500);
+            injectS3Button = mount;
+            // Start injection after ChatKit reports ready
+            setTimeout(mount, 500);
           })();
 
           // Inject custom prompts (Enhancement request, Report an issue)
@@ -1137,43 +1169,20 @@
             const bugIcon = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3.825 9h-.65a.175.175 0 0 1-.175-.175v-.35a.175.175 0 0 1 .175-.175h.65V6.337C3.825 5.416 4.617 4.625 5.538 4.625h.962V3.55h-.65a.175.175 0 0 1-.175-.175v-.35a.175.175 0 0 1 .175-.175h.65V1.175c0-.097.079-.175.175-.175h2.65c.096 0 .175.078.175.175V2.85h.65a.175.175 0 0 1 .175.175v.35a.175.175 0 0 1-.175.175h-.65v1.075h.962c.92 0 1.713.791 1.713 1.712V8.3h.65a.175.175 0 0 1 .175.175v.35a.175.175 0 0 1-.175.175h-.65v1.35c0 .92-.792 1.712-1.713 1.712h-.962v1.788c0 .096-.078.175-.175.175h-2.65a.175.175 0 0 1-.175-.175v-1.788h-.962A1.728 1.728 0 0 1 3.825 10.35V9z"/></svg>`;
             const rightArrow = `<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M7.21 14.77a.75.75 0 0 1 .02-1.06L10.06 11 7.23 8.29a.75.75 0 0 1 1.04-1.08l3.5 3.25a.75.75 0 0 1 0 1.08l-3.5 3.25a.75.75 0 0 1-1.06-.02z"/></svg>`;
             
-            let attempts = 0;
-            const inject = () => {
-              attempts++;
-              const root = el.shadowRoot;
-              if (!root) { 
-                if (attempts < 300) setTimeout(inject, 100);
-                return; 
-              }
-              
-              // Wait for ChatKit to be fully ready before trying to find start screen
-              if (!isChatKitReady(el)) {
-                if (attempts > 50 && attempts % 20 === 0) {
-                  const totalElements = root.querySelectorAll('*').length;
-                  console.warn('[CustomPrompts] Waiting for ChatKit to initialize... Attempt', attempts, 'totalElements:', totalElements);
-                }
-                if (attempts < 200) {
-                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
-                  setTimeout(inject, delay);
-                } else {
-                  console.warn('[CustomPrompts] ChatKit not ready after 200 attempts - may be stuck in loading or error state');
-                }
+            const inject = async () => {
+              let root;
+              try {
+                root = await waitForChatKitReady(el, { timeoutMs: 20000, pollMs: 250 });
+              } catch (readyError) {
+                console.warn('[CustomPrompts] Skipping injection - ChatKit never became ready', readyError);
                 return;
               }
-              
+
               // Find the start screen prompts container
               const startScreen = root.querySelector('[data-kind="start-screen"], [data-part="start-screen"]');
-              if (!startScreen) { 
-                if (attempts <= 5 || attempts % 20 === 0) {
-                  console.log('[CustomPrompts] Attempt', attempts, 'No start screen found yet, totalElements:', root.querySelectorAll('*').length);
-                }
-                if (attempts < 250) {
-                  const delay = attempts < 30 ? 100 : attempts < 80 ? 500 : 2000;
-                  setTimeout(inject, delay);
-                } else {
-                  console.warn('[CustomPrompts] Start screen not found after 250 attempts');
-                }
-                return; 
+              if (!startScreen) {
+                console.warn('[CustomPrompts] Start screen not found – skipping');
+                return;
               }
               
               // Find the prompts list
@@ -1182,8 +1191,7 @@
                                     Array.from(el.children).every(c => c.tagName === 'BUTTON'));
               
               if (!promptsList) {
-                console.log('[CustomPrompts] Start screen found but no prompts list');
-                if (attempts < 300) setTimeout(inject, 100);
+                console.log('[CustomPrompts] Start screen found but no prompts list - skipping injection');
                 return;
               }
               
@@ -1196,8 +1204,7 @@
               // Get a sample native button for styling
               const sampleBtn = promptsList.querySelector('button');
               if (!sampleBtn) {
-                console.log('[CustomPrompts] Prompts list found but no buttons yet');
-                if (attempts < 300) setTimeout(inject, 100);
+                console.log('[CustomPrompts] Prompts list found but no native buttons - skipping injection');
                 return;
               }
               
@@ -1231,15 +1238,19 @@
             };
             
             // Start injection attempts after a short delay
-            setTimeout(inject, 500);
+            setTimeout(inject, 750);
           })();
 
           // Force white user text
           (function forceWhiteText(){
-            const apply = () => {
-              const root = el.shadowRoot;
-              if (!root) { requestAnimationFrame(apply); return; }
-              if (root.querySelector('style[data-fyi-white]')) return;
+            const apply = async () => {
+              let root;
+              try {
+                root = await waitForChatKitReady(el, { timeoutMs: 10000, pollMs: 250 });
+              } catch {
+                return;
+              }
+              if (!root || root.querySelector('style[data-fyi-white]')) return;
               const style = document.createElement('style');
               style.setAttribute('data-fyi-white', '1');
               style.textContent = `
@@ -1255,14 +1266,18 @@
               `;
               root.appendChild(style);
             };
-            requestAnimationFrame(apply);
+            apply();
           })();
 
           // Hide internal header
           (function hideHeader(){
-            const hide = () => {
-              const root = el.shadowRoot;
-              if (!root) { requestAnimationFrame(hide); return; }
+            const hide = async () => {
+              let root;
+              try {
+                root = await waitForChatKitReady(el, { timeoutMs: 10000, pollMs: 250 });
+              } catch {
+                return;
+              }
               const headers = root.querySelectorAll('[part*="header"], [data-kind="header"], header');
               headers.forEach((h) => {
                 Array.from(h.children).forEach((c) => {
@@ -1273,7 +1288,7 @@
                 h.style.border = 'none';
               });
             };
-            requestAnimationFrame(hide);
+            hide();
           })();
 
           // Prevent native uploads
@@ -1288,16 +1303,20 @@
 
           // Hide native attach button
           (function hideNativeAttach(){
-            const hide = () => {
-              const root = el.shadowRoot;
-              if (!root) { requestAnimationFrame(hide); return; }
+            const hide = async () => {
+              let root;
+              try {
+                root = await waitForChatKitReady(el, { timeoutMs: 10000, pollMs: 250 });
+              } catch {
+                return;
+              }
               if (root.querySelector('style[data-fyi-hide]')) return;
               const s = document.createElement('style');
               s.setAttribute('data-fyi-hide', '1');
               s.textContent = `[data-kind="composer"] [aria-label*="Attach" i], [data-kind="composer"] [part*="attach" i] { display: none !important; }`;
               root.appendChild(s);
             };
-            requestAnimationFrame(hide);
+            hide();
           })();
 
           function openChat() {
