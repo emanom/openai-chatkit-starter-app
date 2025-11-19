@@ -879,8 +879,20 @@
                   });
 
                   try {
-                    await el.setComposerValue({ text: option });
-                    // focusComposer is not supported - ChatKit handles focus automatically
+                    // Check if setComposerValue is available
+                    if (el && typeof el.setComposerValue === 'function') {
+                      await el.setComposerValue({ text: option });
+                    } else {
+                      // Fallback: try to find the composer and set value directly
+                      const shadow = el.shadowRoot;
+                      if (shadow) {
+                        const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]');
+                        if (composer) {
+                          composer.textContent = option;
+                          composer.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                      }
+                    }
                     
                     // Remove buttons after a short delay
                     setTimeout(() => {
@@ -941,16 +953,20 @@
             }
 
             let responseButtonObserver = null;
+            let isObserving = false;
             
-            const mount = async () => {
-              let root;
-              try {
-                root = await waitForChatKitReady(el, { timeoutMs: 20000, pollMs: 250 });
-              } catch (readyError) {
-                console.warn('[ResponseButtons] Skipping injection - ChatKit never became ready', readyError);
+            const mount = () => {
+              // Try to get shadow root - don't wait for full initialization
+              const root = el.shadowRoot;
+              if (!root) {
+                // Retry after a short delay if shadow root doesn't exist yet
+                setTimeout(mount, 500);
                 return;
               }
 
+              // If already observing, don't set up again
+              if (isObserving) return;
+              
               try {
                 responseButtonObserver?.disconnect();
               } catch {}
@@ -960,7 +976,10 @@
 
               // Observe for new messages
               responseButtonObserver = new MutationObserver(() => {
-                processAssistantMessages(root);
+                const currentRoot = el.shadowRoot;
+                if (currentRoot) {
+                  processAssistantMessages(currentRoot);
+                }
               });
 
               responseButtonObserver.observe(root, {
@@ -968,10 +987,25 @@
                 subtree: true,
                 characterData: true,
               });
+              
+              isObserving = true;
+              console.log('[ResponseButtons] Observer attached successfully');
             };
 
-            // Start injection after ChatKit reports ready
-            setTimeout(mount, 750);
+            // Start trying to mount immediately, retry if needed
+            const startMount = () => {
+              try {
+                mount();
+              } catch (error) {
+                console.debug('[ResponseButtons] Mount attempt failed, will retry:', error);
+                setTimeout(startMount, 500);
+              }
+            };
+            
+            // Start injection attempts - try immediately and retry periodically
+            startMount();
+            setTimeout(startMount, 1000);
+            setTimeout(startMount, 2000);
           })();
 
           // S3 Upload injection

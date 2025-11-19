@@ -1190,8 +1190,24 @@ export function ChatKitPanel({
           });
 
           try {
-            await chatkitInstance.setComposerValue({ text: option });
-            await chatkitInstance.focusComposer();
+            // Check if setComposerValue is available
+            if (chatkitInstance && typeof chatkitInstance.setComposerValue === 'function') {
+              await chatkitInstance.setComposerValue({ text: option });
+              if (typeof chatkitInstance.focusComposer === 'function') {
+                await chatkitInstance.focusComposer();
+              }
+            } else {
+              // Fallback: try to find the composer and set value directly
+              const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+              const shadow = wc?.shadowRoot;
+              if (shadow) {
+                const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]') as HTMLElement;
+                if (composer) {
+                  composer.textContent = option;
+                  composer.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+              }
+            }
             
             // Remove buttons after a short delay
             setTimeout(() => {
@@ -1236,14 +1252,14 @@ export function ChatKitPanel({
           // Detect question and extract options
           const { isQuestion, options } = detectQuestion(textContent);
 
-          if (isQuestion && options && options.length > 0 && chatkit && chatkit.control) {
+          if (isQuestion && options && options.length > 0 && chatkit) {
             // Mark as processed
             messageEl.setAttribute('data-fyi-processed', '1');
             
             // Inject buttons
             injectResponseButtons(messageEl, options, chatkit);
-          } else if (isQuestion && chatkit && chatkit.control) {
-            // Question detected but no options - could generate default yes/no
+          } else if (isQuestion) {
+            // Question detected but no options - mark as processed
             messageEl.setAttribute('data-fyi-processed', '1');
           }
         });
@@ -1253,15 +1269,22 @@ export function ChatKitPanel({
     };
 
     let responseButtonObserver: MutationObserver | null = null;
+    let isObserving = false;
     
     const attachResponseButtonObserver = () => {
       try {
         const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
         const shadow = wc?.shadowRoot;
-        if (!shadow || !chatkit || !chatkit.control) {
-          requestAnimationFrame(attachResponseButtonObserver);
+        
+        // Don't wait for chatkit.control - just need shadow root
+        if (!shadow) {
+          // Retry after a short delay if shadow root doesn't exist yet
+          setTimeout(attachResponseButtonObserver, 500);
           return;
         }
+
+        // If already observing, don't set up again
+        if (isObserving) return;
 
         try {
           responseButtonObserver?.disconnect();
@@ -1272,7 +1295,11 @@ export function ChatKitPanel({
 
         // Observe for new messages
         responseButtonObserver = new MutationObserver(() => {
-          processAssistantMessages(shadow);
+          const currentWc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+          const currentShadow = currentWc?.shadowRoot;
+          if (currentShadow) {
+            processAssistantMessages(currentShadow);
+          }
         });
 
         responseButtonObserver.observe(shadow, {
@@ -1280,26 +1307,26 @@ export function ChatKitPanel({
           subtree: true,
           characterData: true,
         });
+        
+        isObserving = true;
+        if (isDev) console.log('[ChatKitPanel] Response button observer attached successfully');
       } catch (e) {
         if (isDev) console.debug('[ChatKitPanel] response button observer error:', e);
+        // Retry on error
+        setTimeout(attachResponseButtonObserver, 500);
       }
     };
 
-    // Wait for ChatKit to be ready
-    const checkReady = setInterval(() => {
-      const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
-      const shadow = wc?.shadowRoot;
-      if (shadow && chatkit && chatkit.control) {
-        clearInterval(checkReady);
-        attachResponseButtonObserver();
-      }
-    }, 250);
+    // Start trying to attach immediately, retry if needed
+    attachResponseButtonObserver();
+    setTimeout(attachResponseButtonObserver, 1000);
+    setTimeout(attachResponseButtonObserver, 2000);
 
     // Cleanup
     return () => {
-      clearInterval(checkReady);
       try {
         responseButtonObserver?.disconnect();
+        isObserving = false;
       } catch {}
     };
   }, [chatkit, isDev]);
