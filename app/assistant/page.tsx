@@ -13,6 +13,43 @@ function AssistantPageContent() {
   // Get first-name from query parameters
   const firstNameFromUrl = searchParams.get("first-name") || searchParams.get("firstName");
   
+  // If we're in an iframe and don't have URL params, try to read from parent window URL
+  useEffect(() => {
+    // Only try if we don't already have a firstName from URL
+    if (!firstNameFromUrl && typeof window !== 'undefined') {
+      // Method 1: Try to access parent window's URL directly (works if same origin)
+      if (window.self !== window.top) {
+        try {
+          const parentUrl = window.parent.location.href;
+          const parentParams = new URLSearchParams(window.parent.location.search);
+          const parentFirstName = parentParams.get('first-name') || parentParams.get('first_name');
+          if (parentFirstName) {
+            setFirstNameFromParent(parentFirstName);
+            return;
+          }
+        } catch (e) {
+          // Cross-origin restriction - expected if parent is on different domain
+          console.debug('[AssistantPage] Cannot access parent URL (cross-origin):', e);
+        }
+      }
+      
+      // Method 2: Try document.referrer (works even with cross-origin)
+      try {
+        const referrer = document.referrer;
+        if (referrer) {
+          const referrerUrl = new URL(referrer);
+          const referrerParams = new URLSearchParams(referrerUrl.search);
+          const referrerFirstName = referrerParams.get('first-name') || referrerParams.get('first_name');
+          if (referrerFirstName) {
+            setFirstNameFromParent(referrerFirstName);
+          }
+        }
+      } catch (e) {
+        console.debug('[AssistantPage] Error reading referrer:', e);
+      }
+    }
+  }, [firstNameFromUrl]);
+  
   // Also listen for postMessage from parent window (for embedding scenarios)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -28,7 +65,7 @@ function AssistantPageContent() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
   
-  // Use firstName from URL first, then from postMessage
+  // Use firstName from URL first, then from parent URL, then from postMessage
   const firstName = firstNameFromUrl || firstNameFromParent;
   
   // Create personalized greeting
