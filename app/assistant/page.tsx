@@ -23,10 +23,28 @@ function AssistantPageContent() {
   
   const firstNameFromUrl = isTemplateVariable ? null : firstNameFromUrlRaw;
   
+  // Read firstName from cookie set by middleware (from Referer header)
+  useEffect(() => {
+    if (!firstNameFromUrl && typeof document !== 'undefined') {
+      const cookieValue = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('assistant-first-name='))
+        ?.split('=')[1];
+      
+      if (cookieValue) {
+        const decoded = decodeURIComponent(cookieValue);
+        if (decoded && !decoded.includes('{{')) {
+          console.log('[AssistantPage] firstName from cookie:', decoded);
+          setFirstNameFromParent(decoded);
+        }
+      }
+    }
+  }, [firstNameFromUrl]);
+  
   // If we're in an iframe and don't have valid URL params, try to read from parent window URL
   useEffect(() => {
-    // Only try if we don't already have a valid firstName from URL
-    if (!firstNameFromUrl && typeof window !== 'undefined') {
+    // Only try if we don't already have a valid firstName from URL or cookie
+    if (!firstNameFromUrl && !firstNameFromParent && typeof window !== 'undefined') {
       // Method 1: Try to access parent window's URL directly (works if same origin)
       if (window.self !== window.top) {
         try {
@@ -43,7 +61,7 @@ function AssistantPageContent() {
         }
       }
       
-      // Method 2: Try document.referrer (works even with cross-origin)
+      // Method 2: Try document.referrer (works even with cross-origin, but query params are stripped)
       try {
         const referrer = document.referrer;
         console.log('[AssistantPage] document.referrer:', referrer);
@@ -54,13 +72,14 @@ function AssistantPageContent() {
           console.log('[AssistantPage] firstName from referrer:', referrerFirstName);
           if (referrerFirstName) {
             setFirstNameFromParent(referrerFirstName);
+            return;
           }
         }
       } catch (e) {
         console.debug('[AssistantPage] Error reading referrer:', e);
       }
     }
-  }, [firstNameFromUrl]);
+  }, [firstNameFromUrl, firstNameFromParent]);
   
   // Also listen for postMessage from parent window (for embedding scenarios)
   useEffect(() => {
@@ -77,7 +96,7 @@ function AssistantPageContent() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
   
-  // Use firstName from URL first, then from parent URL, then from postMessage
+  // Use firstName from URL first, then from cookie/middleware, then from parent URL, then from postMessage
   const firstName = firstNameFromUrl || firstNameFromParent;
   
   // Create personalized greeting
