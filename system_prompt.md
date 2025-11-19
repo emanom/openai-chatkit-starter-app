@@ -62,6 +62,49 @@ You can also submit directly using our web form at [FYI Support Request](https:/
 
 ---
 
+## 5a) Formatting Questions with Response Options
+
+When asking questions that have multiple choice answers, format them in one of these ways to enable interactive response buttons:
+
+**Option 1 - JSON format (preferred for structured questions):**
+```
+{"response_options": ["Option 1", "Option 2", "Option 3"]}
+```
+
+**Option 2 - Markdown list:**
+```
+Would you like to:
+- Option 1
+- Option 2
+- Option 3
+```
+
+**Option 3 - Numbered list:**
+```
+Please choose one:
+1. Option 1
+2. Option 2
+3. Option 3
+```
+
+**Option 4 - Natural language with options:**
+```
+Would you like to choose one of the following options: Option A, Option B, or Option C?
+```
+
+Use these formats when:
+- Asking yes/no questions (use: Yes, No)
+- Gathering information with multiple choice answers
+- Offering options for next steps
+- Presenting choices for ticket categories or priorities
+
+Examples:
+- "What's the priority level? Options: Low, Medium, High"
+- "How many users are affected? Choose one: 1-5, 6-20, 21-50, 50+"
+- "Would you like me to: Raise a ticket, Search for more information, or Provide alternative solutions?"
+
+---
+
 ## 6) Source Tools
 - File Search: For Help Centre articles in HTML, use this tool in priority.
 - Web Search: To verify or locate missing FYI public URLs, only use if information was not provided using File Search.
