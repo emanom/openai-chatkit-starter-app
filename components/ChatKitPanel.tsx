@@ -1289,24 +1289,25 @@ export function ChatKitPanel({
         sanitizeCitationsDeep(shadow);
         
         // Find all assistant messages - try multiple selectors
-        let assistantMessages = shadow.querySelectorAll('[data-thread-turn][data-message-role="assistant"]');
+        let assistantMessages: NodeListOf<Element> | readonly Element[] = shadow.querySelectorAll('[data-thread-turn][data-message-role="assistant"]');
         if (assistantMessages.length === 0) {
           assistantMessages = shadow.querySelectorAll('[data-thread-turn][data-role="assistant"]');
         }
         if (assistantMessages.length === 0) {
           // Try finding any thread turn that's not a user message
           const allTurns = shadow.querySelectorAll('[data-thread-turn]');
-          assistantMessages = Array.from(allTurns).filter((el) => {
+          const filtered = Array.from(allTurns).filter((el) => {
             const role = el.getAttribute('data-message-role') || el.getAttribute('data-role');
             return role !== 'user' && role !== null;
-          }) as NodeListOf<Element>;
+          });
+          assistantMessages = filtered;
         }
         
         if (isDev) {
           console.log('[ChatKitPanel] Found', assistantMessages.length, 'assistant messages');
         }
 
-        assistantMessages.forEach((messageEl, idx) => {
+        Array.from(assistantMessages).forEach((messageEl, idx) => {
           // Skip if already processed
           if (messageEl.hasAttribute('data-fyi-processed')) {
             if (isDev) console.log('[ChatKitPanel] Message', idx, 'already processed');
