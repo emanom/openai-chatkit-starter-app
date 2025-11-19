@@ -1008,6 +1008,248 @@ export function ChatKitPanel({
     };
   }, [hideComposer]);
 
+  // Inject dynamic response buttons for assistant questions
+  useEffect(() => {
+    const rootNode = chatContainerRef.current;
+    if (!rootNode) return;
+
+    // Helper function to detect if a message contains a question
+    const detectQuestion = (text: string): { isQuestion: boolean; options?: string[] } => {
+      const trimmed = text.trim();
+      
+      // Check for structured response options in JSON format
+      // Format: {"response_options": ["Option 1", "Option 2", "Option 3"]}
+      const jsonMatch = trimmed.match(/\{"response_options":\s*\[([\s\S]*?)\]\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed.response_options) && parsed.response_options.length > 0) {
+            return { isQuestion: true, options: parsed.response_options };
+          }
+        } catch {}
+      }
+
+      // Check for markdown-style options
+      // Format: - Option 1\n- Option 2\n- Option 3
+      const markdownOptions = trimmed.match(/^[-•]\s*(.+)$/gm);
+      if (markdownOptions && markdownOptions.length >= 2) {
+        const options = markdownOptions.map(m => m.replace(/^[-•]\s*/, '').trim()).filter(Boolean);
+        if (options.length >= 2) {
+          return { isQuestion: true, options };
+        }
+      }
+
+      // Check for numbered options
+      // Format: 1. Option 1\n2. Option 2\n3. Option 3
+      const numberedOptions = trimmed.match(/^\d+\.\s*(.+)$/gm);
+      if (numberedOptions && numberedOptions.length >= 2) {
+        const options = numberedOptions.map(m => m.replace(/^\d+\.\s*/, '').trim()).filter(Boolean);
+        if (options.length >= 2) {
+          return { isQuestion: true, options };
+        }
+      }
+
+      // Simple question detection (ends with ?)
+      const hasQuestionMark = /[?？]$/.test(trimmed);
+      if (hasQuestionMark) {
+        // Try to extract options from common patterns
+        const optionPatterns = [
+          /(?:Would you like|Do you want|Choose|Select|Pick)\s+(?:one of\s+)?(?:the\s+)?(?:following\s+)?(?:options\s+)?[:：]?\s*([^?]+)/i,
+          /(?:Options?|Choices?|Answers?)[:：]?\s*([^?]+)/i,
+        ];
+        
+        for (const pattern of optionPatterns) {
+          const match = trimmed.match(pattern);
+          if (match && match[1]) {
+            const optionsText = match[1];
+            // Try to split by commas, semicolons, or newlines
+            const options = optionsText
+              .split(/[,;，；]|\n/)
+              .map(o => o.trim())
+              .filter(o => o.length > 0 && o.length < 100);
+            if (options.length >= 2) {
+              return { isQuestion: true, options };
+            }
+          }
+        }
+        
+        return { isQuestion: true };
+      }
+
+      return { isQuestion: false };
+    };
+
+    // Inject response buttons after an assistant message
+    const injectResponseButtons = (
+      messageElement: Element,
+      options: string[],
+      chatkitInstance: ReturnType<typeof useChatKit>
+    ) => {
+      // Check if buttons already exist
+      if (messageElement.querySelector('[data-fyi-response-buttons]')) {
+        return;
+      }
+
+      const buttonContainer = document.createElement('div');
+      buttonContainer.setAttribute('data-fyi-response-buttons', '1');
+      buttonContainer.style.cssText = `
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(0, 0, 0, 0.1);
+      `;
+
+      options.forEach((option, index) => {
+        const button = document.createElement('button');
+        button.textContent = option;
+        button.setAttribute('type', 'button');
+        button.style.cssText = `
+          padding: 8px 16px;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          background: #ffffff;
+          color: #0f172a;
+          font-size: 0.875rem;
+          cursor: pointer;
+          transition: all 0.2s;
+          white-space: nowrap;
+        `;
+        
+        button.addEventListener('mouseenter', () => {
+          button.style.background = '#f1f5f9';
+          button.style.borderColor = '#94a3b8';
+        });
+        
+        button.addEventListener('mouseleave', () => {
+          button.style.background = '#ffffff';
+          button.style.borderColor = '#cbd5e1';
+        });
+
+        button.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // Disable all buttons
+          Array.from(buttonContainer.querySelectorAll('button')).forEach(btn => {
+            (btn as HTMLButtonElement).style.opacity = '0.6';
+            (btn as HTMLButtonElement).style.cursor = 'not-allowed';
+            (btn as HTMLButtonElement).disabled = true;
+          });
+
+          try {
+            await chatkitInstance.setComposerValue({ text: option });
+            await chatkitInstance.focusComposer();
+            
+            // Remove buttons after a short delay
+            setTimeout(() => {
+              buttonContainer.remove();
+            }, 300);
+          } catch (error) {
+            if (isDev) console.error('[ChatKitPanel] Failed to set composer value:', error);
+            // Re-enable buttons on error
+            Array.from(buttonContainer.querySelectorAll('button')).forEach(btn => {
+              (btn as HTMLButtonElement).style.opacity = '1';
+              (btn as HTMLButtonElement).style.cursor = 'pointer';
+              (btn as HTMLButtonElement).disabled = false;
+            });
+          }
+        });
+
+        buttonContainer.appendChild(button);
+      });
+
+      // Append to the message element
+      messageElement.appendChild(buttonContainer);
+    };
+
+    // Process assistant messages and inject buttons
+    const processAssistantMessages = (shadow: ShadowRoot) => {
+      try {
+        // Find all assistant messages
+        const assistantMessages = shadow.querySelectorAll(
+          '[data-thread-turn][data-message-role="assistant"], [data-thread-turn][data-role="assistant"], [data-thread-turn]:not([data-message-role="user"]):not([data-role="user"])'
+        );
+
+        assistantMessages.forEach((messageEl) => {
+          // Skip if already processed
+          if (messageEl.hasAttribute('data-fyi-processed')) return;
+
+          // Get message text
+          const textContent = messageEl.textContent || '';
+          
+          // Detect question and extract options
+          const { isQuestion, options } = detectQuestion(textContent);
+
+          if (isQuestion && options && options.length > 0 && chatkit && chatkit.control) {
+            // Mark as processed
+            messageEl.setAttribute('data-fyi-processed', '1');
+            
+            // Inject buttons
+            injectResponseButtons(messageEl, options, chatkit);
+          } else if (isQuestion && chatkit && chatkit.control) {
+            // Question detected but no options - could generate default yes/no
+            messageEl.setAttribute('data-fyi-processed', '1');
+          }
+        });
+      } catch (error) {
+        if (isDev) console.debug('[ChatKitPanel] processAssistantMessages error:', error);
+      }
+    };
+
+    let responseButtonObserver: MutationObserver | null = null;
+    
+    const attachResponseButtonObserver = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow || !chatkit || !chatkit.control) {
+          requestAnimationFrame(attachResponseButtonObserver);
+          return;
+        }
+
+        try {
+          responseButtonObserver?.disconnect();
+        } catch {}
+
+        // Process existing messages
+        processAssistantMessages(shadow);
+
+        // Observe for new messages
+        responseButtonObserver = new MutationObserver(() => {
+          processAssistantMessages(shadow);
+        });
+
+        responseButtonObserver.observe(shadow, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
+      } catch (e) {
+        if (isDev) console.debug('[ChatKitPanel] response button observer error:', e);
+      }
+    };
+
+    // Wait for ChatKit to be ready
+    const checkReady = setInterval(() => {
+      const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+      const shadow = wc?.shadowRoot;
+      if (shadow && chatkit && chatkit.control) {
+        clearInterval(checkReady);
+        attachResponseButtonObserver();
+      }
+    }, 250);
+
+    // Cleanup
+    return () => {
+      clearInterval(checkReady);
+      try {
+        responseButtonObserver?.disconnect();
+      } catch {}
+    };
+  }, [chatkit, isDev]);
+
   const handleQuickPrompt = useCallback(
     (text: string) => {
       if (!text) return;
