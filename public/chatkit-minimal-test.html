@@ -73,6 +73,102 @@
       src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
       async
     ></script>
+    <script>
+      // CES shim to block CORS errors from chatgpt.com/ces endpoints
+      (function() {
+        if (typeof window === "undefined" || typeof window.fetch !== "function" || window.__chatkitCesShimApplied) {
+          return;
+        }
+        window.__chatkitCesShimApplied = true;
+        const CES_PATH_PREFIX = "/ces/v1/projects/";
+        const allowedHosts = ["chatgpt.com", "chatgpt-staging.com"];
+        const matchesCesEndpoint = (target) => {
+          if (!target) return false;
+          try {
+            const parsed = new URL(target, window.location.origin);
+            const host = parsed.hostname.toLowerCase();
+            const isChatgptHost =
+              allowedHosts.some((domain) => host === domain || host.endsWith("." + domain));
+            if (!isChatgptHost) return false;
+            return parsed.pathname.startsWith(CES_PATH_PREFIX);
+          } catch {
+            return false;
+          }
+        };
+        const responseInit = {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          },
+        };
+        const payload = JSON.stringify({ enabled: false });
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = function patchedFetch(input, init) {
+          try {
+            const target =
+              typeof input === "string"
+                ? input
+                : typeof Request !== "undefined" && input instanceof Request
+                ? input.url
+                : input && typeof input === "object"
+                ? input.url
+                : null;
+            if (matchesCesEndpoint(target)) {
+              return Promise.resolve(new Response(payload, responseInit));
+            }
+          } catch {
+            // fall through
+          }
+          return originalFetch(input, init);
+        };
+      })();
+
+      // Suppress console errors for CORS issues with chatgpt.com/ces
+      (function() {
+        if (window.__chatkitErrorSuppressionApplied) return;
+        window.__chatkitErrorSuppressionApplied = true;
+        
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        const shouldSuppress = (message) => {
+          const msg = String(message || '').toLowerCase();
+          return msg.includes('chatgpt.com/ces') || 
+                 msg.includes('cors policy') ||
+                 msg.includes('access-control-allow-origin') ||
+                 (msg.includes('failed to fetch') && msg.includes('ces')) ||
+                 (msg.includes('net::err_failed') && msg.includes('ces')) ||
+                 msg.includes('/ces/v1/projects/');
+        };
+        
+        console.error = function(...args) {
+          const message = args.join(' ');
+          if (shouldSuppress(message)) {
+            return; // Suppress these errors
+          }
+          originalError.apply(console, args);
+        };
+        
+        console.warn = function(...args) {
+          const message = args.join(' ');
+          if (shouldSuppress(message)) {
+            return; // Suppress these warnings
+          }
+          originalWarn.apply(console, args);
+        };
+
+        // Also catch unhandled promise rejections related to CES
+        window.addEventListener('unhandledrejection', function(event) {
+          const reason = event.reason;
+          const message = reason?.message || reason?.toString() || '';
+          if (shouldSuppress(message)) {
+            event.preventDefault();
+            return;
+          }
+        });
+      })();
+    </script>
   </head>
   <body>
     <a id="chat-launcher" href="#" aria-controls="chat-wrapper" aria-expanded="false" title="Chat">
