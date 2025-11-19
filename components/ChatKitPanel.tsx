@@ -75,21 +75,47 @@ type PromptCacheInfo = {
 function sanitizeCitationsDeep(root: ShadowRoot) {
   try {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    // More aggressive patterns to catch all variations
     const filecitePattern = /filecite[\s\u200B-\u200D\uFEFF]*/gi;
     const turnPattern = /turn\d+file\d+/gi;
+    // Also catch filecite in different contexts (with brackets, parentheses, etc.)
+    const fileciteVariations = [
+      /\[?filecite\]?[\s\u200B-\u200D\uFEFF]*/gi,
+      /\(?filecite\)?[\s\u200B-\u200D\uFEFF]*/gi,
+      /filecite/gi,
+    ];
     let node: Node | null;
     while ((node = walker.nextNode())) {
       const textNode = node as Text;
       const original = textNode.textContent ?? "";
-      if (!original || (!original.includes("filecite") && !turnPattern.test(original))) {
+      if (!original) {
         continue;
       }
+      
+      // Check if text contains any citation markers
+      const hasFilecite = /filecite/i.test(original);
+      const hasTurnPattern = turnPattern.test(original);
+      
+      if (!hasFilecite && !hasTurnPattern) {
+        continue;
+      }
+      
       turnPattern.lastIndex = 0;
-      const cleaned = original
-        .replace(filecitePattern, "")
-        .replace(turnPattern, "")
-        .replace(/\s{2,}/g, " ")
-        .trim();
+      let cleaned = original;
+      
+      // Remove all filecite variations
+      for (const pattern of fileciteVariations) {
+        pattern.lastIndex = 0;
+        cleaned = cleaned.replace(pattern, "");
+      }
+      
+      // Remove turn patterns
+      turnPattern.lastIndex = 0;
+      cleaned = cleaned.replace(turnPattern, "");
+      
+      // Clean up extra whitespace
+      cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
+      
       if (cleaned !== original.trim()) {
         textNode.textContent = cleaned;
       }
@@ -1167,6 +1193,9 @@ export function ChatKitPanel({
     // Process assistant messages and inject buttons
     const processAssistantMessages = (shadow: ShadowRoot) => {
       try {
+        // First, sanitize all citations in the shadow DOM
+        sanitizeCitationsDeep(shadow);
+        
         // Find all assistant messages
         const assistantMessages = shadow.querySelectorAll(
           '[data-thread-turn][data-message-role="assistant"], [data-thread-turn][data-role="assistant"], [data-thread-turn]:not([data-message-role="user"]):not([data-role="user"])'
