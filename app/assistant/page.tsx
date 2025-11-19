@@ -25,18 +25,28 @@ function AssistantPageContent() {
   
   // Read firstName from cookie set by middleware (from Referer header)
   useEffect(() => {
+    console.log('[AssistantPage] Checking for cookie, firstNameFromUrl:', firstNameFromUrl);
+    console.log('[AssistantPage] All cookies:', document.cookie);
+    
     if (!firstNameFromUrl && typeof document !== 'undefined') {
       const cookieValue = document.cookie
         .split('; ')
         .find(row => row.startsWith('assistant-first-name='))
         ?.split('=')[1];
       
+      console.log('[AssistantPage] Cookie value found:', cookieValue);
+      
       if (cookieValue) {
         const decoded = decodeURIComponent(cookieValue);
+        console.log('[AssistantPage] Decoded cookie value:', decoded);
         if (decoded && !decoded.includes('{{')) {
-          console.log('[AssistantPage] firstName from cookie:', decoded);
+          console.log('[AssistantPage] Setting firstName from cookie:', decoded);
           setFirstNameFromParent(decoded);
+        } else {
+          console.log('[AssistantPage] Cookie contains template variable, ignoring');
         }
+      } else {
+        console.log('[AssistantPage] No assistant-first-name cookie found');
       }
     }
   }, [firstNameFromUrl]);
