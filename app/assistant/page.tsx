@@ -1,0 +1,297 @@
+"use client";
+
+import { useCallback, Suspense, useEffect, useRef, useMemo } from "react";
+import { useChatKit, ChatKit } from "@openai/chatkit-react";
+import { useSearchParams } from "next/navigation";
+import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
+
+function AssistantPageContent() {
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
+  const searchParams = useSearchParams();
+  
+  // Get first-name from query parameters
+  const firstName = searchParams.get("first-name") || searchParams.get("firstName");
+  
+  // Create personalized greeting
+  const greeting = useMemo(() => {
+    if (firstName) {
+      return `Hi ${firstName}! How can I help you today?`;
+    }
+    return "How can I help you today?";
+  }, [firstName]);
+
+  const getClientSecret = useCallback(async (currentSecret: string | null) => {
+    if (currentSecret) return currentSecret;
+
+    console.log("[AssistantPage] Creating ChatKit session...");
+    
+    const response = await fetch(CREATE_SESSION_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workflow: { id: WORKFLOW_ID },
+        chatkit_configuration: {
+          file_upload: { enabled: true },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[AssistantPage] Session creation failed:", response.status, errorText);
+      throw new Error("Failed to create session: " + response.status);
+    }
+
+    const data = await response.json();
+    console.log("[AssistantPage] Session created successfully");
+    return data.client_secret as string;
+  }, []);
+
+  const chatkit = useChatKit({
+    api: { getClientSecret },
+    theme: {
+      color: {
+        accent: { primary: "#4ccf96", level: 3 },
+      },
+    },
+    startScreen: {
+      greeting: greeting,
+      prompts: [
+        { label: "Help with feature", prompt: "I need help with a feature: ", icon: "circle-question" },
+        { label: "Enhancement idea", prompt: "I have an enhancement idea", icon: "sparkle" },
+        { label: "Something's not working", prompt: "Something's not working as expected", icon: "bug" },
+      ],
+    },
+    composer: {
+      placeholder: "Ask me anything about FYI...",
+      attachments: {
+        enabled: true,
+        accept: {
+          "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+          "application/pdf": [".pdf"],
+        },
+      },
+    },
+  });
+
+  // Log when ChatKit control is ready
+  useEffect(() => {
+    if (chatkit.control) {
+      console.log("[AssistantPage] ChatKit control is ready!");
+    } else {
+      console.log("[AssistantPage] Waiting for ChatKit control...");
+    }
+  }, [chatkit.control]);
+
+  // Custom styling to make ChatKit look clean and full-page
+  useEffect(() => {
+    const rootNode = chatContainerRef.current;
+    if (!rootNode) return;
+
+    const applyStyles = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) return;
+
+        if (!shadow.querySelector('style[data-fyi-fullpage]')) {
+          const style = document.createElement('style');
+          style.setAttribute('data-fyi-fullpage', '1');
+          style.textContent = `
+            /* Clean full-page styling */
+            :host {
+              --font-text-md-size: 0.9375rem;
+              --color-surface: #ffffff !important;
+              --color-surface-background: #ffffff !important;
+              --color-surface-secondary: #ffffff !important;
+              --color-surface-tertiary: #ffffff !important;
+              --color-surface-elevated: #ffffff !important;
+              --color-surface-elevated-secondary: #ffffff !important;
+              --color-background: #ffffff !important;
+              background: #ffffff !important;
+              display: flex !important;
+              flex-direction: column !important;
+              height: 100% !important;
+              width: 100% !important;
+            }
+            
+            /* Ensure inner container takes full space with white background */
+            [data-kind="chat-container"],
+            [data-part="container"] {
+              height: 100% !important;
+              display: flex !important;
+              flex-direction: column !important;
+              background: #ffffff !important;
+            }
+            
+            /* White background for start screen and main areas */
+            [data-kind="start-screen"],
+            [data-part="start-screen"],
+            main,
+            [role="main"] {
+              background: #ffffff !important;
+            }
+            
+            /* Force white background on surface elements */
+            .bg-\\(--color-surface\\) {
+              background-color: #ffffff !important;
+            }
+            
+            /* Fix composer field background - target specific classes */
+            .ifWRv,
+            .bOsG1,
+            ._6-Awz,
+            .fPqy-,
+            .PMelk,
+            .Pn-ne,
+            .j124x,
+            .GXmxh,
+            .yVugO {
+              background: #ffffff !important;
+              background-color: #ffffff !important;
+            }
+            
+            /* Composer textarea */
+            #chatkit-composer-input,
+            textarea._6-Awz,
+            textarea.fPqy- {
+              background: #ffffff !important;
+              background-color: #ffffff !important;
+              color: #0f172a !important;
+            }
+            
+            /* All composer elements */
+            [data-kind="composer"],
+            [data-part="composer"],
+            [data-part*="composer"],
+            form,
+            form *,
+            [role="textbox"],
+            [contenteditable="true"],
+            textarea,
+            input,
+            input[type="text"] {
+              background: #ffffff !important;
+              background-color: #ffffff !important;
+              color: #0f172a !important;
+            }
+            
+            /* Composer container and all children */
+            [data-part*="composer-container"],
+            [data-part*="composer-container"] *,
+            form[data-part*="composer"],
+            form[data-part*="composer"] * {
+              background: #ffffff !important;
+              background-color: #ffffff !important;
+            }
+            
+            /* Make start screen greeting larger and centered */
+            [data-kind="start-screen"] h1,
+            [data-part*="greeting"] {
+              font-size: 2rem !important;
+              text-align: center !important;
+            }
+            
+            /* Style the prompts to match the design */
+            [data-kind="start-screen"] button {
+              border-radius: 0.5rem !important;
+              padding: 0.625rem 1rem !important;
+            }
+          `;
+          shadow.appendChild(style);
+        }
+      } catch (e) {
+        console.debug('[AssistantPage] style injection error:', e);
+      }
+    };
+
+    let mo: MutationObserver | null = null;
+    const attachObserver = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) {
+          requestAnimationFrame(attachObserver);
+          return;
+        }
+        try {
+          mo?.disconnect();
+        } catch {}
+        applyStyles();
+        mo = new MutationObserver(() => applyStyles());
+        mo.observe(shadow, { childList: true, subtree: true });
+      } catch (e) {
+        console.debug('[AssistantPage] style observer error:', e);
+      }
+    };
+
+    attachObserver();
+    return () => {
+      try {
+        mo?.disconnect();
+      } catch {}
+    };
+  }, []);
+
+  return (
+    <div className="flex min-h-screen flex-col bg-white">
+      {/* Main Chat Area - Full Page */}
+      <div className="flex flex-1 flex-col bg-white">
+        <div className="w-full flex-1 flex flex-col">
+          <div 
+            ref={chatContainerRef}
+            className="w-full flex-1 flex flex-col"
+            style={{ minHeight: '600px', height: '100%' }}
+          >
+            {chatkit.control ? (
+              <div 
+                className="w-full h-full" 
+                style={{ 
+                  minHeight: '600px', 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  background: 'transparent',
+                  overflow: 'hidden'
+                }}
+              >
+                <ChatKit 
+                  control={chatkit.control}
+                  style={{ 
+                    width: '100%', 
+                    height: '100%',
+                    minHeight: '600px',
+                    display: 'block',
+                    flex: 1,
+                    background: 'white'
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-center">
+                  <div className="mb-4 text-gray-600">Loading chat assistant...</div>
+                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AssistantPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-white">
+          <div className="text-gray-500">Loading...</div>
+        </div>
+      }
+    >
+      <AssistantPageContent />
+    </Suspense>
+  );
+}
+
