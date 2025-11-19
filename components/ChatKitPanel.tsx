@@ -1288,34 +1288,64 @@ export function ChatKitPanel({
         // First, sanitize all citations in the shadow DOM
         sanitizeCitationsDeep(shadow);
         
-        // Find all assistant messages
-        const assistantMessages = shadow.querySelectorAll(
-          '[data-thread-turn][data-message-role="assistant"], [data-thread-turn][data-role="assistant"], [data-thread-turn]:not([data-message-role="user"]):not([data-role="user"])'
-        );
+        // Find all assistant messages - try multiple selectors
+        let assistantMessages = shadow.querySelectorAll('[data-thread-turn][data-message-role="assistant"]');
+        if (assistantMessages.length === 0) {
+          assistantMessages = shadow.querySelectorAll('[data-thread-turn][data-role="assistant"]');
+        }
+        if (assistantMessages.length === 0) {
+          // Try finding any thread turn that's not a user message
+          const allTurns = shadow.querySelectorAll('[data-thread-turn]');
+          assistantMessages = Array.from(allTurns).filter((el) => {
+            const role = el.getAttribute('data-message-role') || el.getAttribute('data-role');
+            return role !== 'user' && role !== null;
+          }) as NodeListOf<Element>;
+        }
+        
+        if (isDev) {
+          console.log('[ChatKitPanel] Found', assistantMessages.length, 'assistant messages');
+        }
 
-        assistantMessages.forEach((messageEl) => {
+        assistantMessages.forEach((messageEl, idx) => {
           // Skip if already processed
-          if (messageEl.hasAttribute('data-fyi-processed')) return;
+          if (messageEl.hasAttribute('data-fyi-processed')) {
+            if (isDev) console.log('[ChatKitPanel] Message', idx, 'already processed');
+            return;
+          }
 
           // Get message text
           const textContent = messageEl.textContent || '';
+          if (isDev) {
+            console.log('[ChatKitPanel] Processing message', idx, 'length:', textContent.length, 'preview:', textContent.substring(0, 100));
+          }
           
           // Detect question and extract options
           const { isQuestion, options } = detectQuestion(textContent);
+          if (isDev) {
+            console.log('[ChatKitPanel] Message', idx, 'isQuestion:', isQuestion, 'options:', options);
+          }
 
           if (isQuestion && options && options.length > 0 && chatkit) {
+            if (isDev) {
+              console.log('[ChatKitPanel] ✅ Detected question with options:', options);
+            }
             // Mark as processed
             messageEl.setAttribute('data-fyi-processed', '1');
             
             // Inject buttons
             injectResponseButtons(messageEl, options, chatkit);
           } else if (isQuestion) {
+            if (isDev) {
+              console.log('[ChatKitPanel] ⚠️ Detected question but no options extracted. Text:', textContent.substring(0, 200));
+            }
             // Question detected but no options - mark as processed
             messageEl.setAttribute('data-fyi-processed', '1');
+          } else if (isDev) {
+            console.log('[ChatKitPanel] ❌ Not a question. Text:', textContent.substring(0, 100));
           }
         });
       } catch (error) {
-        if (isDev) console.debug('[ChatKitPanel] processAssistantMessages error:', error);
+        if (isDev) console.error('[ChatKitPanel] processAssistantMessages error:', error);
       }
     };
 

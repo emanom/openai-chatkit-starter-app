@@ -973,36 +973,54 @@
                 // First, sanitize all citations in the shadow DOM
                 sanitizeCitationsDeep(root);
                 
-                // Find all assistant messages
-                const assistantMessages = root.querySelectorAll(
-                  '[data-thread-turn][data-message-role="assistant"], [data-thread-turn][data-role="assistant"], [data-thread-turn]:not([data-message-role="user"]):not([data-role="user"])'
-                );
+                // Find all assistant messages - try multiple selectors
+                let assistantMessages = root.querySelectorAll('[data-thread-turn][data-message-role="assistant"]');
+                if (assistantMessages.length === 0) {
+                  assistantMessages = root.querySelectorAll('[data-thread-turn][data-role="assistant"]');
+                }
+                if (assistantMessages.length === 0) {
+                  // Try finding any thread turn that's not a user message
+                  const allTurns = root.querySelectorAll('[data-thread-turn]');
+                  assistantMessages = Array.from(allTurns).filter(el => {
+                    const role = el.getAttribute('data-message-role') || el.getAttribute('data-role');
+                    return role !== 'user' && role !== null;
+                  });
+                }
+                
+                console.log('[ResponseButtons] Found', assistantMessages.length, 'assistant messages');
 
-                assistantMessages.forEach((messageEl) => {
+                assistantMessages.forEach((messageEl, idx) => {
                   // Skip if already processed
-                  if (messageEl.hasAttribute('data-fyi-processed')) return;
+                  if (messageEl.hasAttribute('data-fyi-processed')) {
+                    console.log('[ResponseButtons] Message', idx, 'already processed');
+                    return;
+                  }
 
                   // Get message text
                   const textContent = messageEl.textContent || '';
+                  console.log('[ResponseButtons] Processing message', idx, 'length:', textContent.length, 'preview:', textContent.substring(0, 100));
                   
                   // Detect question and extract options
                   const { isQuestion, options } = detectQuestion(textContent);
+                  console.log('[ResponseButtons] Message', idx, 'isQuestion:', isQuestion, 'options:', options);
 
                   if (isQuestion && options && options.length > 0) {
-                    console.log('[ResponseButtons] Detected question with options:', options);
+                    console.log('[ResponseButtons] ✅ Detected question with options:', options);
                     // Mark as processed
                     messageEl.setAttribute('data-fyi-processed', '1');
                     
                     // Inject buttons
                     injectResponseButtons(messageEl, options);
                   } else if (isQuestion) {
-                    console.log('[ResponseButtons] Detected question but no options extracted');
+                    console.log('[ResponseButtons] ⚠️ Detected question but no options extracted. Text:', textContent.substring(0, 200));
                     // Question detected but no options
                     messageEl.setAttribute('data-fyi-processed', '1');
+                  } else {
+                    console.log('[ResponseButtons] ❌ Not a question. Text:', textContent.substring(0, 100));
                   }
                 });
               } catch (error) {
-                console.debug('[ResponseButtons] processAssistantMessages error', error);
+                console.error('[ResponseButtons] processAssistantMessages error', error);
               }
             }
 
