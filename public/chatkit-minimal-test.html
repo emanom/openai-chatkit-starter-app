@@ -626,8 +626,9 @@
           cachedSecretExpires > now &&
           sessionMetadataHash === metadataHash
         ) {
-          ensurePromptMetadata().catch(() => {});
-          return cachedSecret;
+          console.debug(
+            '[Session] Cached secret available but ChatKit requested a new one; requesting fresh secret.'
+          );
         }
 
         try {
@@ -642,9 +643,9 @@
             lsExpires > now &&
             lsHash === metadataHash
           ) {
-            storeSecret(lsSecret, lsExpires);
-            ensurePromptMetadata().catch(() => {});
-            return lsSecret;
+            console.debug(
+              '[Session] localStorage secret available but ChatKit requested a new one; requesting fresh secret.'
+            );
           }
         } catch (error) {
           console.debug('[Session] localStorage unavailable', error);
