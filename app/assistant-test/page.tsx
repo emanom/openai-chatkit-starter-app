@@ -123,8 +123,8 @@ export default function AssistantTestPage() {
           </h3>
           <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
             <li>Enter a first name in the input field above</li>
-            <li>Click "Update Assistant" to reload the iframe with new parameters</li>
-            <li>Or click "Open in New Tab" to view the assistant page directly</li>
+            <li>Click &quot;Update Assistant&quot; to reload the iframe with new parameters</li>
+            <li>Or click &quot;Open in New Tab&quot; to view the assistant page directly</li>
             <li>
               The greeting message will personalize based on the first-name
               parameter
