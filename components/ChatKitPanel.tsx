@@ -77,7 +77,6 @@ function sanitizeCitationsDeep(root: ShadowRoot) {
     // First, sanitize all text nodes
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     // More aggressive patterns to catch all variations including with special Unicode chars
-    const filecitePattern = /filecite[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi;
     const turnPattern = /turn\d+file\d+/gi;
     // Also catch filecite in different contexts (with brackets, parentheses, special chars, etc.)
     const fileciteVariations = [
@@ -1169,7 +1168,7 @@ export function ChatKitPanel({
       if (questionMatch && questionMatch[1]) {
         const optionsText = questionMatch[1];
         // Try splitting by "or", newlines, or semicolons
-        let options = optionsText
+        const options = optionsText
           .split(/\s*;\s*or\s*|\s+or\s+|\n+/i)
           .map(o => o.trim().replace(/[.;,]+$/, ''))
           .filter(o => o.length > 0 && o.length < 200 && !/^Did that/i.test(o));
@@ -1204,7 +1203,7 @@ export function ChatKitPanel({
         border-top: 1px solid rgba(0, 0, 0, 0.1);
       `;
 
-      options.forEach((option, index) => {
+      options.forEach((option) => {
         const button = document.createElement('button');
         button.textContent = option;
         button.setAttribute('type', 'button');
@@ -1381,7 +1380,7 @@ export function ChatKitPanel({
         isObserving = false;
       } catch {}
     };
-  }, [chatkit, isDev]);
+  }, [chatkit]);
 
   const handleQuickPrompt = useCallback(
     (text: string) => {
