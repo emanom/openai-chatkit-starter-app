@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, Suspense, useEffect, useRef, useMemo } from "react";
+import { useCallback, Suspense, useEffect, useRef, useMemo, useState } from "react";
 import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
@@ -8,9 +8,28 @@ import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
 function AssistantPageContent() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const searchParams = useSearchParams();
+  const [firstNameFromParent, setFirstNameFromParent] = useState<string | null>(null);
   
   // Get first-name from query parameters
-  const firstName = searchParams.get("first-name") || searchParams.get("firstName");
+  const firstNameFromUrl = searchParams.get("first-name") || searchParams.get("firstName");
+  
+  // Also listen for postMessage from parent window (for embedding scenarios)
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // For security, you might want to check event.origin
+      if (event.data && typeof event.data === 'object') {
+        if (event.data.firstName || event.data['first-name']) {
+          setFirstNameFromParent(event.data.firstName || event.data['first-name']);
+        }
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+  
+  // Use firstName from URL first, then from postMessage
+  const firstName = firstNameFromUrl || firstNameFromParent;
   
   // Create personalized greeting
   const greeting = useMemo(() => {

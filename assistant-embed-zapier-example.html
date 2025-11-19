@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zapier Embed Example - Parameter Passing</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .example {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .iframe-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        iframe {
+            display: block;
+            width: 100%;
+            border: none;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border: 1px solid #e0e0e0;
+        }
+        .note {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Zapier Embed - Parameter Passing Solution</h1>
+        
+        <div class="warning">
+            <strong>Problem:</strong> When embedding an iframe, query parameters from the parent page URL don't automatically pass through to the iframe.
+        </div>
+
+        <div class="note">
+            <strong>Solution:</strong> Use the helper script below to automatically pass query parameters from the parent page to the iframe.
+        </div>
+
+        <!-- Solution 1: Using Helper Script -->
+        <div class="example">
+            <h2>Solution 1: Using Helper Script (Recommended)</h2>
+            <p>This is the easiest solution. Just include the helper script and add a <code>data-assistant-url</code> attribute to your iframe.</p>
+            
+            <h3>Step 1: Include the helper script</h3>
+            <pre><code>&lt;script src="https://your-domain.com/assistant-embed-helper.js"&gt;&lt;/script&gt;</code></pre>
+            
+            <h3>Step 2: Update your iframe</h3>
+            <pre><code>&lt;iframe
+    id="assistant-iframe"
+    data-assistant-url="https://your-domain.com/assistant"
+    width="100%"
+    height="800"
+    frameborder="0"
+    allow="clipboard-read; clipboard-write"
+    title="FYI Support Assistant"
+&gt;&lt;/iframe&gt;</code></pre>
+
+            <h3>Step 3: Optional - Filter specific parameters</h3>
+            <p>If you only want to pass specific parameters (e.g., only <code>first-name</code>):</p>
+            <pre><code>&lt;iframe
+    id="assistant-iframe"
+    data-assistant-url="https://your-domain.com/assistant"
+    data-allowed-params="first-name,firstName"
+    width="100%"
+    height="800"
+    frameborder="0"
+    allow="clipboard-read; clipboard-write"
+    title="FYI Support Assistant"
+&gt;&lt;/iframe&gt;</code></pre>
+
+            <h3>Live Example:</h3>
+            <p>Current page URL: <code id="current-url"></code></p>
+            <p>Iframe will load: <code id="iframe-url"></code></p>
+            <div class="iframe-container">
+                <iframe
+                    id="assistant-iframe"
+                    data-assistant-url="/assistant"
+                    width="100%"
+                    height="600"
+                    frameborder="0"
+                    allow="clipboard-read; clipboard-write"
+                    title="FYI Support Assistant"
+                ></iframe>
+            </div>
+        </div>
+
+        <!-- Solution 2: Manual JavaScript -->
+        <div class="example">
+            <h2>Solution 2: Manual JavaScript (For Zapier)</h2>
+            <p>If you can't include an external script, add this JavaScript directly to your Zapier page:</p>
+            
+            <pre><code>&lt;script&gt;
+(function() {
+  // Get query parameters from parent page
+  const urlParams = new URLSearchParams(window.location.search);
+  const firstName = urlParams.get('first-name') || urlParams.get('first_name');
+  
+  // Build iframe URL with parameters
+  const baseUrl = 'https://your-domain.com/assistant';
+  const iframe = document.getElementById('assistant-iframe');
+  
+  if (iframe && firstName) {
+    iframe.src = baseUrl + '?first-name=' + encodeURIComponent(firstName);
+  } else if (iframe) {
+    iframe.src = baseUrl;
+  }
+})();
+&lt;/script&gt;
+
+&lt;iframe
+    id="assistant-iframe"
+    width="100%"
+    height="800"
+    frameborder="0"
+    allow="clipboard-read; clipboard-write"
+    title="FYI Support Assistant"
+&gt;&lt;/iframe&gt;</code></pre>
+        </div>
+
+        <!-- Solution 3: Inline with all params -->
+        <div class="example">
+            <h2>Solution 3: Pass All Query Parameters</h2>
+            <p>To pass all query parameters from parent to iframe:</p>
+            
+            <pre><code>&lt;script&gt;
+(function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const baseUrl = 'https://your-domain.com/assistant';
+  const iframe = document.getElementById('assistant-iframe');
+  
+  if (iframe && urlParams.toString()) {
+    // Map first_name to first-name for compatibility
+    const params = new URLSearchParams();
+    urlParams.forEach((value, key) => {
+      if (key === 'first_name') {
+        params.set('first-name', value);
+      } else {
+        params.set(key, value);
+      }
+    });
+    iframe.src = baseUrl + '?' + params.toString();
+  } else if (iframe) {
+    iframe.src = baseUrl;
+  }
+})();
+&lt;/script&gt;
+
+&lt;iframe
+    id="assistant-iframe"
+    width="100%"
+    height="800"
+    frameborder="0"
+    allow="clipboard-read; clipboard-write"
+    title="FYI Support Assistant"
+&gt;&lt;/iframe&gt;</code></pre>
+        </div>
+
+        <!-- Zapier-Specific Instructions -->
+        <div class="example">
+            <h2>For Zapier Interface Pages</h2>
+            <p>In your Zapier interface page, add this code block:</p>
+            
+            <pre><code>&lt;!-- HTML Block --&gt;
+&lt;iframe
+    id="assistant-iframe"
+    width="100%"
+    height="800"
+    frameborder="0"
+    allow="clipboard-read; clipboard-write"
+    title="FYI Support Assistant"
+&gt;&lt;/iframe&gt;
+
+&lt;!-- JavaScript Block --&gt;
+&lt;script&gt;
+(function() {
+  // Get first-name from parent page URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const firstName = urlParams.get('first-name') || urlParams.get('first_name');
+  
+  // Your assistant domain - UPDATE THIS!
+  const assistantUrl = 'https://your-deployed-domain.com/assistant';
+  const iframe = document.getElementById('assistant-iframe');
+  
+  if (iframe) {
+    if (firstName) {
+      iframe.src = assistantUrl + '?first-name=' + encodeURIComponent(firstName);
+    } else {
+      iframe.src = assistantUrl;
+    }
+  }
+})();
+&lt;/script&gt;</code></pre>
+        </div>
+    </div>
+
+    <!-- Include the helper script -->
+    <script src="assistant-embed-helper.js"></script>
+    
+    <script>
+        // Display current URLs for demo
+        document.getElementById('current-url').textContent = window.location.href;
+        
+        // Wait for helper to run, then show iframe URL
+        setTimeout(() => {
+            const iframe = document.getElementById('assistant-iframe');
+            if (iframe && iframe.src) {
+                document.getElementById('iframe-url').textContent = iframe.src;
+            }
+        }, 100);
+    </script>
+</body>
+</html>
+
