@@ -811,8 +811,43 @@
                 }
               }
 
+              // Check for "I can:" or "If you'd like, I can:" patterns with options separated by "or" or newlines
+              const iCanPattern = /(?:If you['']d like,?\s*)?I can:?\s*([\s\S]+?)(?:\n\n|\nDid that|$)/i;
+              const iCanMatch = trimmed.match(iCanPattern);
+              if (iCanMatch && iCanMatch[1]) {
+                const optionsText = iCanMatch[1];
+                // Split by "or" (with optional semicolon), newlines, or both
+                let options = optionsText
+                  .split(/\s*;\s*or\s*|\s+or\s+|\n+/)
+                  .map(o => o.trim())
+                  .filter(o => o.length > 0 && o.length < 200 && !/^Did that/i.test(o));
+                
+                // If we got options, clean them up
+                if (options.length >= 2) {
+                  // Remove trailing punctuation and clean up
+                  options = options.map(o => o.replace(/[.;,]+$/, '').trim()).filter(Boolean);
+                  if (options.length >= 2) {
+                    return { isQuestion: true, options };
+                  }
+                }
+              }
+
+              // Check for options separated by "or" in natural language
+              const orPattern = /(?:Would you like|Do you want|I can|You can|Choose|Select|Pick|Options?|Choices?)[:：]?\s*([^?]+(?:\s+or\s+[^?]+)+)/i;
+              const orMatch = trimmed.match(orPattern);
+              if (orMatch && orMatch[1]) {
+                const optionsText = orMatch[1];
+                const options = optionsText
+                  .split(/\s+or\s+/i)
+                  .map(o => o.trim().replace(/[.;,]+$/, ''))
+                  .filter(o => o.length > 0 && o.length < 200);
+                if (options.length >= 2) {
+                  return { isQuestion: true, options };
+                }
+              }
+
               // Simple question detection (ends with ?)
-              const hasQuestionMark = /[?？]$/.test(trimmed);
+              const hasQuestionMark = /[?？]/.test(trimmed);
               if (hasQuestionMark) {
                 // Try to extract options from common patterns
                 const optionPatterns = [
@@ -824,11 +859,11 @@
                   const match = trimmed.match(pattern);
                   if (match && match[1]) {
                     const optionsText = match[1];
-                    // Try to split by commas, semicolons, or newlines
+                    // Try to split by commas, semicolons, "or", or newlines
                     const options = optionsText
-                      .split(/[,;，；]|\n/)
-                      .map(o => o.trim())
-                      .filter(o => o.length > 0 && o.length < 100);
+                      .split(/[,;，；]|\s+or\s+|\n+/i)
+                      .map(o => o.trim().replace(/[.;,]+$/, ''))
+                      .filter(o => o.length > 0 && o.length < 200);
                     if (options.length >= 2) {
                       return { isQuestion: true, options };
                     }
@@ -836,6 +871,23 @@
                 }
                 
                 return { isQuestion: true };
+              }
+
+              // Check for questions without question marks but with options
+              // Pattern: "I can:" or "If you'd like:" followed by options
+              const questionWithoutMark = /(?:If you['']d like,?\s*)?(?:I can|You can|Would you like|Do you want)[:：]?\s*([\s\S]+)/i;
+              const questionMatch = trimmed.match(questionWithoutMark);
+              if (questionMatch && questionMatch[1]) {
+                const optionsText = questionMatch[1];
+                // Try splitting by "or", newlines, or semicolons
+                let options = optionsText
+                  .split(/\s*;\s*or\s*|\s+or\s+|\n+/i)
+                  .map(o => o.trim().replace(/[.;,]+$/, ''))
+                  .filter(o => o.length > 0 && o.length < 200 && !/^Did that/i.test(o));
+                
+                if (options.length >= 2) {
+                  return { isQuestion: true, options };
+                }
               }
 
               return { isQuestion: false };
@@ -937,12 +989,14 @@
                   const { isQuestion, options } = detectQuestion(textContent);
 
                   if (isQuestion && options && options.length > 0) {
+                    console.log('[ResponseButtons] Detected question with options:', options);
                     // Mark as processed
                     messageEl.setAttribute('data-fyi-processed', '1');
                     
                     // Inject buttons
                     injectResponseButtons(messageEl, options);
                   } else if (isQuestion) {
+                    console.log('[ResponseButtons] Detected question but no options extracted');
                     // Question detected but no options
                     messageEl.setAttribute('data-fyi-processed', '1');
                   }
