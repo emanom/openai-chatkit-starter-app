@@ -144,7 +144,7 @@ function AssistantPageContent() {
           }
         } catch (e) {
           console.error('[AssistantPage] Cannot access parent __NEXT_DATA__ (cross-origin or not found):', e);
-          console.error('[AssistantPage] Error details:', e.message);
+          console.error('[AssistantPage] Error details:', e instanceof Error ? e.message : String(e));
         }
       }
       
