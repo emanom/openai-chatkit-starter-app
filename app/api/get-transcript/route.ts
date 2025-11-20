@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     
     // Try to get OpenAI conversation ID if not already retrieved
     if (!openaiConversationId) {
-      openaiConversationId = getConversationId(sessionId);
+      openaiConversationId = getConversationId(sessionId) || null;
     }
     
     // Build conversation URL
@@ -182,7 +182,7 @@ export async function GET(request: NextRequest) {
     
     // Try to get OpenAI conversation ID if not already retrieved
     if (!openaiConversationId) {
-      openaiConversationId = getConversationId(sessionId);
+      openaiConversationId = getConversationId(sessionId) || null;
     }
 
     // Get the base URL for the conversation link
