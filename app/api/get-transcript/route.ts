@@ -6,17 +6,18 @@ import { getThreadId } from "@/lib/thread-id-store";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sessionId, ticketId } = body;
+    const { sessionId, ticketId, threadId: threadIdFromBody } = body;
 
-    if (!sessionId) {
+    if (!sessionId && !threadIdFromBody) {
       return NextResponse.json(
-        { error: "Missing sessionId parameter" },
+        { error: "Missing sessionId or threadId parameter" },
         { status: 400 }
       );
     }
 
-    // Try to get thread ID first - this gives us the best transcript source
-    const threadId = getThreadId(sessionId);
+    // Use threadId from request body if provided, otherwise look it up from sessionId
+    // This allows Zapier webhook to pass threadId directly from the form
+    const threadId = threadIdFromBody || (sessionId ? getThreadId(sessionId) : undefined);
     let transcript = "";
     let formattedTranscript = "";
     let openaiConversationId: string | null = null;
