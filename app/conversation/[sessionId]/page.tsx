@@ -1,16 +1,43 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { getTranscript } from "@/lib/transcript-store";
 
 async function ConversationContent({ sessionId }: { sessionId: string }) {
-  const data = getTranscript(sessionId);
-
+  // Try to get transcript from in-memory store first (same server instance)
+  // If not found, it might be in a different serverless instance, so show a message
+  const { getTranscript } = await import("@/lib/transcript-store");
+  let data = getTranscript(sessionId);
+  
+  // If not found in store, try fetching from API
   if (!data) {
-    notFound();
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+                      'https://main.d2xcz3k9ugtvab.amplifyapp.com';
+      const apiUrl = `${baseUrl}/api/get-transcript?sessionId=${encodeURIComponent(sessionId)}`;
+      
+      const response = await fetch(apiUrl, {
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.transcript !== undefined && result.transcript !== "") {
+          data = {
+            transcript: result.transcript,
+            timestamp: result.timestamp || Date.now(),
+          };
+        }
+      }
+    } catch (error) {
+      console.error('[ConversationPage] Error fetching transcript:', error);
+    }
   }
 
   // Format the transcript for display
-  const transcriptLines = data.transcript.split('\n\n').filter(line => line.trim().length > 0);
+  const transcriptLines = data ? data.transcript.split('\n\n').filter(line => line.trim().length > 0) : [];
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -21,13 +48,24 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
             <p className="text-sm text-gray-500">
               Session ID: <code className="bg-gray-100 px-2 py-1 rounded text-xs">{sessionId}</code>
             </p>
-            <p className="text-sm text-gray-500 mt-1">
-              Started: {new Date(data.timestamp).toLocaleString()}
-            </p>
+            {data && (
+              <p className="text-sm text-gray-500 mt-1">
+                Started: {new Date(data.timestamp).toLocaleString()}
+              </p>
+            )}
           </div>
 
           <div className="space-y-4">
-            {transcriptLines.length > 0 ? (
+            {!data ? (
+              <div className="text-center py-8 text-gray-500">
+                <p className="text-lg font-semibold mb-2">Conversation Not Found</p>
+                <p>No conversation transcript found for this session ID.</p>
+                <p className="text-sm mt-2">The conversation may not have been stored, or it may have expired.</p>
+                <p className="text-xs mt-4 text-gray-400">
+                  Session ID: <code className="bg-gray-100 px-2 py-1 rounded">{sessionId}</code>
+                </p>
+              </div>
+            ) : transcriptLines.length > 0 ? (
               transcriptLines.map((line, index) => {
                 const isUser = line.startsWith('User:');
                 const isAssistant = line.startsWith('Assistant:');
