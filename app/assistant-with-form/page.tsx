@@ -278,12 +278,34 @@ function AssistantWithFormContent() {
 
     const data = await response.json();
     console.log("[AssistantWithForm] Session created successfully", data);
+    console.log("[AssistantWithForm] Full response data:", JSON.stringify(data, null, 2));
     
     // Try to extract conversation ID from the response
-    // OpenAI ChatKit might return conversation_id, thread_id, or id in the response
-    const convId = (data.conversation_id || data.thread_id || data.id || data.conversationId) as string | undefined;
-    if (convId && typeof convId === 'string') {
-      console.log("[AssistantWithForm] Found conversation ID:", convId);
+    // Check various possible fields
+    const convId = (data.conversation_id || data.thread_id || data.id || data.conversationId || 
+                    data.conversation?.id || data.thread?.id) as string | undefined;
+    
+    // Also check if client_secret contains a conversation ID (it might be a JWT or encoded)
+    const clientSecret = data.client_secret as string | undefined;
+    if (clientSecret) {
+      // Try to extract conv_ from client_secret if it's a JWT or contains it
+      const convIdInSecret = clientSecret.match(/conv_[a-f0-9]{40,}/i);
+      if (convIdInSecret) {
+        const foundConvId = convIdInSecret[0];
+        console.log("[AssistantWithForm] Found conversation ID in client_secret:", foundConvId);
+        setConversationId(foundConvId);
+        if (sessionId) {
+          fetch('/api/store-conversation-id', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, conversationId: foundConvId }),
+          }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+        }
+      }
+    }
+    
+    if (convId && typeof convId === 'string' && convId.startsWith('conv_')) {
+      console.log("[AssistantWithForm] Found conversation ID in response:", convId);
       setConversationId(convId);
       // Store the conversation ID mapping
       if (sessionId) {
@@ -294,7 +316,10 @@ function AssistantWithFormContent() {
         }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
       }
     } else {
-      console.log("[AssistantWithForm] No conversation ID found in response. Available fields:", Object.keys(data));
+      console.log("[AssistantWithForm] No conversation ID (conv_...) found in response. Available fields:", Object.keys(data));
+      if (convId) {
+        console.log("[AssistantWithForm] Found ID but it's not a conversation ID:", convId);
+      }
     }
     
     return data.client_secret as string;
@@ -325,7 +350,79 @@ function AssistantWithFormContent() {
         },
       },
     },
+    onReady: () => {
+      console.log("[AssistantWithForm] ChatKit ready, control:", chatkit.control);
+      // Try to extract conversation ID from control object
+      if (chatkit.control) {
+        try {
+          // Check if control object has conversation/thread info
+          const controlAny = chatkit.control as unknown as Record<string, unknown>;
+          if (controlAny.conversationId || controlAny.conversation_id || controlAny.threadId || controlAny.thread_id) {
+            const convId = (controlAny.conversationId || controlAny.conversation_id || controlAny.threadId || controlAny.thread_id) as string;
+            if (convId && convId.startsWith('conv_')) {
+              console.log("[AssistantWithForm] Found conversation ID in control:", convId);
+              setConversationId(convId);
+              if (sessionId) {
+                fetch('/api/store-conversation-id', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ sessionId, conversationId: convId }),
+                }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('[AssistantWithForm] Could not access control properties:', e);
+        }
+      }
+    },
   });
+
+  // Listen for conversation ID in network requests or ChatKit events
+  useEffect(() => {
+    if (!chatkit.control || conversationId) return;
+
+    // Try to extract conversation ID from network requests
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const response = await originalFetch(...args);
+      
+      // Check if this is a ChatKit API request that might contain conversation ID
+      const url = args[0] as string;
+      if (typeof url === 'string' && (url.includes('chatkit') || url.includes('openai.com'))) {
+        try {
+          // Clone response to read it without consuming the stream
+          const clonedResponse = response.clone();
+          const text = await clonedResponse.text();
+          
+          // Look for conversation ID in response
+          const convIdMatch = text.match(/conv_[a-f0-9]{40,}/i);
+          if (convIdMatch) {
+            const convId = convIdMatch[0];
+            console.log("[AssistantWithForm] Found conversation ID in network response:", convId);
+            setConversationId(convId);
+            if (sessionId) {
+              fetch('/api/store-conversation-id', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId, conversationId: convId }),
+              }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+            }
+            // Restore original fetch
+            window.fetch = originalFetch;
+          }
+        } catch (e) {
+          console.debug('[AssistantWithForm] Could not parse network response:', e);
+        }
+      }
+      
+      return response;
+    };
+
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [chatkit.control, conversationId, sessionId]);
 
   // Periodically store transcript as conversation progresses
   useEffect(() => {
