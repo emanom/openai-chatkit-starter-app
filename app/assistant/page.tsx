@@ -90,7 +90,27 @@ function AssistantPageContent() {
         console.debug('[AssistantPage] Error reading referrer:', e);
       }
       
-      // Method 3: Try API endpoint that reads Referer header (servers can see full referer)
+      // Method 3: Try to extract from parent page's __NEXT_DATA__ script tag (Zapier stores query params there)
+      if (window.self !== window.top) {
+        try {
+          const parentDoc = window.parent.document;
+          const nextDataScript = parentDoc.querySelector('script#__NEXT_DATA__');
+          if (nextDataScript && nextDataScript.textContent) {
+            const nextData = JSON.parse(nextDataScript.textContent);
+            const queryParams = nextData?.props?.pageProps?.query || {};
+            const zapierFirstName = queryParams['first-name'] || queryParams['firstName'] || queryParams['firstname'];
+            console.log('[AssistantPage] Found firstName in parent __NEXT_DATA__:', zapierFirstName);
+            if (zapierFirstName && !zapierFirstName.includes('{{')) {
+              setFirstNameFromParent(zapierFirstName);
+              return;
+            }
+          }
+        } catch (e) {
+          console.debug('[AssistantPage] Cannot access parent __NEXT_DATA__ (cross-origin or not found):', e);
+        }
+      }
+      
+      // Method 4: Try API endpoint that reads Referer header (servers can see full referer)
       if (window.self !== window.top) {
         fetch('/api/get-parent-params')
           .then(res => res.json())
