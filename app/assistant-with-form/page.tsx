@@ -38,10 +38,41 @@ function AssistantWithFormContent() {
     return "Hi! How can I help you today?";
   }, [firstName]);
 
-  const { chatKit, sessionId } = useChatKit({
-    endpoint: CREATE_SESSION_ENDPOINT,
-    workflowId: WORKFLOW_ID,
-    greeting,
+  const getClientSecret = useCallback(async () => {
+    const response = await fetch(CREATE_SESSION_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workflowId: WORKFLOW_ID }),
+    });
+    const data = await response.json();
+    return data.clientSecret;
+  }, []);
+
+  const chatkit = useChatKit({
+    api: { getClientSecret },
+    theme: {
+      color: {
+        accent: { primary: "#4ccf96", level: 3 },
+      },
+    },
+    startScreen: {
+      greeting: greeting,
+      prompts: [
+        { label: "Help with feature", prompt: "I need help with a feature: ", icon: "circle-question" },
+        { label: "Enhancement idea", prompt: "I have an enhancement idea", icon: "sparkle" },
+        { label: "Something's not working", prompt: "Something's not working as expected", icon: "bug" },
+      ],
+    },
+    composer: {
+      placeholder: "Ask me anything about FYI...",
+      attachments: {
+        enabled: true,
+        accept: {
+          "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"],
+          "application/pdf": [".pdf"],
+        },
+      },
+    },
   });
 
   const handleWidgetAction = useCallback(
@@ -83,12 +114,30 @@ function AssistantWithFormContent() {
       {/* Chatbot Section */}
       <div className="flex-1 flex flex-col min-h-0" ref={chatContainerRef}>
         <div className="flex-1 overflow-hidden">
-          {chatKit && (
-            <ChatKit
-              chatKit={chatKit}
-              onWidgetAction={handleWidgetAction}
-              onResponseEnd={handleResponseEnd}
-            />
+          {chatkit.control ? (
+            <div 
+              className="w-full h-full" 
+              style={{ 
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%'
+              }}
+            >
+              <ChatKit
+                control={chatkit.control}
+                style={{ 
+                  width: '100%',
+                  height: '100%',
+                  flex: 1
+                }}
+                onWidgetAction={handleWidgetAction}
+                onResponseEnd={handleResponseEnd}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-lg">Loading chat...</div>
+            </div>
           )}
         </div>
       </div>
