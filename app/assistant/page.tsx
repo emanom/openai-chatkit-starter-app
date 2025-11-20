@@ -90,6 +90,25 @@ function AssistantPageContent() {
       } catch (e) {
         console.debug('[AssistantPage] Error reading referrer:', e);
       }
+      
+      // Method 3: Try API endpoint that reads Referer header (servers can see full referer)
+      if (window.self !== window.top) {
+        fetch('/api/get-parent-params')
+          .then(res => res.json())
+          .then(data => {
+            console.log('[AssistantPage] Parent params from API:', data);
+            if (data.params && (data.params['first-name'] || data.params['first_name'])) {
+              const apiFirstName = data.params['first-name'] || data.params['first_name'];
+              if (apiFirstName && !apiFirstName.includes('{{')) {
+                console.log('[AssistantPage] Setting firstName from API:', apiFirstName);
+                setFirstNameFromParent(apiFirstName);
+              }
+            }
+          })
+          .catch(e => {
+            console.debug('[AssistantPage] Error fetching parent params:', e);
+          });
+      }
     }
   }, [firstNameFromUrl, firstNameFromParent]);
   
