@@ -116,7 +116,13 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
   // Fallback: Try to get transcript from in-memory store
   if (!data) {
     const { getTranscript } = await import("@/lib/transcript-store");
-    data = getTranscript(sessionId);
+    const storedTranscript = getTranscript(sessionId);
+    if (storedTranscript) {
+      data = {
+        transcript: storedTranscript.transcript,
+        timestamp: storedTranscript.timestamp,
+      };
+    }
     
     // If not found in store, try fetching from API
     if (!data) {
