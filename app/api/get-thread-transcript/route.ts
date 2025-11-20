@@ -40,7 +40,8 @@ export async function GET(request: NextRequest) {
     }
 
     const apiBase = process.env.CHATKIT_API_BASE ?? DEFAULT_CHATKIT_BASE;
-    const url = `${apiBase}/v1/chatkit/threads/${threadId}`;
+    // Try fetching thread with items - some APIs require a query parameter to include items
+    let url = `${apiBase}/v1/chatkit/threads/${threadId}`;
     
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -61,10 +62,37 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`[get-thread-transcript] Fetching thread: ${threadId}`);
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: "GET",
       headers,
     });
+    
+    // If thread doesn't have items, try fetching thread items separately
+    // Some ChatKit APIs have a separate endpoint for thread items
+    if (response.ok) {
+      const threadPreview = await response.clone().json();
+      if (!threadPreview.items || !threadPreview.items.data || threadPreview.items.data.length === 0) {
+        console.log(`[get-thread-transcript] Thread has no items, trying thread items endpoint...`);
+        // Try thread items endpoint: /v1/chatkit/threads/{threadId}/items
+        const itemsUrl = `${apiBase}/v1/chatkit/threads/${threadId}/items`;
+        const itemsResponse = await fetch(itemsUrl, {
+          method: "GET",
+          headers,
+        });
+        
+        if (itemsResponse.ok) {
+          const itemsData = await itemsResponse.json();
+          console.log(`[get-thread-transcript] Retrieved items separately:`, Object.keys(itemsData));
+          // Merge items into thread object
+          threadPreview.items = itemsData.items || itemsData.data || itemsData;
+          // Recreate response with merged data
+          response = new Response(JSON.stringify(threadPreview), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -80,11 +108,48 @@ export async function GET(request: NextRequest) {
     }
 
     const thread = await response.json();
-    console.log(`[get-thread-transcript] Retrieved thread with ${thread.items?.data?.length || 0} items`);
+    console.log(`[get-thread-transcript] Retrieved thread:`, JSON.stringify(thread, null, 2));
     console.log(`[get-thread-transcript] Thread data keys:`, Object.keys(thread));
+    console.log(`[get-thread-transcript] Has items?:`, !!thread.items);
+    console.log(`[get-thread-transcript] Items structure:`, thread.items ? Object.keys(thread.items) : 'no items');
+    console.log(`[get-thread-transcript] Items data length:`, thread.items?.data?.length || 0);
+
+    // If thread doesn't have items, try fetching thread items separately
+    if (!thread.items || !thread.items.data || thread.items.data.length === 0) {
+      console.log(`[get-thread-transcript] Thread has no items, trying thread items endpoint...`);
+      try {
+        const itemsUrl = `${apiBase}/v1/chatkit/threads/${threadId}/items`;
+        console.log(`[get-thread-transcript] Fetching items from: ${itemsUrl}`);
+        const itemsResponse = await fetch(itemsUrl, {
+          method: "GET",
+          headers,
+        });
+        
+        if (itemsResponse.ok) {
+          const itemsData = await itemsResponse.json();
+          console.log(`[get-thread-transcript] Items response keys:`, Object.keys(itemsData));
+          console.log(`[get-thread-transcript] Items response:`, JSON.stringify(itemsData, null, 2));
+          
+          // Merge items into thread object
+          if (itemsData.items) {
+            thread.items = itemsData.items;
+          } else if (itemsData.data) {
+            thread.items = { data: itemsData.data };
+          } else if (Array.isArray(itemsData)) {
+            thread.items = { data: itemsData };
+          }
+        } else {
+          const errorText = await itemsResponse.text();
+          console.log(`[get-thread-transcript] Items endpoint returned ${itemsResponse.status}:`, errorText);
+        }
+      } catch (error) {
+        console.error(`[get-thread-transcript] Error fetching items:`, error);
+      }
+    }
 
     // Build transcript from thread items
     const transcript = buildTranscript(thread);
+    console.log(`[get-thread-transcript] Built transcript length:`, transcript.length);
     
     // Try to extract conversation ID from thread data
     let conversationId: string | undefined;
