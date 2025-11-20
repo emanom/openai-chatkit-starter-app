@@ -75,18 +75,20 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
     );
   }
 
-  // Fallback: Try to get transcript from in-memory store
-  const { getTranscript } = await import("@/lib/transcript-store");
-  let data = getTranscript(sessionId);
+  // Try to get thread ID and fetch transcript from ChatKit API
+  const { getThreadId } = await import("@/lib/thread-id-store");
+  let threadId = getThreadId(sessionId);
+  let data: { transcript: string; timestamp: number } | null = null;
   
-  // If not found in store, try fetching from API
-  if (!data) {
+  // If we have a thread ID, fetch transcript from ChatKit API
+  if (threadId) {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
                       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
                       'https://main.d2xcz3k9ugtvab.amplifyapp.com';
-      const apiUrl = `${baseUrl}/api/get-transcript?sessionId=${encodeURIComponent(sessionId)}`;
+      const apiUrl = `${baseUrl}/api/get-thread-transcript?threadId=${encodeURIComponent(threadId)}`;
       
+      console.log(`[ConversationPage] Fetching transcript for thread: ${threadId}`);
       const response = await fetch(apiUrl, {
         cache: 'no-store',
         headers: {
@@ -96,15 +98,53 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
       
       if (response.ok) {
         const result = await response.json();
-        if (result.transcript !== undefined && result.transcript !== "") {
+        if (result.transcript && result.transcript.length > 0) {
+          console.log(`[ConversationPage] Retrieved transcript, length: ${result.transcript.length}`);
           data = {
             transcript: result.transcript,
-            timestamp: result.timestamp || Date.now(),
+            timestamp: Date.now(), // Use current time since we don't have timestamp from API
           };
         }
+      } else {
+        console.error(`[ConversationPage] Failed to fetch thread transcript: ${response.status}`);
       }
     } catch (error) {
-      console.error('[ConversationPage] Error fetching transcript:', error);
+      console.error('[ConversationPage] Error fetching thread transcript:', error);
+    }
+  }
+  
+  // Fallback: Try to get transcript from in-memory store
+  if (!data) {
+    const { getTranscript } = await import("@/lib/transcript-store");
+    data = getTranscript(sessionId);
+    
+    // If not found in store, try fetching from API
+    if (!data) {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+                        'https://main.d2xcz3k9ugtvab.amplifyapp.com';
+        const apiUrl = `${baseUrl}/api/get-transcript?sessionId=${encodeURIComponent(sessionId)}`;
+        
+        const response = await fetch(apiUrl, {
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          if (result.transcript !== undefined && result.transcript !== "") {
+            data = {
+              transcript: result.transcript,
+              timestamp: result.timestamp || Date.now(),
+            };
+          }
+        }
+      } catch (error) {
+        console.error('[ConversationPage] Error fetching transcript:', error);
+      }
     }
   }
 
@@ -133,6 +173,11 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
                 <p className="text-lg font-semibold mb-2">Conversation Not Found</p>
                 <p>No conversation transcript found for this session ID.</p>
                 <p className="text-sm mt-2">The conversation may not have been stored, or it may have expired.</p>
+                {threadId && (
+                  <p className="text-xs mt-2 text-gray-400">
+                    Thread ID: <code className="bg-gray-100 px-2 py-1 rounded">{threadId}</code>
+                  </p>
+                )}
                 <p className="text-xs mt-4 text-gray-400">
                   Session ID: <code className="bg-gray-100 px-2 py-1 rounded">{sessionId}</code>
                 </p>
