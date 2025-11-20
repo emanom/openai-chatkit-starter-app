@@ -128,10 +128,17 @@ function AssistantWithFormContent() {
   
   // Function to store transcript
   const storeTranscript = useCallback(async (transcriptText: string) => {
-    if (!sessionId || !transcriptText) {
-      console.warn('[AssistantWithForm] Cannot store transcript: missing sessionId or transcript');
+    if (!sessionId) {
+      console.warn('[AssistantWithForm] Cannot store transcript: missing sessionId');
       return false;
     }
+    
+    if (!transcriptText || transcriptText.length === 0) {
+      console.warn('[AssistantWithForm] Cannot store transcript: transcript is empty');
+      return false;
+    }
+
+    console.log(`[AssistantWithForm] Attempting to store transcript for session: ${sessionId}, length: ${transcriptText.length}`);
 
     try {
       const response = await fetch('/api/store-transcript', {
@@ -146,11 +153,15 @@ function AssistantWithFormContent() {
         return false;
       }
 
-      await response.json();
-      console.log('[AssistantWithForm] Transcript stored successfully for session:', sessionId, 'Length:', transcriptText.length);
+      const result = await response.json();
+      console.log('[AssistantWithForm] Transcript stored successfully:', result);
+      console.log(`[AssistantWithForm] SessionId: ${sessionId}, Transcript length: ${transcriptText.length}, Response:`, result);
       return true;
     } catch (error) {
       console.error('[AssistantWithForm] Error storing transcript:', error);
+      if (error instanceof Error) {
+        console.error('[AssistantWithForm] Error details:', error.message, error.stack);
+      }
       return false;
     }
   }, [sessionId]);
@@ -175,19 +186,34 @@ function AssistantWithFormContent() {
     }
     
     console.log('[AssistantWithForm] Final transcript length:', transcript.length, 'SessionId:', sessionId);
+    console.log('[AssistantWithForm] Transcript preview (first 200 chars):', transcript.substring(0, 200));
     
     if (transcript && transcript.length > 0 && sessionId) {
       // Store transcript and wait for it to complete
+      console.log('[AssistantWithForm] Storing transcript before navigation...');
       const stored = await storeTranscript(transcript);
       if (!stored) {
-        console.error('[AssistantWithForm] Transcript storage failed! SessionId:', sessionId);
+        console.error('[AssistantWithForm] ⚠️ Transcript storage failed! SessionId:', sessionId);
+        console.error('[AssistantWithForm] This may cause issues when Zapier tries to retrieve the transcript.');
         // Still continue navigation, but log the error
       } else {
-        console.log('[AssistantWithForm] Transcript stored successfully before navigation');
+        console.log('[AssistantWithForm] ✅ Transcript stored successfully before navigation');
+        // Verify storage by immediately checking
+        try {
+          const verifyResponse = await fetch(`/api/get-transcript?sessionId=${encodeURIComponent(sessionId)}`);
+          if (verifyResponse.ok) {
+            const verifyData = await verifyResponse.json();
+            console.log('[AssistantWithForm] ✅ Storage verified! Retrieved transcript length:', verifyData.transcript?.length || 0);
+          } else {
+            console.warn('[AssistantWithForm] ⚠️ Storage verification failed - transcript may not be available');
+          }
+        } catch (verifyError) {
+          console.warn('[AssistantWithForm] Could not verify storage:', verifyError);
+        }
       }
     } else {
       console.warn('[AssistantWithForm] No transcript to store. Transcript length:', transcript.length, 'SessionId:', sessionId);
-      // Still try to store an empty transcript or at least log the session ID for debugging
+      // Still try to store a placeholder so the session ID is recorded
       if (sessionId) {
         await storeTranscript('No conversation transcript available at time of form submission.');
       }

@@ -23,14 +23,25 @@ if (typeof setInterval !== 'undefined') {
 }
 
 export function storeTranscript(sessionId: string, transcript: string): void {
-  transcriptStore.set(sessionId, {
+  const data: TranscriptData = {
     transcript: typeof transcript === "string" ? transcript : JSON.stringify(transcript),
     timestamp: Date.now(),
-  });
+  };
+  transcriptStore.set(sessionId, data);
+  console.log(`[transcript-store] Stored transcript for ${sessionId}, size: ${data.transcript.length}, store size: ${transcriptStore.size}`);
 }
 
 export function getTranscript(sessionId: string): TranscriptData | undefined {
-  return transcriptStore.get(sessionId);
+  const data = transcriptStore.get(sessionId);
+  console.log(`[transcript-store] Retrieved transcript for ${sessionId}, found: ${!!data}, store size: ${transcriptStore.size}`);
+  if (data) {
+    console.log(`[transcript-store] Transcript length: ${data.transcript.length}, age: ${Date.now() - data.timestamp}ms`);
+  }
+  return data;
+}
+
+export function getAllSessionIds(): string[] {
+  return Array.from(transcriptStore.keys());
 }
 
 export function deleteTranscript(sessionId: string): boolean {

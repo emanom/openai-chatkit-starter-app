@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTranscript } from "@/lib/transcript-store";
+import { getTranscript, getAllSessionIds } from "@/lib/transcript-store";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,13 +18,20 @@ export async function POST(request: NextRequest) {
     const data = getTranscript(sessionId);
     
     if (!data) {
+      const allSessions = getAllSessionIds();
       console.warn(`[get-transcript] Transcript not found for session: ${sessionId}, ticketId: ${ticketId || 'N/A'}`);
+      console.log(`[get-transcript] Available sessions (${allSessions.length}):`, allSessions.slice(0, 10));
       return NextResponse.json(
         { 
           error: "Transcript not found",
           sessionId,
           transcript: "",
           message: `No transcript found for session ID: ${sessionId}. Make sure the transcript was stored before the form was submitted.`,
+          availableSessions: allSessions.length,
+          debug: {
+            requestedSession: sessionId,
+            availableSessions: allSessions.slice(0, 5),
+          },
         },
         { status: 404 }
       );
