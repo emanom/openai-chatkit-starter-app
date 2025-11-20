@@ -230,58 +230,37 @@ function AssistantWithFormContent() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
+    // Always build the Zapier form URL, even if sessionId isn't ready yet
+    const zapierFormUrl = new URL("https://fyi-support-centre.zapier.app/support-request-form");
+    
     if (firstNameFromUrl && !firstNameFromUrl.includes('{{')) {
       setFirstName(firstNameFromUrl);
-      
-      // Build Zapier form URL with the parameter
-      const zapierFormUrl = new URL("https://fyi-support-centre.zapier.app/support-request-form");
       zapierFormUrl.searchParams.set("first-name", firstNameFromUrl);
-      if (sessionId) {
-        zapierFormUrl.searchParams.set("chat-session-id", sessionId);
-        // Pass thread ID if available (this is what we need for retrieving transcript)
-        if (threadId) {
-          zapierFormUrl.searchParams.set("thread-id", threadId);
-        }
-        // Pass OpenAI conversation link if available
-        if (conversationId) {
-          const openaiConversationUrl = `https://platform.openai.com/logs/${conversationId}`;
-          zapierFormUrl.searchParams.set("conversation-link", openaiConversationUrl);
-          zapierFormUrl.searchParams.set("openai-conversation-id", conversationId);
-        } else {
-          // Fallback to our conversation page - include threadId if available
-          let conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
-          if (threadId) {
-            conversationUrl += `?threadId=${encodeURIComponent(threadId)}`;
-          }
-          zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
-        }
-      }
-      setIframeSrc(zapierFormUrl.toString());
-    } else {
-      // Default Zapier form URL without parameter
-      const zapierFormUrl = new URL("https://fyi-support-centre.zapier.app/support-request-form");
-      if (sessionId) {
-        zapierFormUrl.searchParams.set("chat-session-id", sessionId);
-        // Pass thread ID if available (this is what we need for retrieving transcript)
-        if (threadId) {
-          zapierFormUrl.searchParams.set("thread-id", threadId);
-        }
-        // Pass OpenAI conversation link if available
-        if (conversationId) {
-          const openaiConversationUrl = `https://platform.openai.com/logs/${conversationId}`;
-          zapierFormUrl.searchParams.set("conversation-link", openaiConversationUrl);
-          zapierFormUrl.searchParams.set("openai-conversation-id", conversationId);
-        } else {
-          // Fallback to our conversation page - include threadId if available
-          let conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
-          if (threadId) {
-            conversationUrl += `?threadId=${encodeURIComponent(threadId)}`;
-          }
-          zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
-        }
-      }
-      setIframeSrc(zapierFormUrl.toString());
     }
+    
+    // Add session-related parameters if available
+    if (sessionId) {
+      zapierFormUrl.searchParams.set("chat-session-id", sessionId);
+      // Pass thread ID if available (this is what we need for retrieving transcript)
+      if (threadId) {
+        zapierFormUrl.searchParams.set("thread-id", threadId);
+      }
+      // Pass OpenAI conversation link if available
+      if (conversationId) {
+        const openaiConversationUrl = `https://platform.openai.com/logs/${conversationId}`;
+        zapierFormUrl.searchParams.set("conversation-link", openaiConversationUrl);
+        zapierFormUrl.searchParams.set("openai-conversation-id", conversationId);
+      } else if (sessionId) {
+        // Fallback to our conversation page - include threadId if available
+        let conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
+        if (threadId) {
+          conversationUrl += `?threadId=${encodeURIComponent(threadId)}`;
+        }
+        zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
+      }
+    }
+    
+    setIframeSrc(zapierFormUrl.toString());
   }, [firstNameFromUrl, sessionId, conversationId, threadId]);
   
   // Function to store transcript
@@ -800,17 +779,16 @@ function AssistantWithFormContent() {
               ? `Hi ${firstName}! Use the form below to submit a support request with additional details.`
               : "Use the form below to submit a support request with additional details."}
           </p>
-          {iframeSrc && (
-            <button
-              onClick={handleFormLinkClick}
-              className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors cursor-pointer"
-            >
-              {hasBotResponded 
-                ? 'Open Support Request from this conversation'
-                : 'Open Support Request Form'}
-              {firstName && ` (for ${firstName})`}
-            </button>
-          )}
+          <button
+            onClick={handleFormLinkClick}
+            disabled={!iframeSrc}
+            className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {hasBotResponded 
+              ? 'Open Support Request from this conversation'
+              : 'Open Support Request Form'}
+            {firstName && ` (for ${firstName})`}
+          </button>
           <p className="text-sm text-gray-500 mt-4">
             {firstName && `Your name (${firstName}) will be pre-filled in the form.`}
           </p>
