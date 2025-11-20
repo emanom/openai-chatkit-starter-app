@@ -77,7 +77,7 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
 
   // Try to get thread ID and fetch transcript from ChatKit API
   const { getThreadId } = await import("@/lib/thread-id-store");
-  let threadId = getThreadId(sessionId);
+  const threadId = getThreadId(sessionId);
   let data: { transcript: string; timestamp: number } | null = null;
   
   // If we have a thread ID, fetch transcript from ChatKit API
