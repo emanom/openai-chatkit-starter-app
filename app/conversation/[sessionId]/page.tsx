@@ -195,8 +195,62 @@ async function ConversationContent({ sessionId, threadIdParam }: { sessionId: st
     }
   }
 
-  // Format the transcript for display
+  // Format the transcript for display - merge System messages into Assistant messages
   const transcriptLines = data ? data.transcript.split('\n\n').filter(line => line.trim().length > 0) : [];
+  
+  // Process transcript lines to merge System messages with Assistant messages
+  const processedMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  let currentAssistantContent: string[] = [];
+  
+  for (const line of transcriptLines) {
+    const isUser = line.startsWith('User:');
+    const isAssistant = line.startsWith('Assistant:');
+    const isSystem = line.startsWith('System:');
+    const content = line.replace(/^(User|Assistant|System):\s*/, '');
+    
+    if (isUser) {
+      // If we have accumulated Assistant content, save it first
+      if (currentAssistantContent.length > 0) {
+        processedMessages.push({
+          role: 'assistant',
+          content: currentAssistantContent.join('\n\n'),
+        });
+        currentAssistantContent = [];
+      }
+      // Add user message
+      processedMessages.push({
+        role: 'user',
+        content: content,
+      });
+    } else if (isAssistant) {
+      // If we have accumulated Assistant content, save it first
+      if (currentAssistantContent.length > 0) {
+        processedMessages.push({
+          role: 'assistant',
+          content: currentAssistantContent.join('\n\n'),
+        });
+        currentAssistantContent = [];
+      }
+      // Start new Assistant message
+      currentAssistantContent = [content];
+    } else if (isSystem) {
+      // Merge System message into current Assistant content
+      if (currentAssistantContent.length > 0) {
+        currentAssistantContent.push(content);
+      } else {
+        // If no Assistant message yet, treat System as Assistant
+        currentAssistantContent = [content];
+      }
+    }
+  }
+  
+  // Don't forget the last Assistant message if any
+  if (currentAssistantContent.length > 0) {
+    processedMessages.push({
+      role: 'assistant',
+      content: currentAssistantContent.join('\n\n'),
+    });
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -219,7 +273,7 @@ async function ConversationContent({ sessionId, threadIdParam }: { sessionId: st
               <div className="text-center py-8 text-gray-500">
                 <p className="text-lg font-semibold mb-2">Conversation Not Found</p>
                 <p>No conversation transcript found for this session ID.</p>
-                <p className="text-sm mt-2">The conversation may not have been stored, or it may have expired.</p>
+                <p className="text-sm mt-2">The conversation may have been stored, or it may have expired.</p>
                 {threadId && (
                   <p className="text-xs mt-2 text-gray-400">
                     Thread ID: <code className="bg-gray-100 px-2 py-1 rounded">{threadId}</code>
@@ -229,27 +283,21 @@ async function ConversationContent({ sessionId, threadIdParam }: { sessionId: st
                   Session ID: <code className="bg-gray-100 px-2 py-1 rounded">{sessionId}</code>
                 </p>
               </div>
-            ) : transcriptLines.length > 0 ? (
-              transcriptLines.map((line, index) => {
-                const isUser = line.startsWith('User:');
-                const isAssistant = line.startsWith('Assistant:');
-                const content = line.replace(/^(User|Assistant|System):\s*/, '');
-                
+            ) : processedMessages.length > 0 ? (
+              processedMessages.map((message, index) => {
                 return (
                   <div
                     key={index}
                     className={`p-4 rounded-lg ${
-                      isUser
+                      message.role === 'user'
                         ? 'bg-blue-50 border border-blue-200 ml-8'
-                        : isAssistant
-                        ? 'bg-green-50 border border-green-200 mr-8'
-                        : 'bg-gray-50 border border-gray-200'
+                        : 'bg-green-50 border border-green-200 mr-8'
                     }`}
                   >
                     <div className="font-semibold text-sm mb-1 text-gray-700">
-                      {isUser ? '👤 User' : isAssistant ? '🤖 Assistant' : '⚙️ System'}
+                      {message.role === 'user' ? '👤 User' : '🤖 Assistant'}
                     </div>
-                    <div className="text-gray-800 whitespace-pre-wrap">{content}</div>
+                    <div className="text-gray-800 whitespace-pre-wrap">{message.content}</div>
                   </div>
                 );
               })

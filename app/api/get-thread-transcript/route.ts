@@ -334,7 +334,8 @@ function buildFormattedTranscript(thread: ThreadResponse): string {
           timeStr = new Date(timestamp * 1000).toISOString();
         }
       }
-      const header = timeStr ? `[${timeStr} ACST] ${role}:` : `${role}:`;
+      // Remove ACST from timestamp since it's already mentioned at the top, make header bold
+      const header = timeStr ? `**[${timeStr}] ${role}:**` : `**${role}:**`;
       messages.push(`${header}\n${text.trim()}\n`);
     }
   }
