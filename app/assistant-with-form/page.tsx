@@ -378,80 +378,110 @@ function AssistantWithFormContent() {
     },
   });
 
-  // Listen for conversation ID in network requests or ChatKit events
+  // Listen for conversation ID via postMessage events and periodic checks
   useEffect(() => {
     if (!chatkit.control || conversationId) return;
 
-    // Try to extract conversation ID from network requests
-    const originalFetch = window.fetch;
-    let fetchIntercepted = false;
-    
-    window.fetch = async function(...args) {
-      const response = await originalFetch(...args);
+    // Listen for postMessage events from ChatKit iframe
+    const handleMessage = (event: MessageEvent) => {
+      // Check if message contains conversation ID
+      if (event.data && typeof event.data === 'object') {
+        const data = event.data as Record<string, unknown>;
+        const convId = (data.conversationId || data.conversation_id || data.convId || data.id) as string | undefined;
+        if (convId && typeof convId === 'string' && convId.startsWith('conv_')) {
+          console.log("[AssistantWithForm] ✅ Found conversation ID in postMessage:", convId);
+          setConversationId(convId);
+          if (sessionId) {
+            fetch('/api/store-conversation-id', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId, conversationId: convId }),
+            }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+          }
+        }
+      }
       
-      // Check if this is a ChatKit API request that might contain conversation ID
-      const url = args[0] as string;
-      if (typeof url === 'string' && (url.includes('chatkit') || url.includes('openai.com') || url.includes('chatgpt.com'))) {
-        try {
-          // Clone response to read it without consuming the stream
-          const clonedResponse = response.clone();
-          const text = await clonedResponse.text();
+      // Also check if message is a string containing conv_
+      if (typeof event.data === 'string') {
+        const convIdMatch = event.data.match(/conv_[a-f0-9]{40,}/i);
+        if (convIdMatch) {
+          const convId = convIdMatch[0];
+          console.log("[AssistantWithForm] ✅ Found conversation ID in postMessage string:", convId);
+          setConversationId(convId);
+          if (sessionId) {
+            fetch('/api/store-conversation-id', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId, conversationId: convId }),
+            }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+          }
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    // Periodically check control object for conversation ID
+    const checkInterval = setInterval(() => {
+      if (conversationId) {
+        clearInterval(checkInterval);
+        return;
+      }
+      
+      try {
+        if (chatkit.control) {
+          const controlAny = chatkit.control as unknown as Record<string, unknown>;
+          // Try to access any properties that might contain conversation ID
+          const allKeys = Object.keys(controlAny);
+          console.log("[AssistantWithForm] Control object keys:", allKeys);
           
-          console.log("[AssistantWithForm] Checking network response for conversation ID:", url.substring(0, 100));
-          
-          // Look for conversation ID in response (conv_ followed by hex)
-          const convIdMatch = text.match(/conv_[a-f0-9]{40,}/i);
-          if (convIdMatch) {
-            const convId = convIdMatch[0];
-            console.log("[AssistantWithForm] ✅ Found conversation ID in network response:", convId);
-            setConversationId(convId);
-            if (sessionId) {
-              fetch('/api/store-conversation-id', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId, conversationId: convId }),
-              }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+          // Check common property names
+          for (const key of allKeys) {
+            const value = controlAny[key];
+            if (typeof value === 'string' && value.startsWith('conv_')) {
+              console.log("[AssistantWithForm] ✅ Found conversation ID in control property:", key, value);
+              setConversationId(value);
+              if (sessionId) {
+                fetch('/api/store-conversation-id', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ sessionId, conversationId: value }),
+                }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+              }
+              clearInterval(checkInterval);
+              break;
             }
-            // Stop intercepting once we found it
-            if (!fetchIntercepted) {
-              fetchIntercepted = true;
-              window.fetch = originalFetch;
-            }
-          } else {
-            // Also check response headers
-            const locationHeader = response.headers.get('location');
-            if (locationHeader) {
-              const convIdInLocation = locationHeader.match(/conv_[a-f0-9]{40,}/i);
-              if (convIdInLocation) {
-                const convId = convIdInLocation[0];
-                console.log("[AssistantWithForm] ✅ Found conversation ID in location header:", convId);
-                setConversationId(convId);
-                if (sessionId) {
-                  fetch('/api/store-conversation-id', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId, conversationId: convId }),
-                  }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
-                }
-                if (!fetchIntercepted) {
-                  fetchIntercepted = true;
-                  window.fetch = originalFetch;
+            
+            // Also check nested objects
+            if (value && typeof value === 'object') {
+              const nestedObj = value as Record<string, unknown>;
+              for (const nestedKey of Object.keys(nestedObj)) {
+                const nestedValue = nestedObj[nestedKey];
+                if (typeof nestedValue === 'string' && nestedValue.startsWith('conv_')) {
+                  console.log("[AssistantWithForm] ✅ Found conversation ID in nested control property:", key, nestedKey, nestedValue);
+                  setConversationId(nestedValue);
+                  if (sessionId) {
+                    fetch('/api/store-conversation-id', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ sessionId, conversationId: nestedValue }),
+                    }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                  }
+                  clearInterval(checkInterval);
+                  return;
                 }
               }
             }
           }
-        } catch (e) {
-          console.debug('[AssistantWithForm] Could not parse network response:', e);
         }
+      } catch (e) {
+        console.debug('[AssistantWithForm] Error checking control object:', e);
       }
-      
-      return response;
-    };
+    }, 2000); // Check every 2 seconds
 
     return () => {
-      if (!fetchIntercepted) {
-        window.fetch = originalFetch;
-      }
+      window.removeEventListener('message', handleMessage);
+      clearInterval(checkInterval);
     };
   }, [chatkit.control, conversationId, sessionId]);
 
