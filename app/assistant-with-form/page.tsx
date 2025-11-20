@@ -324,8 +324,8 @@ function AssistantWithFormContent() {
     }
   }, [sessionId]);
 
-  // Function to handle form link click - extract and store transcript
-  const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLAnchorElement>) => {
+  // Function to handle form button click - extract and store transcript
+  const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault(); // Prevent default navigation
     
     const link = e.currentTarget;
