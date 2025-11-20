@@ -14,10 +14,15 @@ export function middleware(request: NextRequest) {
     if (referer) {
       try {
         const refererUrl = new URL(referer);
-        const firstName = refererUrl.searchParams.get('first-name') || refererUrl.searchParams.get('first_name');
+        // Try multiple parameter name variations
+        const firstName = refererUrl.searchParams.get('first-name') || 
+                         refererUrl.searchParams.get('first_name') ||
+                         refererUrl.searchParams.get('firstName') ||
+                         refererUrl.searchParams.get('firstname');
         
         console.log('[Middleware] Referer URL:', refererUrl.href);
         console.log('[Middleware] Referer hostname:', refererUrl.hostname);
+        console.log('[Middleware] Referer search params:', refererUrl.search);
         console.log('[Middleware] Request hostname:', request.nextUrl.hostname);
         console.log('[Middleware] Extracted firstName from referer:', firstName);
         
@@ -36,12 +41,14 @@ export function middleware(request: NextRequest) {
           response.cookies.set('assistant-first-name', firstName, {
             httpOnly: false, // Allow client-side access
             sameSite: 'lax',
-            maxAge: 60, // 1 minute - just for initial load
+            maxAge: 300, // 5 minutes - increased for testing
           });
           console.log('[Middleware] Set cookie assistant-first-name:', firstName);
           return response;
         } else if (isOwnDomain && firstName && firstName.includes('{{')) {
           console.log('[Middleware] Referer is from own domain with template variable - ignoring');
+        } else if (isZapierReferer && !firstName) {
+          console.log('[Middleware] Zapier referer found but no firstName in query params (may be stripped by browser)');
         }
       } catch (e) {
         console.error('[Middleware] Error parsing referer:', e);

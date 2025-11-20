@@ -57,12 +57,31 @@ function AssistantPageContent() {
   useEffect(() => {
     // Only try if we don't already have a valid firstName from URL or cookie
     if (!firstNameFromUrl && !firstNameFromParent && typeof window !== 'undefined') {
+      // Method 0: Check URL hash fragment (not sent to server but available client-side)
+      if (typeof window !== 'undefined' && window.location.hash) {
+        try {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const hashFirstName = hashParams.get('first-name') || hashParams.get('firstName') || hashParams.get('firstname');
+          if (hashFirstName && !hashFirstName.includes('{{')) {
+            console.log('[AssistantPage] Found firstName in URL hash:', hashFirstName);
+            setFirstNameFromParent(hashFirstName);
+            return;
+          }
+        } catch (e) {
+          console.debug('[AssistantPage] Error reading hash params:', e);
+        }
+      }
+      
       // Method 1: Try to access parent window's URL directly (works if same origin)
       if (window.self !== window.top) {
         try {
           const parentParams = new URLSearchParams(window.parent.location.search);
-          const parentFirstName = parentParams.get('first-name') || parentParams.get('first_name');
+          const parentFirstName = parentParams.get('first-name') || 
+                                 parentParams.get('first_name') ||
+                                 parentParams.get('firstName') ||
+                                 parentParams.get('firstname');
           if (parentFirstName) {
+            console.log('[AssistantPage] Found firstName in parent URL:', parentFirstName);
             setFirstNameFromParent(parentFirstName);
             return;
           }
@@ -79,7 +98,10 @@ function AssistantPageContent() {
         if (referrer) {
           const referrerUrl = new URL(referrer);
           const referrerParams = new URLSearchParams(referrerUrl.search);
-          const referrerFirstName = referrerParams.get('first-name') || referrerParams.get('first_name');
+          const referrerFirstName = referrerParams.get('first-name') || 
+                                   referrerParams.get('first_name') ||
+                                   referrerParams.get('firstName') ||
+                                   referrerParams.get('firstname');
           console.log('[AssistantPage] firstName from referrer:', referrerFirstName);
           if (referrerFirstName) {
             setFirstNameFromParent(referrerFirstName);
