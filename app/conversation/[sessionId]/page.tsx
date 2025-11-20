@@ -77,7 +77,34 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
 
   // Try to get thread ID and fetch transcript from ChatKit API
   const { getThreadId } = await import("@/lib/thread-id-store");
-  const threadId = getThreadId(sessionId);
+  let threadId = getThreadId(sessionId);
+  
+  // If not found in store, try fetching from API (for serverless environments)
+  if (!threadId) {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+                      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+      const threadIdUrl = `${baseUrl}/api/get-thread-id?sessionId=${encodeURIComponent(sessionId)}`;
+      
+      console.log(`[ConversationPage] Thread ID not in store, fetching from API: ${threadIdUrl}`);
+      const threadIdResponse = await fetch(threadIdUrl, {
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (threadIdResponse.ok) {
+        const threadIdResult = await threadIdResponse.json();
+        if (threadIdResult.threadId) {
+          threadId = threadIdResult.threadId;
+          console.log(`[ConversationPage] ✅ Retrieved thread ID from API: ${threadId}`);
+        }
+      }
+    } catch (error) {
+      console.error('[ConversationPage] Error fetching thread ID:', error);
+    }
+  }
+  
   let data: { transcript: string; timestamp: number } | null = null;
   
   console.log(`[ConversationPage] Session ID: ${sessionId}, Thread ID: ${threadId || 'not found'}`);
