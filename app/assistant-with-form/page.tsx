@@ -481,25 +481,8 @@ function AssistantWithFormContent() {
     onReady: () => {
       console.log("[AssistantWithForm] ChatKit ready, control:", chatkit.control);
     },
-    onThreadChange: (evt?: { threadId?: string } | string) => {
-      // Handle different callback signatures
-      let newThreadId: string | undefined;
-      
-      if (typeof evt === 'string') {
-        newThreadId = evt;
-      } else if (evt && typeof evt === 'object' && 'threadId' in evt) {
-        newThreadId = evt.threadId;
-      } else {
-        // If no threadId in event, try to get it from control object
-        if (chatkit.control) {
-          try {
-            const controlAny = chatkit.control as unknown as Record<string, unknown>;
-            newThreadId = (controlAny.threadId || controlAny.thread_id) as string | undefined;
-          } catch (e) {
-            console.debug('[AssistantWithForm] Could not access threadId from control:', e);
-          }
-        }
-      }
+    onThreadChange: (event: { threadId: string | null }) => {
+      const newThreadId = event.threadId;
       
       if (newThreadId) {
         console.log("[AssistantWithForm] ✅ Thread changed, threadId:", newThreadId);
@@ -513,7 +496,7 @@ function AssistantWithFormContent() {
           }).catch(err => console.error('[AssistantWithForm] Failed to store thread ID:', err));
         }
       } else {
-        console.log("[AssistantWithForm] onThreadChange called but no threadId found");
+        console.log("[AssistantWithForm] onThreadChange called but threadId is null");
       }
     },
   });
