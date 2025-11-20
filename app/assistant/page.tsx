@@ -117,18 +117,34 @@ function AssistantPageContent() {
         try {
           const parentDoc = window.parent.document;
           const nextDataScript = parentDoc.querySelector('script#__NEXT_DATA__');
+          console.log('[AssistantPage] Attempting to read parent __NEXT_DATA__ script tag');
+          console.log('[AssistantPage] Parent document accessible:', !!parentDoc);
+          console.log('[AssistantPage] Script tag found:', !!nextDataScript);
+          
           if (nextDataScript && nextDataScript.textContent) {
             const nextData = JSON.parse(nextDataScript.textContent);
+            console.log('[AssistantPage] Parsed __NEXT_DATA__:', JSON.stringify(nextData?.props?.pageProps?.query || {}, null, 2));
+            
             const queryParams = nextData?.props?.pageProps?.query || {};
-            const zapierFirstName = queryParams['first-name'] || queryParams['firstName'] || queryParams['firstname'];
+            const zapierFirstName = queryParams['first-name'] || 
+                                   queryParams['firstName'] || 
+                                   queryParams['firstname'] ||
+                                   queryParams['first_name'];
             console.log('[AssistantPage] Found firstName in parent __NEXT_DATA__:', zapierFirstName);
-            if (zapierFirstName && !zapierFirstName.includes('{{')) {
+            
+            if (zapierFirstName && !zapierFirstName.includes('{{') && typeof zapierFirstName === 'string') {
+              console.log('[AssistantPage] Setting firstName from __NEXT_DATA__:', zapierFirstName);
               setFirstNameFromParent(zapierFirstName);
               return;
+            } else {
+              console.log('[AssistantPage] firstName from __NEXT_DATA__ is invalid or contains template variable');
             }
+          } else {
+            console.log('[AssistantPage] __NEXT_DATA__ script tag not found or empty');
           }
         } catch (e) {
-          console.debug('[AssistantPage] Cannot access parent __NEXT_DATA__ (cross-origin or not found):', e);
+          console.error('[AssistantPage] Cannot access parent __NEXT_DATA__ (cross-origin or not found):', e);
+          console.error('[AssistantPage] Error details:', e.message);
         }
       }
       
