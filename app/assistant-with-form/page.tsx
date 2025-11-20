@@ -123,15 +123,13 @@ function AssistantWithFormContent() {
                 height: '100%'
               }}
             >
-              <ChatKit
+              <ChatKit 
                 control={chatkit.control}
                 style={{ 
-                  width: '100%',
+                  width: '100%', 
                   height: '100%',
                   flex: 1
                 }}
-                onWidgetAction={handleWidgetAction}
-                onResponseEnd={handleResponseEnd}
               />
             </div>
           ) : (
