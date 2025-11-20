@@ -3,13 +3,51 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
+type TestResult = {
+  value: unknown;
+  success: boolean;
+  description: string;
+};
+
 function AssistantDebugContent() {
   const searchParams = useSearchParams();
-  const [results, setResults] = useState<Record<string, any>>({});
+  const [results, setResults] = useState<Record<string, TestResult>>({});
   const [isIframe, setIsIframe] = useState(false);
 
+  // Test 8: postMessage listener (separate useEffect)
   useEffect(() => {
-    const testResults: Record<string, any> = {};
+    if (!isIframe) return;
+    
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && typeof event.data === 'object') {
+        const firstName = (event.data as Record<string, unknown>).firstName || (event.data as Record<string, unknown>)['first-name'];
+        if (firstName && typeof firstName === 'string') {
+          setResults(prev => ({
+            ...prev,
+            '8_postmessage': {
+              value: {
+                origin: event.origin,
+                data: event.data,
+                firstName
+              },
+              success: true,
+              description: 'postMessage from parent window'
+            }
+          }));
+        }
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    
+    // Request parent to send data via postMessage
+    window.parent.postMessage({ type: 'request-parent-url' }, '*');
+    
+    return () => window.removeEventListener('message', handleMessage);
+  }, [isIframe]);
+
+  useEffect(() => {
+    const testResults: Record<string, TestResult> = {};
     
     // Test 1: Check if we're in an iframe
     const inIframe = typeof window !== 'undefined' && window.self !== window.top;
@@ -179,38 +217,7 @@ function AssistantDebugContent() {
       };
     }
 
-    // Test 8: postMessage listener
-    useEffect(() => {
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data && typeof event.data === 'object') {
-          const firstName = event.data.firstName || event.data['first-name'];
-          if (firstName) {
-            setResults(prev => ({
-              ...prev,
-              '8_postmessage': {
-                value: {
-                  origin: event.origin,
-                  data: event.data,
-                  firstName
-                },
-                success: true,
-                description: 'postMessage from parent window'
-              }
-            }));
-          }
-        }
-      };
-      
-      window.addEventListener('message', handleMessage);
-      
-      // Request parent to send data via postMessage
-      if (inIframe) {
-        window.parent.postMessage({ type: 'request-parent-url' }, '*');
-      }
-      
-      return () => window.removeEventListener('message', handleMessage);
-    }, [inIframe]);
-
+    // Test 8: postMessage listener (initialized in separate useEffect above)
     testResults['8_postmessage'] = {
       value: { waiting: true },
       success: false,
@@ -220,7 +227,7 @@ function AssistantDebugContent() {
     // Test 9: window.name (sometimes used to pass data)
     try {
       const windowName = typeof window !== 'undefined' ? window.name : '';
-      let nameData: any = null;
+      let nameData: Record<string, unknown> | string | null = null;
       try {
         nameData = windowName ? JSON.parse(windowName) : null;
       } catch {
@@ -247,7 +254,7 @@ function AssistantDebugContent() {
     testResults['10_template_variables'] = {
       value: {
         detected: hasTemplateVars,
-        variables: Object.entries(urlParams).filter(([_, v]) => v && (v.includes('{{') || v.includes('}}')))
+        variables: Object.entries(urlParams).filter(([, v]) => v && (v.includes('{{') || v.includes('}}')))
       },
       success: !hasTemplateVars,
       description: 'Template variables detected (Zapier not interpolating)'

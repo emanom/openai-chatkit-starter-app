@@ -60,7 +60,6 @@ function AssistantPageContent() {
       // Method 1: Try to access parent window's URL directly (works if same origin)
       if (window.self !== window.top) {
         try {
-          const parentUrl = window.parent.location.href;
           const parentParams = new URLSearchParams(window.parent.location.search);
           const parentFirstName = parentParams.get('first-name') || parentParams.get('first_name');
           if (parentFirstName) {

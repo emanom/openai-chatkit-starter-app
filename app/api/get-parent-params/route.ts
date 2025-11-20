@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 export async function GET(request: NextRequest) {
   const referer = request.headers.get('referer') || request.headers.get('referrer');
-  const allHeaders = Object.fromEntries(request.headers.entries());
   
   console.log('[get-parent-params] Referer:', referer);
   console.log('[get-parent-params] Request URL:', request.url);
