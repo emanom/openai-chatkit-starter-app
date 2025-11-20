@@ -266,14 +266,31 @@ function AssistantDebugContent() {
   }, [searchParams, isIframe]);
 
   // Extract the best firstName value found
-  const bestFirstName = Object.values(results).find(r => 
-    r?.success && 
-    (r.value?.['first-name'] || r.value?.firstName || r.value?.params?.['first-name'])
-  )?.value?.['first-name'] || 
-  Object.values(results).find(r => 
-    r?.value?.['first-name'] && !r.value['first-name'].includes('{{')
-  )?.value?.['first-name'] ||
-  null;
+  const getFirstNameFromValue = (value: unknown): string | null => {
+    if (!value || typeof value !== 'object') return null;
+    const obj = value as Record<string, unknown>;
+    const firstName = obj['first-name'] || obj.firstName || (obj.params && typeof obj.params === 'object' ? (obj.params as Record<string, unknown>)['first-name'] : null);
+    return typeof firstName === 'string' ? firstName : null;
+  };
+
+  const bestFirstName = (() => {
+    // First try: successful result without template variables
+    const successResult = Object.values(results).find(r => {
+      if (!r?.success) return false;
+      const firstName = getFirstNameFromValue(r.value);
+      return firstName && !firstName.includes('{{');
+    });
+    if (successResult) return getFirstNameFromValue(successResult.value);
+
+    // Second try: any result without template variables
+    const cleanResult = Object.values(results).find(r => {
+      const firstName = getFirstNameFromValue(r.value);
+      return firstName && !firstName.includes('{{');
+    });
+    if (cleanResult) return getFirstNameFromValue(cleanResult.value);
+
+    return null;
+  })();
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
