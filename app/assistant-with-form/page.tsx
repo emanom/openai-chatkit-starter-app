@@ -421,7 +421,7 @@ function AssistantWithFormContent() {
 
     window.addEventListener('message', handleMessage);
 
-    // Periodically check control object for conversation ID
+    // Periodically check control object and localStorage for conversation ID
     const checkInterval = setInterval(() => {
       if (conversationId) {
         clearInterval(checkInterval);
@@ -429,11 +429,67 @@ function AssistantWithFormContent() {
       }
       
       try {
+        // Check localStorage for conversation ID (ChatKit might store it)
+        try {
+          const storageKeys = Object.keys(localStorage);
+          for (const key of storageKeys) {
+            const value = localStorage.getItem(key);
+            if (value) {
+              const convIdMatch = value.match(/conv_[a-f0-9]{40,}/i);
+              if (convIdMatch) {
+                const convId = convIdMatch[0];
+                console.log("[AssistantWithForm] ✅ Found conversation ID in localStorage:", key, convId);
+                setConversationId(convId);
+                if (sessionId) {
+                  fetch('/api/store-conversation-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId, conversationId: convId }),
+                  }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                }
+                clearInterval(checkInterval);
+                return;
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('[AssistantWithForm] Could not check localStorage:', e);
+        }
+        
+        // Check ChatKit iframe URL for conversation ID
+        try {
+          const chatKitIframe = document.querySelector('iframe[src*="chatkit"], iframe[src*="openai"]') as HTMLIFrameElement | null;
+          if (chatKitIframe && chatKitIframe.src) {
+            const convIdMatch = chatKitIframe.src.match(/conv_[a-f0-9]{40,}/i);
+            if (convIdMatch) {
+              const convId = convIdMatch[0];
+              console.log("[AssistantWithForm] ✅ Found conversation ID in iframe URL:", convId);
+              setConversationId(convId);
+              if (sessionId) {
+                fetch('/api/store-conversation-id', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ sessionId, conversationId: convId }),
+                }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+              }
+              clearInterval(checkInterval);
+              return;
+            }
+          }
+        } catch (e) {
+          console.debug('[AssistantWithForm] Could not check iframe URL:', e);
+        }
+        
         if (chatkit.control) {
           const controlAny = chatkit.control as unknown as Record<string, unknown>;
           // Try to access any properties that might contain conversation ID
           const allKeys = Object.keys(controlAny);
-          console.log("[AssistantWithForm] Control object keys:", allKeys);
+          
+          // Only log keys on first check to avoid spam
+          if (checkInterval && !(checkInterval as unknown as { logged?: boolean }).logged) {
+            console.log("[AssistantWithForm] Control object keys:", allKeys);
+            (checkInterval as unknown as { logged?: boolean }).logged = true;
+          }
           
           // Check common property names
           for (const key of allKeys) {
@@ -475,7 +531,7 @@ function AssistantWithFormContent() {
           }
         }
       } catch (e) {
-        console.debug('[AssistantWithForm] Error checking control object:', e);
+        console.debug('[AssistantWithForm] Error checking for conversation ID:', e);
       }
     }, 2000); // Check every 2 seconds
 
