@@ -10,10 +10,12 @@ function AssistantPageContent() {
   const searchParams = useSearchParams();
   const [firstNameFromParent, setFirstNameFromParent] = useState<string | null>(null);
   
-  // Get first-name from query parameters
-  const firstNameFromUrlRaw = searchParams.get("first-name") || searchParams.get("firstName");
+  // Get first-name from query parameters (try multiple variations)
+  const firstNameFromUrlRaw = searchParams.get("first-name") || 
+                               searchParams.get("firstName") ||
+                               searchParams.get("firstname");
   
-  // Filter out template variables (like {{input.first-name}} from Zapier)
+  // Filter out template variables (like {{input.first-name}}, {{query.firstname}}, etc. from Zapier)
   const isTemplateVariable = firstNameFromUrlRaw && (
     firstNameFromUrlRaw.includes('{{') || 
     firstNameFromUrlRaw.includes('}}') ||
