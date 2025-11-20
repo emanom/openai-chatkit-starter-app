@@ -41,6 +41,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`[get-transcript] Retrieved transcript for session: ${sessionId}, ticket: ${ticketId || 'N/A'}`);
 
+    // Get the base URL for the conversation link
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                    'https://main.d2xcz3k9ugtvab.amplifyapp.com';
+    const conversationUrl = `${baseUrl}/conversation/${sessionId}`;
+
     // Return transcript in a format Zapier can use
     return NextResponse.json({
       success: true,
@@ -50,6 +56,9 @@ export async function POST(request: NextRequest) {
       timestamp: data.timestamp,
       // Format transcript for easy use in Zapier
       formattedTranscript: `Chat Conversation Transcript (Session: ${sessionId})\n\n${data.transcript}`,
+      // Conversation link for easy access
+      conversationUrl: conversationUrl,
+      conversationLink: `View full conversation: ${conversationUrl}`,
     });
   } catch (error) {
     console.error("[get-transcript] Error:", error);
@@ -87,6 +96,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Get the base URL for the conversation link
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                    'https://main.d2xcz3k9ugtvab.amplifyapp.com';
+    const conversationUrl = `${baseUrl}/conversation/${sessionId}`;
+
     return NextResponse.json({
       success: true,
       sessionId,
@@ -94,6 +109,8 @@ export async function GET(request: NextRequest) {
       transcript: data.transcript,
       timestamp: data.timestamp,
       formattedTranscript: `Chat Conversation Transcript (Session: ${sessionId})\n\n${data.transcript}`,
+      conversationUrl: conversationUrl,
+      conversationLink: `View full conversation: ${conversationUrl}`,
     });
   } catch (error) {
     console.error("[get-transcript] Error:", error);
