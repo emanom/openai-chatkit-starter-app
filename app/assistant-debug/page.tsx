@@ -233,12 +233,14 @@ function AssistantDebugContent() {
       } catch {
         nameData = windowName;
       }
+      const nameDataObj = nameData && typeof nameData === 'object' ? nameData as Record<string, unknown> : null;
+      const firstNameFromName = nameDataObj ? (nameDataObj['first-name'] || nameDataObj.firstName) : null;
       testResults['9_window_name'] = {
         value: {
           name: windowName,
           parsed: nameData
         },
-        success: !!(nameData && (nameData['first-name'] || nameData.firstName)),
+        success: !!(firstNameFromName),
         description: 'window.name property (sometimes used to pass data)'
       };
     } catch (e) {
