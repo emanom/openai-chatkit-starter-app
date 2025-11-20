@@ -96,17 +96,24 @@ function AssistantPageContent() {
         fetch('/api/get-parent-params')
           .then(res => res.json())
           .then(data => {
-            console.log('[AssistantPage] Parent params from API:', data);
-            if (data.params && (data.params['first-name'] || data.params['first_name'])) {
-              const apiFirstName = data.params['first-name'] || data.params['first_name'];
+            console.log('[AssistantPage] Parent params from API:', JSON.stringify(data, null, 2));
+            console.log('[AssistantPage] API params object:', data.params);
+            console.log('[AssistantPage] API referer:', data.referer);
+            if (data.params && (data.params['first-name'] || data.params['first_name'] || data.params['firstname'])) {
+              const apiFirstName = data.params['first-name'] || data.params['first_name'] || data.params['firstname'];
+              console.log('[AssistantPage] Found firstName in API params:', apiFirstName);
               if (apiFirstName && !apiFirstName.includes('{{')) {
                 console.log('[AssistantPage] Setting firstName from API:', apiFirstName);
                 setFirstNameFromParent(apiFirstName);
+              } else {
+                console.log('[AssistantPage] firstName contains template variable, ignoring');
               }
+            } else {
+              console.log('[AssistantPage] No firstName found in API params');
             }
           })
           .catch(e => {
-            console.debug('[AssistantPage] Error fetching parent params:', e);
+            console.error('[AssistantPage] Error fetching parent params:', e);
           });
       }
     }
