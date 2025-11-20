@@ -80,15 +80,17 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
   const threadId = getThreadId(sessionId);
   let data: { transcript: string; timestamp: number } | null = null;
   
+  console.log(`[ConversationPage] Session ID: ${sessionId}, Thread ID: ${threadId || 'not found'}`);
+  
   // If we have a thread ID, fetch transcript from ChatKit API
   if (threadId) {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
                       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
-                      'https://main.d2xcz3k9ugtvab.amplifyapp.com';
+                      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
       const apiUrl = `${baseUrl}/api/get-thread-transcript?threadId=${encodeURIComponent(threadId)}`;
       
-      console.log(`[ConversationPage] Fetching transcript for thread: ${threadId}`);
+      console.log(`[ConversationPage] Fetching transcript for thread: ${threadId} from ${apiUrl}`);
       const response = await fetch(apiUrl, {
         cache: 'no-store',
         headers: {
@@ -98,19 +100,30 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
       
       if (response.ok) {
         const result = await response.json();
+        console.log(`[ConversationPage] API response:`, { 
+          success: result.success, 
+          transcriptLength: result.transcript?.length || 0,
+          hasThreadData: !!result.threadData 
+        });
+        
         if (result.transcript && result.transcript.length > 0) {
-          console.log(`[ConversationPage] Retrieved transcript, length: ${result.transcript.length}`);
+          console.log(`[ConversationPage] ✅ Retrieved transcript, length: ${result.transcript.length}`);
           data = {
             transcript: result.transcript,
             timestamp: Date.now(), // Use current time since we don't have timestamp from API
           };
+        } else {
+          console.log(`[ConversationPage] ⚠️ Transcript is empty or missing in API response`);
         }
       } else {
-        console.error(`[ConversationPage] Failed to fetch thread transcript: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`[ConversationPage] ❌ Failed to fetch thread transcript: ${response.status}`, errorText);
       }
     } catch (error) {
-      console.error('[ConversationPage] Error fetching thread transcript:', error);
+      console.error('[ConversationPage] ❌ Error fetching thread transcript:', error);
     }
+  } else {
+    console.log(`[ConversationPage] ⚠️ No thread ID found for session: ${sessionId}`);
   }
   
   // Fallback: Try to get transcript from in-memory store
