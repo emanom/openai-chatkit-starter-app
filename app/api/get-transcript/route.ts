@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTranscript, getAllSessionIds } from "@/lib/transcript-store";
 import { getConversationId } from "@/lib/conversation-id-store";
+import { getThreadId } from "@/lib/thread-id-store";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,39 +15,75 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Retrieve transcript from store
-    // In production, this would query Redis or a database
-    const data = getTranscript(sessionId);
-    
-    if (!data) {
-      const allSessions = getAllSessionIds();
-      console.warn(`[get-transcript] Transcript not found for session: ${sessionId}, ticketId: ${ticketId || 'N/A'}`);
-      console.log(`[get-transcript] Available sessions (${allSessions.length}):`, allSessions.slice(0, 10));
-      return NextResponse.json(
-        { 
-          error: "Transcript not found",
-          sessionId,
-          transcript: "",
-          message: `No transcript found for session ID: ${sessionId}. Make sure the transcript was stored before the form was submitted.`,
-          availableSessions: allSessions.length,
-          debug: {
-            requestedSession: sessionId,
-            availableSessions: allSessions.slice(0, 5),
-          },
-        },
-        { status: 404 }
-      );
-    }
-    
-    console.log(`[get-transcript] Successfully retrieved transcript for session: ${sessionId}, length: ${data.transcript.length} characters`);
-
-    console.log(`[get-transcript] Retrieved transcript for session: ${sessionId}, ticket: ${ticketId || 'N/A'}`);
-
-    // Try to get OpenAI conversation ID
-    const openaiConversationId = getConversationId(sessionId);
+    // Try to get thread ID first - this gives us the best transcript source
+    const threadId = getThreadId(sessionId);
+    let transcript = "";
+    let formattedTranscript = "";
+    let openaiConversationId: string | null = null;
     let conversationUrl: string;
     let conversationLink: string;
     
+    // If we have a thread ID, fetch the transcript from ChatKit API (best quality)
+    if (threadId) {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                        process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                        'https://main.d2xcz3k9ugtvab.amplifyapp.com';
+        const threadApiUrl = `${baseUrl}/api/get-thread-transcript?sessionId=${encodeURIComponent(sessionId)}&threadId=${encodeURIComponent(threadId)}`;
+        
+        console.log(`[get-transcript] Fetching transcript from thread API: ${threadApiUrl}`);
+        const threadResponse = await fetch(threadApiUrl);
+        
+        if (threadResponse.ok) {
+          const threadData = await threadResponse.json();
+          transcript = threadData.transcript || "";
+          formattedTranscript = threadData.formattedTranscript || threadData.transcript || "";
+          openaiConversationId = threadData.conversationId || null;
+          
+          console.log(`[get-transcript] Successfully retrieved transcript from thread API, length: ${transcript.length} characters`);
+        } else {
+          console.warn(`[get-transcript] Thread API returned ${threadResponse.status}, falling back to stored transcript`);
+        }
+      } catch (error) {
+        console.error(`[get-transcript] Error fetching from thread API:`, error);
+      }
+    }
+    
+    // Fallback to stored transcript if thread API didn't work
+    if (!transcript) {
+      const data = getTranscript(sessionId);
+      
+      if (!data) {
+        const allSessions = getAllSessionIds();
+        console.warn(`[get-transcript] Transcript not found for session: ${sessionId}, ticketId: ${ticketId || 'N/A'}`);
+        console.log(`[get-transcript] Available sessions (${allSessions.length}):`, allSessions.slice(0, 10));
+        return NextResponse.json(
+          { 
+            error: "Transcript not found",
+            sessionId,
+            transcript: "",
+            message: `No transcript found for session ID: ${sessionId}. Make sure the transcript was stored before the form was submitted.`,
+            availableSessions: allSessions.length,
+            debug: {
+              requestedSession: sessionId,
+              availableSessions: allSessions.slice(0, 5),
+            },
+          },
+          { status: 404 }
+        );
+      }
+      
+      transcript = data.transcript;
+      formattedTranscript = `Chat Conversation Transcript (Session: ${sessionId})\n\n${data.transcript}`;
+      console.log(`[get-transcript] Successfully retrieved transcript from store, length: ${transcript.length} characters`);
+    }
+    
+    // Try to get OpenAI conversation ID if not already retrieved
+    if (!openaiConversationId) {
+      openaiConversationId = getConversationId(sessionId);
+    }
+    
+    // Build conversation URL
     if (openaiConversationId) {
       // Use OpenAI platform link
       conversationUrl = `https://platform.openai.com/logs/${openaiConversationId}`;
@@ -60,19 +97,19 @@ export async function POST(request: NextRequest) {
       conversationLink = `View conversation: ${conversationUrl}`;
     }
 
+    console.log(`[get-transcript] Retrieved transcript for session: ${sessionId}, ticket: ${ticketId || 'N/A'}`);
+
     // Return transcript in a format Zapier can use
     return NextResponse.json({
       success: true,
       sessionId,
       ticketId: ticketId || null,
-      transcript: data.transcript,
-      timestamp: data.timestamp,
-      // Format transcript for easy use in Zapier
-      formattedTranscript: `Chat Conversation Transcript (Session: ${sessionId})\n\n${data.transcript}`,
+      transcript: transcript,
+      formattedTranscript: formattedTranscript || `Chat Conversation Transcript (Session: ${sessionId})\n\n${transcript}`,
       // Conversation link for easy access
       conversationUrl: conversationUrl,
       conversationLink: conversationLink,
-      openaiConversationId: openaiConversationId || null,
+      openaiConversationId: openaiConversationId,
     });
   } catch (error) {
     console.error("[get-transcript] Error:", error);
@@ -97,34 +134,75 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const data = getTranscript(sessionId);
+    // Try to get thread ID first - this gives us the best transcript source
+    const threadId = getThreadId(sessionId);
+    let transcript = "";
+    let formattedTranscript = "";
+    let openaiConversationId: string | null = null;
     
-    if (!data) {
-      return NextResponse.json(
-        { 
-          error: "Transcript not found",
-          sessionId,
-          transcript: "",
-        },
-        { status: 404 }
-      );
+    // If we have a thread ID, fetch the transcript from ChatKit API (best quality)
+    if (threadId) {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                        process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                        'https://main.d2xcz3k9ugtvab.amplifyapp.com';
+        const threadApiUrl = `${baseUrl}/api/get-thread-transcript?sessionId=${encodeURIComponent(sessionId)}&threadId=${encodeURIComponent(threadId)}`;
+        
+        const threadResponse = await fetch(threadApiUrl);
+        
+        if (threadResponse.ok) {
+          const threadData = await threadResponse.json();
+          transcript = threadData.transcript || "";
+          formattedTranscript = threadData.formattedTranscript || threadData.transcript || "";
+          openaiConversationId = threadData.conversationId || null;
+        }
+      } catch (error) {
+        console.error(`[get-transcript] Error fetching from thread API:`, error);
+      }
+    }
+    
+    // Fallback to stored transcript if thread API didn't work
+    if (!transcript) {
+      const data = getTranscript(sessionId);
+      
+      if (!data) {
+        return NextResponse.json(
+          { 
+            error: "Transcript not found",
+            sessionId,
+            transcript: "",
+          },
+          { status: 404 }
+        );
+      }
+      
+      transcript = data.transcript;
+      formattedTranscript = `Chat Conversation Transcript (Session: ${sessionId})\n\n${data.transcript}`;
+    }
+    
+    // Try to get OpenAI conversation ID if not already retrieved
+    if (!openaiConversationId) {
+      openaiConversationId = getConversationId(sessionId);
     }
 
     // Get the base URL for the conversation link
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
                     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
                     'https://main.d2xcz3k9ugtvab.amplifyapp.com';
-    const conversationUrl = `${baseUrl}/conversation/${sessionId}`;
+    
+    const conversationUrl = openaiConversationId
+      ? `https://platform.openai.com/logs/${openaiConversationId}`
+      : `${baseUrl}/conversation/${sessionId}`;
 
     return NextResponse.json({
       success: true,
       sessionId,
       ticketId: ticketId || null,
-      transcript: data.transcript,
-      timestamp: data.timestamp,
-      formattedTranscript: `Chat Conversation Transcript (Session: ${sessionId})\n\n${data.transcript}`,
+      transcript: transcript,
+      formattedTranscript: formattedTranscript || `Chat Conversation Transcript (Session: ${sessionId})\n\n${transcript}`,
       conversationUrl: conversationUrl,
       conversationLink: `View full conversation: ${conversationUrl}`,
+      openaiConversationId: openaiConversationId,
     });
   } catch (error) {
     console.error("[get-transcript] Error:", error);
