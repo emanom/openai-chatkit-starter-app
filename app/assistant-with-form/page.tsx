@@ -93,6 +93,7 @@ function AssistantWithFormContent() {
   const [firstName, setFirstName] = useState<string | null>(null);
   const [iframeSrc, setIframeSrc] = useState<string>("");
   const [sessionId, setSessionId] = useState<string>("");
+  const [conversationId, setConversationId] = useState<string | null>(null);
   
   // Generate a unique session ID on mount
   useEffect(() => {
@@ -132,7 +133,7 @@ function AssistantWithFormContent() {
       }
       setIframeSrc(zapierFormUrl.toString());
     }
-  }, [firstNameFromUrl, sessionId]);
+  }, [firstNameFromUrl, sessionId, conversationId]);
   
   // Function to store transcript
   const storeTranscript = useCallback(async (transcriptText: string) => {
@@ -262,7 +263,26 @@ function AssistantWithFormContent() {
     }
 
     const data = await response.json();
-    console.log("[AssistantWithForm] Session created successfully");
+    console.log("[AssistantWithForm] Session created successfully", data);
+    
+    // Try to extract conversation ID from the response
+    // OpenAI ChatKit might return conversation_id, thread_id, or id in the response
+    const convId = (data.conversation_id || data.thread_id || data.id || data.conversationId) as string | undefined;
+    if (convId && typeof convId === 'string') {
+      console.log("[AssistantWithForm] Found conversation ID:", convId);
+      setConversationId(convId);
+      // Store the conversation ID mapping
+      if (sessionId) {
+        fetch('/api/store-conversation-id', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, conversationId: convId }),
+        }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+      }
+    } else {
+      console.log("[AssistantWithForm] No conversation ID found in response. Available fields:", Object.keys(data));
+    }
+    
     return data.client_secret as string;
   }, []);
 

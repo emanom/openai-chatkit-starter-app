@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTranscript, getAllSessionIds } from "@/lib/transcript-store";
+import { getConversationId } from "@/lib/conversation-id-store";
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,11 +42,23 @@ export async function POST(request: NextRequest) {
 
     console.log(`[get-transcript] Retrieved transcript for session: ${sessionId}, ticket: ${ticketId || 'N/A'}`);
 
-    // Get the base URL for the conversation link
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
-                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
-                    'https://main.d2xcz3k9ugtvab.amplifyapp.com';
-    const conversationUrl = `${baseUrl}/conversation/${sessionId}`;
+    // Try to get OpenAI conversation ID
+    const openaiConversationId = getConversationId(sessionId);
+    let conversationUrl: string;
+    let conversationLink: string;
+    
+    if (openaiConversationId) {
+      // Use OpenAI platform link
+      conversationUrl = `https://platform.openai.com/logs/${openaiConversationId}`;
+      conversationLink = `View conversation in OpenAI Platform: ${conversationUrl}`;
+    } else {
+      // Fallback to our conversation page
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+                      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                      'https://main.d2xcz3k9ugtvab.amplifyapp.com';
+      conversationUrl = `${baseUrl}/conversation/${sessionId}`;
+      conversationLink = `View conversation: ${conversationUrl}`;
+    }
 
     // Return transcript in a format Zapier can use
     return NextResponse.json({
@@ -58,7 +71,8 @@ export async function POST(request: NextRequest) {
       formattedTranscript: `Chat Conversation Transcript (Session: ${sessionId})\n\n${data.transcript}`,
       // Conversation link for easy access
       conversationUrl: conversationUrl,
-      conversationLink: `View full conversation: ${conversationUrl}`,
+      conversationLink: conversationLink,
+      openaiConversationId: openaiConversationId || null,
     });
   } catch (error) {
     console.error("[get-transcript] Error:", error);
