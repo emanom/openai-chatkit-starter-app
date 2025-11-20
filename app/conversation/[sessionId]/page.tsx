@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
-async function ConversationContent({ sessionId }: { sessionId: string }) {
+async function ConversationContent({ sessionId, threadIdParam }: { sessionId: string; threadIdParam?: string }) {
   // Try to get OpenAI conversation ID first
   const { getConversationId } = await import("@/lib/conversation-id-store");
   let openaiConversationId = getConversationId(sessionId);
@@ -77,7 +77,8 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
 
   // Try to get thread ID and fetch transcript from ChatKit API
   const { getThreadId } = await import("@/lib/thread-id-store");
-  let threadId = getThreadId(sessionId);
+  // Use threadId from URL parameter if provided, otherwise look it up
+  let threadId = threadIdParam || getThreadId(sessionId);
   
   // If not found in store, try fetching from API (for serverless environments)
   if (!threadId) {
@@ -276,8 +277,10 @@ async function ConversationContent({ sessionId }: { sessionId: string }) {
 
 export default function ConversationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ sessionId: string }>;
+  searchParams: Promise<{ threadId?: string }>;
 }) {
   return (
     <Suspense
@@ -287,17 +290,20 @@ export default function ConversationPage({
         </div>
       }
     >
-      <ConversationPageContent params={params} />
+      <ConversationPageContent params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
 async function ConversationPageContent({
   params,
+  searchParams,
 }: {
   params: Promise<{ sessionId: string }>;
+  searchParams: Promise<{ threadId?: string }>;
 }) {
   const { sessionId } = await params;
-  return <ConversationContent sessionId={sessionId} />;
+  const { threadId } = await searchParams;
+  return <ConversationContent sessionId={sessionId} threadIdParam={threadId} />;
 }
 

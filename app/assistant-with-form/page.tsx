@@ -247,8 +247,11 @@ function AssistantWithFormContent() {
           zapierFormUrl.searchParams.set("conversation-link", openaiConversationUrl);
           zapierFormUrl.searchParams.set("openai-conversation-id", conversationId);
         } else {
-          // Fallback to our conversation page
-          const conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
+          // Fallback to our conversation page - include threadId if available
+          let conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
+          if (threadId) {
+            conversationUrl += `?threadId=${encodeURIComponent(threadId)}`;
+          }
           zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
         }
       }
@@ -268,8 +271,11 @@ function AssistantWithFormContent() {
           zapierFormUrl.searchParams.set("conversation-link", openaiConversationUrl);
           zapierFormUrl.searchParams.set("openai-conversation-id", conversationId);
         } else {
-          // Fallback to our conversation page
-          const conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
+          // Fallback to our conversation page - include threadId if available
+          let conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
+          if (threadId) {
+            conversationUrl += `?threadId=${encodeURIComponent(threadId)}`;
+          }
           zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
         }
       }

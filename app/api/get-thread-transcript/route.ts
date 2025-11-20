@@ -271,6 +271,9 @@ function buildFormattedTranscript(thread: ThreadResponse): string {
 
   const messages: string[] = [];
   
+  // Add timezone indicator at the top
+  messages.push("Timezone: ACST (Australia/Adelaide)\n");
+  
   // Sort items by created_at (oldest first) if available
   const sortedItems = [...thread.items.data].sort((a, b) => {
     const aTime = (a as { created_at?: number }).created_at || 0;
@@ -309,10 +312,29 @@ function buildFormattedTranscript(thread: ThreadResponse): string {
     }
     
     if (text && text.trim().length > 0) {
-      // Format with timestamp if available
+      // Format with timestamp in Adelaide timezone if available
       const timestamp = (item as { created_at?: number }).created_at;
-      const timeStr = timestamp ? new Date(timestamp * 1000).toLocaleString() : '';
-      const header = timeStr ? `[${timeStr}] ${role}:` : `${role}:`;
+      let timeStr = '';
+      if (timestamp) {
+        try {
+          const date = new Date(timestamp * 1000);
+          // Format in Adelaide timezone (Australia/Adelaide)
+          timeStr = date.toLocaleString('en-AU', {
+            timeZone: 'Australia/Adelaide',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+          });
+        } catch (e) {
+          // Fallback to ISO string if timezone conversion fails
+          timeStr = new Date(timestamp * 1000).toISOString();
+        }
+      }
+      const header = timeStr ? `[${timeStr} ACST] ${role}:` : `${role}:`;
       messages.push(`${header}\n${text.trim()}\n`);
     }
   }
