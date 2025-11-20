@@ -6,6 +6,7 @@ import { getThreadId } from "@/lib/thread-id-store";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    // ticketId is optional - can be used before or after ticket creation
     const { sessionId, ticketId, threadId: threadIdFromBody } = body;
 
     if (!sessionId && !threadIdFromBody) {
