@@ -10,69 +10,104 @@ function extractTranscript(): string {
   try {
     const messages: string[] = [];
     
-    // Method 1: Try to find shadow root by searching all elements
-    const allElements = document.querySelectorAll('*');
-    let shadowRoot: ShadowRoot | null = null;
+    // Method 1: Try to access ChatKit iframe content (may fail due to CORS)
+    try {
+      const chatKitIframe = document.querySelector('iframe[src*="chatkit"], iframe[src*="openai"], iframe[src*="cdn.platform"]') as HTMLIFrameElement | null;
+      if (chatKitIframe && chatKitIframe.contentDocument) {
+        const iframeDoc = chatKitIframe.contentDocument;
+        const iframeThreadTurns = iframeDoc.querySelectorAll('[data-thread-turn]');
+        console.log(`[extractTranscript] Found ${iframeThreadTurns.length} thread turns in iframe`);
+        
+        iframeThreadTurns.forEach((turn) => {
+          const role = turn.getAttribute('data-message-role') || 
+                      turn.getAttribute('data-role') || 
+                      'unknown';
+          const text = turn.textContent?.trim();
+          
+          if (text && text.length > 0) {
+            const roleLabel = role === 'user' ? 'User' : 
+                             role === 'assistant' ? 'Assistant' : 
+                             'System';
+            messages.push(`${roleLabel}: ${text}`);
+          }
+        });
+      }
+    } catch (e) {
+      console.debug('[extractTranscript] Cannot access iframe content (CORS):', e);
+    }
     
-    for (const element of allElements) {
-      if (element.shadowRoot) {
-        // Check if this shadow root contains ChatKit messages
-        const hasThreadTurns = element.shadowRoot.querySelectorAll('[data-thread-turn]').length > 0;
-        if (hasThreadTurns) {
-          shadowRoot = element.shadowRoot;
-          break;
+    // Method 2: Try to find shadow root by searching all elements
+    if (messages.length === 0) {
+      const allElements = document.querySelectorAll('*');
+      let shadowRoot: ShadowRoot | null = null;
+      
+      for (const element of allElements) {
+        if (element.shadowRoot) {
+          // Check if this shadow root contains ChatKit messages
+          const hasThreadTurns = element.shadowRoot.querySelectorAll('[data-thread-turn]').length > 0;
+          if (hasThreadTurns) {
+            shadowRoot = element.shadowRoot;
+            break;
+          }
         }
+      }
+
+      if (shadowRoot) {
+        // Extract messages from shadow DOM
+        const threadTurns = shadowRoot.querySelectorAll('[data-thread-turn]');
+        console.log(`[extractTranscript] Found ${threadTurns.length} thread turns in shadow DOM`);
+        
+        threadTurns.forEach((turn) => {
+          const role = turn.getAttribute('data-message-role') || 
+                      turn.getAttribute('data-role') || 
+                      'unknown';
+          const text = turn.textContent?.trim();
+          
+          if (text && text.length > 0) {
+            const roleLabel = role === 'user' ? 'User' : 
+                             role === 'assistant' ? 'Assistant' : 
+                             'System';
+            messages.push(`${roleLabel}: ${text}`);
+          }
+        });
       }
     }
 
-    if (shadowRoot) {
-      // Extract messages from shadow DOM
-      const threadTurns = shadowRoot.querySelectorAll('[data-thread-turn]');
-      
-      threadTurns.forEach((turn) => {
-        const role = turn.getAttribute('data-message-role') || 
-                    turn.getAttribute('data-role') || 
-                    'unknown';
-        const text = turn.textContent?.trim();
-        
-        if (text && text.length > 0) {
-          const roleLabel = role === 'user' ? 'User' : 
-                           role === 'assistant' ? 'Assistant' : 
-                           'System';
-          messages.push(`${roleLabel}: ${text}`);
-        }
-      });
-    }
-
-    // Method 2: Fallback - try to find messages in regular DOM (if shadow root not found)
+    // Method 3: Fallback - try to find messages in regular DOM (if shadow root not found)
     if (messages.length === 0) {
-      const userMessages = document.querySelectorAll(
-        '[data-thread-turn][data-message-role="user"], ' +
-        '[data-thread-turn][data-role="user"], ' +
-        '[data-message-role="user"], ' +
-        '[data-role="user"]'
-      );
+      // Try various selectors that ChatKit might use
+      const selectors = [
+        '[data-thread-turn]',
+        '[data-message-role="user"]',
+        '[data-message-role="assistant"]',
+        '[data-role="user"]',
+        '[data-role="assistant"]',
+        '[class*="message"]',
+        '[class*="turn"]',
+        '[class*="user-message"]',
+        '[class*="assistant-message"]',
+      ];
       
-      const assistantMessages = document.querySelectorAll(
-        '[data-thread-turn][data-message-role="assistant"], ' +
-        '[data-thread-turn][data-role="assistant"], ' +
-        '[data-message-role="assistant"], ' +
-        '[data-role="assistant"]'
-      );
-      
-      userMessages.forEach((msg) => {
-        const text = msg.textContent?.trim();
-        if (text && text.length > 0) {
-          messages.push(`User: ${text}`);
-        }
-      });
-      
-      assistantMessages.forEach((msg) => {
-        const text = msg.textContent?.trim();
-        if (text && text.length > 0) {
-          messages.push(`Assistant: ${text}`);
-        }
-      });
+      for (const selector of selectors) {
+        const elements = document.querySelectorAll(selector);
+        console.log(`[extractTranscript] Found ${elements.length} elements with selector: ${selector}`);
+        
+        elements.forEach((element) => {
+          const text = element.textContent?.trim();
+          if (text && text.length > 0 && !messages.includes(`User: ${text}`) && !messages.includes(`Assistant: ${text}`)) {
+            // Try to determine role from attributes or class names
+            const role = element.getAttribute('data-message-role') || 
+                        element.getAttribute('data-role') ||
+                        (element.className.includes('user') ? 'user' : 
+                         element.className.includes('assistant') ? 'assistant' : 'unknown');
+            
+            const roleLabel = role === 'user' ? 'User' : 
+                             role === 'assistant' ? 'Assistant' : 
+                             'System';
+            messages.push(`${roleLabel}: ${text}`);
+          }
+        });
+      }
     }
 
     // Remove duplicates and clean up
@@ -80,6 +115,9 @@ function extractTranscript(): string {
     const transcript = uniqueMessages.join('\n\n');
     
     console.log(`[extractTranscript] Extracted ${uniqueMessages.length} messages`);
+    if (uniqueMessages.length > 0) {
+      console.log(`[extractTranscript] Sample messages:`, uniqueMessages.slice(0, 3));
+    }
     return transcript;
   } catch (error) {
     console.error("[extractTranscript] Error extracting transcript:", error);
@@ -382,6 +420,8 @@ function AssistantWithFormContent() {
   useEffect(() => {
     if (!chatkit.control || conversationId) return;
 
+    let hasLoggedKeys = false; // Track if we've logged the control keys
+
     // Listen for postMessage events from ChatKit iframe
     const handleMessage = (event: MessageEvent) => {
       // Check if message contains conversation ID
@@ -486,9 +526,9 @@ function AssistantWithFormContent() {
           const allKeys = Object.keys(controlAny);
           
           // Only log keys on first check to avoid spam
-          if (checkInterval && !(checkInterval as unknown as { logged?: boolean }).logged) {
+          if (!hasLoggedKeys) {
             console.log("[AssistantWithForm] Control object keys:", allKeys);
-            (checkInterval as unknown as { logged?: boolean }).logged = true;
+            hasLoggedKeys = true;
           }
           
           // Check common property names
