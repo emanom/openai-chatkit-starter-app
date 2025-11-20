@@ -141,21 +141,28 @@ function AssistantWithFormContent() {
       </div>
       
       {/* Zapier Form Section */}
-      <div className="border-t border-gray-200" style={{ height: '600px', minHeight: '600px' }}>
-        <div className="h-full w-full">
+      <div className="border-t border-gray-200 bg-gray-50 p-6">
+        <div className="max-w-2xl mx-auto">
+          <h2 className="text-2xl font-bold mb-4">Submit Support Request</h2>
+          <p className="text-gray-600 mb-6">
+            {firstName 
+              ? `Hi ${firstName}! Use the form below to submit a support request with additional details.`
+              : "Use the form below to submit a support request with additional details."}
+          </p>
           {iframeSrc && (
-            <iframe
-              title="Support Request Form"
-              src={iframeSrc}
-              style={{
-                width: "100%",
-                height: "100%",
-                border: "none",
-              }}
-              allow="forms"
-              sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-            />
+            <a
+              href={iframeSrc}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors"
+            >
+              Open Support Request Form
+              {firstName && ` (for ${firstName})`}
+            </a>
           )}
+          <p className="text-sm text-gray-500 mt-4">
+            The form will open in a new window. {firstName && `Your name (${firstName}) will be pre-filled in the form.`}
+          </p>
         </div>
       </div>
     </div>
