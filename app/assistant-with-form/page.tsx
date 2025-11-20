@@ -117,9 +117,16 @@ function AssistantWithFormContent() {
       zapierFormUrl.searchParams.set("first-name", firstNameFromUrl);
       if (sessionId) {
         zapierFormUrl.searchParams.set("chat-session-id", sessionId);
-        // Also pass the conversation link URL
-        const conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
-        zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
+        // Pass OpenAI conversation link if available
+        if (conversationId) {
+          const openaiConversationUrl = `https://platform.openai.com/logs/${conversationId}`;
+          zapierFormUrl.searchParams.set("conversation-link", openaiConversationUrl);
+          zapierFormUrl.searchParams.set("openai-conversation-id", conversationId);
+        } else {
+          // Fallback to our conversation page
+          const conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
+          zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
+        }
       }
       setIframeSrc(zapierFormUrl.toString());
     } else {
@@ -127,9 +134,16 @@ function AssistantWithFormContent() {
       const zapierFormUrl = new URL("https://fyi-support-centre.zapier.app/support-request-form");
       if (sessionId) {
         zapierFormUrl.searchParams.set("chat-session-id", sessionId);
-        // Also pass the conversation link URL
-        const conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
-        zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
+        // Pass OpenAI conversation link if available
+        if (conversationId) {
+          const openaiConversationUrl = `https://platform.openai.com/logs/${conversationId}`;
+          zapierFormUrl.searchParams.set("conversation-link", openaiConversationUrl);
+          zapierFormUrl.searchParams.set("openai-conversation-id", conversationId);
+        } else {
+          // Fallback to our conversation page
+          const conversationUrl = `${window.location.origin}/conversation/${sessionId}`;
+          zapierFormUrl.searchParams.set("conversation-link", conversationUrl);
+        }
       }
       setIframeSrc(zapierFormUrl.toString());
     }
