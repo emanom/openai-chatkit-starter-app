@@ -384,22 +384,26 @@ function AssistantWithFormContent() {
 
     // Try to extract conversation ID from network requests
     const originalFetch = window.fetch;
+    let fetchIntercepted = false;
+    
     window.fetch = async function(...args) {
       const response = await originalFetch(...args);
       
       // Check if this is a ChatKit API request that might contain conversation ID
       const url = args[0] as string;
-      if (typeof url === 'string' && (url.includes('chatkit') || url.includes('openai.com'))) {
+      if (typeof url === 'string' && (url.includes('chatkit') || url.includes('openai.com') || url.includes('chatgpt.com'))) {
         try {
           // Clone response to read it without consuming the stream
           const clonedResponse = response.clone();
           const text = await clonedResponse.text();
           
-          // Look for conversation ID in response
+          console.log("[AssistantWithForm] Checking network response for conversation ID:", url.substring(0, 100));
+          
+          // Look for conversation ID in response (conv_ followed by hex)
           const convIdMatch = text.match(/conv_[a-f0-9]{40,}/i);
           if (convIdMatch) {
             const convId = convIdMatch[0];
-            console.log("[AssistantWithForm] Found conversation ID in network response:", convId);
+            console.log("[AssistantWithForm] ✅ Found conversation ID in network response:", convId);
             setConversationId(convId);
             if (sessionId) {
               fetch('/api/store-conversation-id', {
@@ -408,8 +412,33 @@ function AssistantWithFormContent() {
                 body: JSON.stringify({ sessionId, conversationId: convId }),
               }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
             }
-            // Restore original fetch
-            window.fetch = originalFetch;
+            // Stop intercepting once we found it
+            if (!fetchIntercepted) {
+              fetchIntercepted = true;
+              window.fetch = originalFetch;
+            }
+          } else {
+            // Also check response headers
+            const locationHeader = response.headers.get('location');
+            if (locationHeader) {
+              const convIdInLocation = locationHeader.match(/conv_[a-f0-9]{40,}/i);
+              if (convIdInLocation) {
+                const convId = convIdInLocation[0];
+                console.log("[AssistantWithForm] ✅ Found conversation ID in location header:", convId);
+                setConversationId(convId);
+                if (sessionId) {
+                  fetch('/api/store-conversation-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId, conversationId: convId }),
+                  }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                }
+                if (!fetchIntercepted) {
+                  fetchIntercepted = true;
+                  window.fetch = originalFetch;
+                }
+              }
+            }
           }
         } catch (e) {
           console.debug('[AssistantWithForm] Could not parse network response:', e);
@@ -420,7 +449,9 @@ function AssistantWithFormContent() {
     };
 
     return () => {
-      window.fetch = originalFetch;
+      if (!fetchIntercepted) {
+        window.fetch = originalFetch;
+      }
     };
   }, [chatkit.control, conversationId, sessionId]);
 
