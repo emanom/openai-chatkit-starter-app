@@ -378,7 +378,7 @@ function AssistantWithFormContent() {
     
     // Now navigate to the form
     window.location.href = targetUrl;
-  }, [sessionId, storeTranscript]);
+  }, [sessionId, storeTranscript, iframeSrc]);
   
   // Create personalized greeting
   const greeting = useMemo(() => {
