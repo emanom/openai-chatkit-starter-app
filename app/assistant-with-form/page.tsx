@@ -132,12 +132,67 @@ function AssistantWithFormContent() {
   const [iframeSrc, setIframeSrc] = useState<string>("");
   const [sessionId, setSessionId] = useState<string>("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
   
   // Generate a unique session ID on mount
   useEffect(() => {
     const id = `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     setSessionId(id);
   }, []);
+  
+  // Intercept fetch requests globally to capture conversation ID from ChatKit API responses
+  useEffect(() => {
+    if (conversationIdRef.current) return; // Already found
+    
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      
+      // Check if this is a ChatKit conversation API request
+      const url = args[0];
+      if (typeof url === 'string' && url.includes('/v1/chatkit/conversation')) {
+        try {
+          // Clone the response so we can read it without consuming it
+          const clonedResponse = response.clone();
+          const data = await clonedResponse.json().catch(() => null);
+          
+          if (data && typeof data === 'object') {
+            // Look for conversation ID in various possible fields
+            const convId = (data.id || data.conversation_id || data.conversationId || 
+                          data.conversation?.id || data.thread?.id) as string | undefined;
+            
+            if (convId && typeof convId === 'string' && convId.startsWith('conv_')) {
+              console.log("[AssistantWithForm] ✅ Found conversation ID in fetch response:", convId);
+              conversationIdRef.current = convId;
+              setConversationId(convId);
+              
+              // Store the conversation ID mapping
+              const currentSessionId = sessionId || `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+              fetch('/api/store-conversation-id', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId: currentSessionId, conversationId: convId }),
+              }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+              
+              // Restore original fetch once we've found the ID
+              window.fetch = originalFetch;
+            }
+          }
+        } catch (e) {
+          console.debug('[AssistantWithForm] Could not parse fetch response:', e);
+        }
+      }
+      
+      return response;
+    };
+    
+    return () => {
+      // Restore original fetch on cleanup
+      if (window.fetch !== originalFetch) {
+        window.fetch = originalFetch;
+      }
+    };
+  }, [sessionId]);
   
   // Get first-name from query parameters (try multiple variations)
   const firstNameFromUrl = searchParams.get("first-name") || 
