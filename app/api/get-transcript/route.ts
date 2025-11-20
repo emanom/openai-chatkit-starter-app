@@ -18,16 +18,19 @@ export async function POST(request: NextRequest) {
     const data = getTranscript(sessionId);
     
     if (!data) {
-      console.warn(`[get-transcript] Transcript not found for session: ${sessionId}`);
+      console.warn(`[get-transcript] Transcript not found for session: ${sessionId}, ticketId: ${ticketId || 'N/A'}`);
       return NextResponse.json(
         { 
           error: "Transcript not found",
           sessionId,
           transcript: "",
+          message: `No transcript found for session ID: ${sessionId}. Make sure the transcript was stored before the form was submitted.`,
         },
         { status: 404 }
       );
     }
+    
+    console.log(`[get-transcript] Successfully retrieved transcript for session: ${sessionId}, length: ${data.transcript.length} characters`);
 
     console.log(`[get-transcript] Retrieved transcript for session: ${sessionId}, ticket: ${ticketId || 'N/A'}`);
 

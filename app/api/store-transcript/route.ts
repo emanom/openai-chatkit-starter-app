@@ -16,7 +16,8 @@ export async function POST(request: NextRequest) {
     // Store transcript
     storeTranscript(sessionId, transcript);
 
-    console.log(`[store-transcript] Stored transcript for session: ${sessionId}`);
+    const transcriptLength = typeof transcript === "string" ? transcript.length : JSON.stringify(transcript).length;
+    console.log(`[store-transcript] Stored transcript for session: ${sessionId}, length: ${transcriptLength} characters`);
 
     return NextResponse.json({ success: true, sessionId });
   } catch (error) {

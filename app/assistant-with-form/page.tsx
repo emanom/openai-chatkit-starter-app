@@ -126,30 +126,92 @@ function AssistantWithFormContent() {
     }
   }, [firstNameFromUrl, sessionId]);
   
+  // Function to store transcript
+  const storeTranscript = useCallback(async (transcriptText: string) => {
+    if (!sessionId || !transcriptText) {
+      console.warn('[AssistantWithForm] Cannot store transcript: missing sessionId or transcript');
+      return false;
+    }
+
+    try {
+      const response = await fetch('/api/store-transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, transcript: transcriptText }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[AssistantWithForm] Failed to store transcript:', response.status, errorText);
+        return false;
+      }
+
+      const result = await response.json();
+      console.log('[AssistantWithForm] Transcript stored successfully for session:', sessionId, 'Length:', transcriptText.length);
+      return true;
+    } catch (error) {
+      console.error('[AssistantWithForm] Error storing transcript:', error);
+      return false;
+    }
+  }, [sessionId]);
+
+  // Periodically store transcript as conversation progresses
+  useEffect(() => {
+    if (!chatkit.control || !sessionId) return;
+
+    const interval = setInterval(() => {
+      const transcript = extractTranscript();
+      if (transcript && transcript.length > 0) {
+        storeTranscript(transcript).catch(err => {
+          console.error('[AssistantWithForm] Error in periodic transcript storage:', err);
+        });
+      }
+    }, 10000); // Store every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [chatkit.control, sessionId, storeTranscript]);
+
   // Function to handle form link click - extract and store transcript
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    // Extract transcript before navigating
-    const transcript = extractTranscript();
+    e.preventDefault(); // Prevent default navigation
     
-    if (transcript && sessionId) {
-      try {
-        // Store transcript on server
-        await fetch('/api/store-transcript', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, transcript }),
-        });
-        console.log('[AssistantWithForm] Transcript stored for session:', sessionId);
-      } catch (error) {
-        console.error('[AssistantWithForm] Failed to store transcript:', error);
-        // Continue navigation even if storage fails
-      }
-    } else {
-      console.warn('[AssistantWithForm] No transcript or sessionId available');
+    const link = e.currentTarget;
+    const targetUrl = link.href;
+    
+    // Try to extract transcript with retries (ChatKit might need a moment to render)
+    let transcript = extractTranscript();
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while ((!transcript || transcript.length === 0) && attempts < maxAttempts) {
+      attempts++;
+      console.log(`[AssistantWithForm] Attempt ${attempts} to extract transcript...`);
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms between attempts
+      transcript = extractTranscript();
     }
     
-    // Allow default navigation
-  }, [sessionId]);
+    console.log('[AssistantWithForm] Final transcript length:', transcript.length, 'SessionId:', sessionId);
+    
+    if (transcript && transcript.length > 0 && sessionId) {
+      // Store transcript and wait for it to complete
+      const stored = await storeTranscript(transcript);
+      if (!stored) {
+        console.error('[AssistantWithForm] Transcript storage failed! SessionId:', sessionId);
+        // Still continue navigation, but log the error
+      } else {
+        console.log('[AssistantWithForm] Transcript stored successfully before navigation');
+      }
+    } else {
+      console.warn('[AssistantWithForm] No transcript to store. Transcript length:', transcript.length, 'SessionId:', sessionId);
+      // Still try to store an empty transcript or at least log the session ID for debugging
+      if (sessionId) {
+        await storeTranscript('No conversation transcript available at time of form submission.');
+      }
+    }
+    
+    // Now navigate to the form
+    window.location.href = targetUrl;
+  }, [sessionId, storeTranscript]);
   
   // Create personalized greeting
   const greeting = useMemo(() => {
