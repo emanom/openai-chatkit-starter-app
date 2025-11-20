@@ -169,8 +169,6 @@ function AssistantWithFormContent() {
           {iframeSrc && (
             <a
               href={iframeSrc}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors"
             >
               Open Support Request Form
@@ -178,7 +176,7 @@ function AssistantWithFormContent() {
             </a>
           )}
           <p className="text-sm text-gray-500 mt-4">
-            The form will open in a new window. {firstName && `Your name (${firstName}) will be pre-filled in the form.`}
+            {firstName && `Your name (${firstName}) will be pre-filled in the form.`}
           </p>
         </div>
       </div>
