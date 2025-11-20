@@ -38,14 +38,31 @@ function AssistantWithFormContent() {
     return "Hi! How can I help you today?";
   }, [firstName]);
 
-  const getClientSecret = useCallback(async () => {
+  const getClientSecret = useCallback(async (currentSecret: string | null) => {
+    if (currentSecret) return currentSecret;
+
+    console.log("[AssistantWithForm] Creating ChatKit session...");
+    
     const response = await fetch(CREATE_SESSION_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workflowId: WORKFLOW_ID }),
+      body: JSON.stringify({
+        workflow: { id: WORKFLOW_ID },
+        chatkit_configuration: {
+          file_upload: { enabled: true },
+        },
+      }),
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[AssistantWithForm] Session creation failed:", response.status, errorText);
+      throw new Error("Failed to create session: " + response.status);
+    }
+
     const data = await response.json();
-    return data.clientSecret;
+    console.log("[AssistantWithForm] Session created successfully");
+    return data.client_secret as string;
   }, []);
 
   const chatkit = useChatKit({
