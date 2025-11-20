@@ -101,7 +101,19 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function buildTranscript(thread: any): string {
+interface ThreadItem {
+  type?: string;
+  content?: Array<{ text?: string; content?: string }> | string;
+  text?: string;
+}
+
+interface ThreadResponse {
+  items?: {
+    data?: ThreadItem[];
+  };
+}
+
+function buildTranscript(thread: ThreadResponse): string {
   if (!thread.items?.data || !Array.isArray(thread.items.data)) {
     return "";
   }
@@ -117,7 +129,7 @@ function buildTranscript(thread: any): string {
     let text = '';
     if (item.content && Array.isArray(item.content)) {
       text = item.content
-        .map((c: any) => c.text || c.content || '')
+        .map((c: { text?: string; content?: string }) => c.text || c.content || '')
         .filter((t: string) => t.length > 0)
         .join(' ');
     } else if (item.text) {
