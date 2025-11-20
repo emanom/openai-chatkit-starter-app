@@ -10,16 +10,27 @@ export function middleware(request: NextRequest) {
     console.log('[Middleware] Request to /assistant');
     console.log('[Middleware] Referer header:', referer);
     console.log('[Middleware] Request URL:', request.url);
-    console.log('[Middleware] All headers:', Object.fromEntries(request.headers.entries()));
     
     if (referer) {
       try {
         const refererUrl = new URL(referer);
         const firstName = refererUrl.searchParams.get('first-name') || refererUrl.searchParams.get('first_name');
         
+        console.log('[Middleware] Referer URL:', refererUrl.href);
+        console.log('[Middleware] Referer hostname:', refererUrl.hostname);
+        console.log('[Middleware] Request hostname:', request.nextUrl.hostname);
         console.log('[Middleware] Extracted firstName from referer:', firstName);
         
-        if (firstName && !firstName.includes('{{')) {
+        // Check if referer is from Zapier domain (parent page) vs our own domain (iframe)
+        const isZapierReferer = refererUrl.hostname.includes('zapier.app');
+        const isOwnDomain = refererUrl.hostname === request.nextUrl.hostname || 
+                           refererUrl.hostname.includes('amplifyapp.com');
+        
+        console.log('[Middleware] Is Zapier referer:', isZapierReferer);
+        console.log('[Middleware] Is own domain:', isOwnDomain);
+        
+        // Only use referer if it's from Zapier (parent page), not from our own domain (iframe)
+        if (isZapierReferer && firstName && !firstName.includes('{{')) {
           // Set cookie with firstName from referer
           const response = NextResponse.next();
           response.cookies.set('assistant-first-name', firstName, {
@@ -29,6 +40,8 @@ export function middleware(request: NextRequest) {
           });
           console.log('[Middleware] Set cookie assistant-first-name:', firstName);
           return response;
+        } else if (isOwnDomain && firstName && firstName.includes('{{')) {
+          console.log('[Middleware] Referer is from own domain with template variable - ignoring');
         }
       } catch (e) {
         console.error('[Middleware] Error parsing referer:', e);

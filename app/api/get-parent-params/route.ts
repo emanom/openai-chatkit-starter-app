@@ -10,10 +10,22 @@ export async function GET(request: NextRequest) {
   const allHeaders = Object.fromEntries(request.headers.entries());
   
   console.log('[get-parent-params] Referer:', referer);
-  console.log('[get-parent-params] All headers:', JSON.stringify(allHeaders, null, 2));
+  console.log('[get-parent-params] Request URL:', request.url);
+  console.log('[get-parent-params] Request search params:', request.nextUrl.searchParams.toString());
+  
+  // Also check the request URL itself for query params (in case they're passed directly)
+  const requestParams: Record<string, string> = {};
+  request.nextUrl.searchParams.forEach((value, key) => {
+    requestParams[key] = value;
+  });
   
   if (!referer) {
-    return NextResponse.json({ params: {}, message: 'No referer header' });
+    return NextResponse.json({ 
+      params: requestParams, 
+      message: 'No referer header',
+      requestUrl: request.url,
+      requestParams 
+    });
   }
 
   try {
@@ -24,11 +36,24 @@ export async function GET(request: NextRequest) {
       params[key] = value;
     });
 
-    console.log('[get-parent-params] Extracted params:', params);
-    return NextResponse.json({ params, referer, refererUrl: refererUrl.href });
+    console.log('[get-parent-params] Extracted params from referer:', params);
+    console.log('[get-parent-params] Referer hostname:', refererUrl.hostname);
+    
+    // Check if referer is from Zapier
+    const isZapierReferer = refererUrl.hostname.includes('zapier.app');
+    
+    return NextResponse.json({ 
+      params, 
+      referer, 
+      refererUrl: refererUrl.href,
+      refererHostname: refererUrl.hostname,
+      isZapierReferer,
+      requestParams,
+      requestUrl: request.url
+    });
   } catch (e) {
     console.error('[get-parent-params] Error parsing referer:', e);
-    return NextResponse.json({ params: {}, error: 'Invalid referer', referer });
+    return NextResponse.json({ params: {}, error: 'Invalid referer', referer, requestParams });
   }
 }
 
