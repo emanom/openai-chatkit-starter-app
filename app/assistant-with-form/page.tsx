@@ -5,11 +5,100 @@ import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
 
+// Function to extract transcript from ChatKit shadow DOM
+function extractTranscript(): string {
+  try {
+    const messages: string[] = [];
+    
+    // Method 1: Try to find shadow root by searching all elements
+    const allElements = document.querySelectorAll('*');
+    let shadowRoot: ShadowRoot | null = null;
+    
+    for (const element of allElements) {
+      if (element.shadowRoot) {
+        // Check if this shadow root contains ChatKit messages
+        const hasThreadTurns = element.shadowRoot.querySelectorAll('[data-thread-turn]').length > 0;
+        if (hasThreadTurns) {
+          shadowRoot = element.shadowRoot;
+          break;
+        }
+      }
+    }
+
+    if (shadowRoot) {
+      // Extract messages from shadow DOM
+      const threadTurns = shadowRoot.querySelectorAll('[data-thread-turn]');
+      
+      threadTurns.forEach((turn) => {
+        const role = turn.getAttribute('data-message-role') || 
+                    turn.getAttribute('data-role') || 
+                    'unknown';
+        const text = turn.textContent?.trim();
+        
+        if (text && text.length > 0) {
+          const roleLabel = role === 'user' ? 'User' : 
+                           role === 'assistant' ? 'Assistant' : 
+                           'System';
+          messages.push(`${roleLabel}: ${text}`);
+        }
+      });
+    }
+
+    // Method 2: Fallback - try to find messages in regular DOM (if shadow root not found)
+    if (messages.length === 0) {
+      const userMessages = document.querySelectorAll(
+        '[data-thread-turn][data-message-role="user"], ' +
+        '[data-thread-turn][data-role="user"], ' +
+        '[data-message-role="user"], ' +
+        '[data-role="user"]'
+      );
+      
+      const assistantMessages = document.querySelectorAll(
+        '[data-thread-turn][data-message-role="assistant"], ' +
+        '[data-thread-turn][data-role="assistant"], ' +
+        '[data-message-role="assistant"], ' +
+        '[data-role="assistant"]'
+      );
+      
+      userMessages.forEach((msg) => {
+        const text = msg.textContent?.trim();
+        if (text && text.length > 0) {
+          messages.push(`User: ${text}`);
+        }
+      });
+      
+      assistantMessages.forEach((msg) => {
+        const text = msg.textContent?.trim();
+        if (text && text.length > 0) {
+          messages.push(`Assistant: ${text}`);
+        }
+      });
+    }
+
+    // Remove duplicates and clean up
+    const uniqueMessages = Array.from(new Set(messages));
+    const transcript = uniqueMessages.join('\n\n');
+    
+    console.log(`[extractTranscript] Extracted ${uniqueMessages.length} messages`);
+    return transcript;
+  } catch (error) {
+    console.error("[extractTranscript] Error extracting transcript:", error);
+    return "";
+  }
+}
+
 function AssistantWithFormContent() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const searchParams = useSearchParams();
   const [firstName, setFirstName] = useState<string | null>(null);
   const [iframeSrc, setIframeSrc] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string>("");
+  
+  // Generate a unique session ID on mount
+  useEffect(() => {
+    const id = `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    setSessionId(id);
+  }, []);
   
   // Get first-name from query parameters (try multiple variations)
   const firstNameFromUrl = searchParams.get("first-name") || 
@@ -23,12 +112,44 @@ function AssistantWithFormContent() {
       // Build Zapier form URL with the parameter
       const zapierFormUrl = new URL("https://fyi-support-centre.zapier.app/support-request-form");
       zapierFormUrl.searchParams.set("first-name", firstNameFromUrl);
+      if (sessionId) {
+        zapierFormUrl.searchParams.set("chat-session-id", sessionId);
+      }
       setIframeSrc(zapierFormUrl.toString());
     } else {
       // Default Zapier form URL without parameter
-      setIframeSrc("https://fyi-support-centre.zapier.app/support-request-form");
+      const zapierFormUrl = new URL("https://fyi-support-centre.zapier.app/support-request-form");
+      if (sessionId) {
+        zapierFormUrl.searchParams.set("chat-session-id", sessionId);
+      }
+      setIframeSrc(zapierFormUrl.toString());
     }
-  }, [firstNameFromUrl]);
+  }, [firstNameFromUrl, sessionId]);
+  
+  // Function to handle form link click - extract and store transcript
+  const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // Extract transcript before navigating
+    const transcript = extractTranscript();
+    
+    if (transcript && sessionId) {
+      try {
+        // Store transcript on server
+        await fetch('/api/store-transcript', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, transcript }),
+        });
+        console.log('[AssistantWithForm] Transcript stored for session:', sessionId);
+      } catch (error) {
+        console.error('[AssistantWithForm] Failed to store transcript:', error);
+        // Continue navigation even if storage fails
+      }
+    } else {
+      console.warn('[AssistantWithForm] No transcript or sessionId available');
+    }
+    
+    // Allow default navigation
+  }, [sessionId]);
   
   // Create personalized greeting
   const greeting = useMemo(() => {
@@ -169,6 +290,7 @@ function AssistantWithFormContent() {
           {iframeSrc && (
             <a
               href={iframeSrc}
+              onClick={handleFormLinkClick}
               className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors"
             >
               Open Support Request Form
