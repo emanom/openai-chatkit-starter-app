@@ -81,15 +81,42 @@ export async function GET(request: NextRequest) {
 
     const thread = await response.json();
     console.log(`[get-thread-transcript] Retrieved thread with ${thread.items?.data?.length || 0} items`);
+    console.log(`[get-thread-transcript] Thread data keys:`, Object.keys(thread));
 
     // Build transcript from thread items
     const transcript = buildTranscript(thread);
+    
+    // Try to extract conversation ID from thread data
+    let conversationId: string | undefined;
+    const threadStr = JSON.stringify(thread);
+    const convIdMatch = threadStr.match(/conv_[a-f0-9]{40,}/i);
+    if (convIdMatch) {
+      conversationId = convIdMatch[0];
+      console.log(`[get-thread-transcript] Found conversation ID in thread: ${conversationId}`);
+    }
+    
+    // Check common fields for conversation ID
+    if (!conversationId) {
+      conversationId = (thread.conversation_id || thread.conversationId || thread.conversation?.id) as string | undefined;
+      if (conversationId && conversationId.startsWith('conv_')) {
+        console.log(`[get-thread-transcript] Found conversation ID in thread fields: ${conversationId}`);
+      }
+    }
+    
+    const conversationUrl = conversationId 
+      ? `https://platform.openai.com/logs/${conversationId}`
+      : sessionId 
+        ? `https://main.d2xcz3k9ugtvab.amplifyapp.com/conversation/${sessionId}`
+        : undefined;
     
     return NextResponse.json({
       success: true,
       sessionId,
       threadId,
       transcript,
+      conversationId,
+      conversationUrl,
+      conversationLink: conversationUrl ? `View conversation: ${conversationUrl}` : undefined,
       threadData: thread,
     });
   } catch (error) {
