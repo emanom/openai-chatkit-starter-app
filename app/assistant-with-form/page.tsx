@@ -132,6 +132,7 @@ function AssistantWithFormContent() {
   const [iframeSrc, setIframeSrc] = useState<string>("");
   const [sessionId, setSessionId] = useState<string>("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
   const conversationIdRef = useRef<string | null>(null);
   
   // Generate a unique session ID on mount
@@ -236,6 +237,10 @@ function AssistantWithFormContent() {
       zapierFormUrl.searchParams.set("first-name", firstNameFromUrl);
       if (sessionId) {
         zapierFormUrl.searchParams.set("chat-session-id", sessionId);
+        // Pass thread ID if available (this is what we need for retrieving transcript)
+        if (threadId) {
+          zapierFormUrl.searchParams.set("thread-id", threadId);
+        }
         // Pass OpenAI conversation link if available
         if (conversationId) {
           const openaiConversationUrl = `https://platform.openai.com/logs/${conversationId}`;
@@ -253,6 +258,10 @@ function AssistantWithFormContent() {
       const zapierFormUrl = new URL("https://fyi-support-centre.zapier.app/support-request-form");
       if (sessionId) {
         zapierFormUrl.searchParams.set("chat-session-id", sessionId);
+        // Pass thread ID if available (this is what we need for retrieving transcript)
+        if (threadId) {
+          zapierFormUrl.searchParams.set("thread-id", threadId);
+        }
         // Pass OpenAI conversation link if available
         if (conversationId) {
           const openaiConversationUrl = `https://platform.openai.com/logs/${conversationId}`;
@@ -266,7 +275,7 @@ function AssistantWithFormContent() {
       }
       setIframeSrc(zapierFormUrl.toString());
     }
-  }, [firstNameFromUrl, sessionId, conversationId]);
+  }, [firstNameFromUrl, sessionId, conversationId, threadId]);
   
   // Function to store transcript
   const storeTranscript = useCallback(async (transcriptText: string) => {
@@ -471,28 +480,40 @@ function AssistantWithFormContent() {
     },
     onReady: () => {
       console.log("[AssistantWithForm] ChatKit ready, control:", chatkit.control);
-      // Try to extract conversation ID from control object
-      if (chatkit.control) {
-        try {
-          // Check if control object has conversation/thread info
-          const controlAny = chatkit.control as unknown as Record<string, unknown>;
-          if (controlAny.conversationId || controlAny.conversation_id || controlAny.threadId || controlAny.thread_id) {
-            const convId = (controlAny.conversationId || controlAny.conversation_id || controlAny.threadId || controlAny.thread_id) as string;
-            if (convId && convId.startsWith('conv_')) {
-              console.log("[AssistantWithForm] Found conversation ID in control:", convId);
-              setConversationId(convId);
-              if (sessionId) {
-                fetch('/api/store-conversation-id', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ sessionId, conversationId: convId }),
-                }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
-              }
-            }
+    },
+    onThreadChange: (evt?: { threadId?: string } | string) => {
+      // Handle different callback signatures
+      let newThreadId: string | undefined;
+      
+      if (typeof evt === 'string') {
+        newThreadId = evt;
+      } else if (evt && typeof evt === 'object' && 'threadId' in evt) {
+        newThreadId = evt.threadId;
+      } else {
+        // If no threadId in event, try to get it from control object
+        if (chatkit.control) {
+          try {
+            const controlAny = chatkit.control as unknown as Record<string, unknown>;
+            newThreadId = (controlAny.threadId || controlAny.thread_id) as string | undefined;
+          } catch (e) {
+            console.debug('[AssistantWithForm] Could not access threadId from control:', e);
           }
-        } catch (e) {
-          console.debug('[AssistantWithForm] Could not access control properties:', e);
         }
+      }
+      
+      if (newThreadId) {
+        console.log("[AssistantWithForm] ✅ Thread changed, threadId:", newThreadId);
+        setThreadId(newThreadId);
+        // Store thread ID mapping
+        if (sessionId) {
+          fetch('/api/store-thread-id', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, threadId: newThreadId }),
+          }).catch(err => console.error('[AssistantWithForm] Failed to store thread ID:', err));
+        }
+      } else {
+        console.log("[AssistantWithForm] onThreadChange called but no threadId found");
       }
     },
   });
