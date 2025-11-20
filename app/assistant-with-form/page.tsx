@@ -323,7 +323,7 @@ function AssistantWithFormContent() {
     }
     
     return data.client_secret as string;
-  }, []);
+  }, [sessionId]);
 
   const chatkit = useChatKit({
     api: { getClientSecret },
