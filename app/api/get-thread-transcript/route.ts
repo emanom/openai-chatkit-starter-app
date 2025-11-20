@@ -149,6 +149,7 @@ export async function GET(request: NextRequest) {
 
     // Build transcript from thread items
     const transcript = buildTranscript(thread);
+    const formattedTranscript = buildFormattedTranscript(thread);
     console.log(`[get-thread-transcript] Built transcript length:`, transcript.length);
     
     // Try to extract conversation ID from thread data
@@ -179,6 +180,7 @@ export async function GET(request: NextRequest) {
       sessionId,
       threadId,
       transcript,
+      formattedTranscript,
       conversationId,
       conversationUrl,
       conversationLink: conversationUrl ? `View conversation: ${conversationUrl}` : undefined,
@@ -260,5 +262,61 @@ function buildTranscript(thread: ThreadResponse): string {
   }
   
   return messages.join('\n\n');
+}
+
+function buildFormattedTranscript(thread: ThreadResponse): string {
+  if (!thread.items?.data || !Array.isArray(thread.items.data)) {
+    return "";
+  }
+
+  const messages: string[] = [];
+  
+  // Sort items by created_at (oldest first) if available
+  const sortedItems = [...thread.items.data].sort((a, b) => {
+    const aTime = (a as { created_at?: number }).created_at || 0;
+    const bTime = (b as { created_at?: number }).created_at || 0;
+    return aTime - bTime;
+  });
+  
+  for (const item of sortedItems) {
+    // Skip task_group and other non-message types
+    if (item.type === 'chatkit.task_group' || !item.type) {
+      continue;
+    }
+    
+    // Determine role based on ChatKit message type
+    const role = item.type === 'chatkit.assistant_message' ? 'Assistant' : 
+                item.type === 'chatkit.user_message' ? 'User' : 
+                item.type?.includes('assistant') ? 'Assistant' :
+                item.type?.includes('user') ? 'User' :
+                'System';
+    
+    // Extract text content from the item
+    let text = '';
+    if (item.content && Array.isArray(item.content)) {
+      // Extract text from content array (which has objects with 'text' field)
+      const textParts = item.content
+        .map((c: { type?: string; text?: string; content?: string }) => {
+          // Prioritize 'text' field, fallback to 'content'
+          return c.text || c.content || '';
+        })
+        .filter((t: string) => t && t.length > 0);
+      text = textParts.join('\n');
+    } else if (item.text) {
+      text = item.text;
+    } else if (typeof item.content === 'string') {
+      text = item.content;
+    }
+    
+    if (text && text.trim().length > 0) {
+      // Format with timestamp if available
+      const timestamp = (item as { created_at?: number }).created_at;
+      const timeStr = timestamp ? new Date(timestamp * 1000).toLocaleString() : '';
+      const header = timeStr ? `[${timeStr}] ${role}:` : `${role}:`;
+      messages.push(`${header}\n${text.trim()}\n`);
+    }
+  }
+  
+  return messages.join('\n---\n\n');
 }
 
