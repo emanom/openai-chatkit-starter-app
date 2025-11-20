@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     const apiBase = process.env.CHATKIT_API_BASE ?? DEFAULT_CHATKIT_BASE;
     // Try fetching thread with items - some APIs require a query parameter to include items
-    let url = `${apiBase}/v1/chatkit/threads/${threadId}`;
+    const url = `${apiBase}/v1/chatkit/threads/${threadId}`;
     
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
