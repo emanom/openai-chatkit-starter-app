@@ -133,6 +133,7 @@ function AssistantWithFormContent() {
   const [sessionId, setSessionId] = useState<string>("");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
   const conversationIdRef = useRef<string | null>(null);
   
   // Generate a unique session ID on mount
@@ -801,14 +802,15 @@ function AssistantWithFormContent() {
               : "Use the form below to submit a support request with additional details."}
           </p>
           {iframeSrc && (
-            <a
-              href={iframeSrc}
+            <button
               onClick={handleFormLinkClick}
-              className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors"
+              className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors cursor-pointer"
             >
-              Open Support Request Form
+              {hasBotResponded 
+                ? 'Open Support Request from this conversation'
+                : 'Open Support Request Form'}
               {firstName && ` (for ${firstName})`}
-            </a>
+            </button>
           )}
           <p className="text-sm text-gray-500 mt-4">
             {firstName && `Your name (${firstName}) will be pre-filled in the form.`}
