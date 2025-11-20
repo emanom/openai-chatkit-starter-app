@@ -146,7 +146,7 @@ function AssistantWithFormContent() {
         return false;
       }
 
-      const result = await response.json();
+      await response.json();
       console.log('[AssistantWithForm] Transcript stored successfully for session:', sessionId, 'Length:', transcriptText.length);
       return true;
     } catch (error) {
@@ -154,22 +154,6 @@ function AssistantWithFormContent() {
       return false;
     }
   }, [sessionId]);
-
-  // Periodically store transcript as conversation progresses
-  useEffect(() => {
-    if (!chatkit.control || !sessionId) return;
-
-    const interval = setInterval(() => {
-      const transcript = extractTranscript();
-      if (transcript && transcript.length > 0) {
-        storeTranscript(transcript).catch(err => {
-          console.error('[AssistantWithForm] Error in periodic transcript storage:', err);
-        });
-      }
-    }, 10000); // Store every 10 seconds
-
-    return () => clearInterval(interval);
-  }, [chatkit.control, sessionId, storeTranscript]);
 
   // Function to handle form link click - extract and store transcript
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -275,16 +259,21 @@ function AssistantWithFormContent() {
     },
   });
 
-  const handleWidgetAction = useCallback(
-    async (action: { type: string; [key: string]: unknown }) => {
-      console.log("[AssistantWithForm] Widget action:", action);
-    },
-    []
-  );
+  // Periodically store transcript as conversation progresses
+  useEffect(() => {
+    if (!chatkit.control || !sessionId) return;
 
-  const handleResponseEnd = useCallback(() => {
-    console.log("[AssistantWithForm] Response ended");
-  }, []);
+    const interval = setInterval(() => {
+      const transcript = extractTranscript();
+      if (transcript && transcript.length > 0) {
+        storeTranscript(transcript).catch(err => {
+          console.error('[AssistantWithForm] Error in periodic transcript storage:', err);
+        });
+      }
+    }, 10000); // Store every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [chatkit.control, sessionId, storeTranscript]);
 
   // Also try to send firstName to Zapier form via postMessage (if it supports it)
   useEffect(() => {
