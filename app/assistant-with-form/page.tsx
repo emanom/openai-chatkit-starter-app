@@ -127,7 +127,6 @@ function AssistantWithFormContent() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
-  const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -336,59 +335,6 @@ function AssistantWithFormContent() {
   }, [sessionId]);
 
 
-  // Monitor for CSP errors when modal is open and auto-redirect
-  useEffect(() => {
-    if (!isFormModalOpen || !iframeSrc) return;
-
-    const originalError = console.error;
-    let cspErrorDetected = false;
-
-    const errorHandler = (...args: unknown[]) => {
-      const message = args.join(' ');
-      // Check for CSP frame-ancestors errors
-      if (
-        message.includes('frame-ancestors') ||
-        message.includes('Content Security Policy') ||
-        message.includes('violates the following Content Security Policy directive')
-      ) {
-        if (!cspErrorDetected) {
-          cspErrorDetected = true;
-          // Automatically navigate to form in same tab
-          window.location.href = iframeSrc;
-        }
-      }
-      originalError.apply(console, args);
-    };
-
-    console.error = errorHandler;
-
-    // Also check after a delay if iframe hasn't loaded
-    const timeoutId = setTimeout(() => {
-      if (!cspErrorDetected) {
-        // Check if iframe is still empty/blocked
-        const iframe = document.querySelector('iframe[title="Support Request Form"]') as HTMLIFrameElement;
-        if (iframe) {
-          try {
-            // Try to access iframe content
-            const doc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (!doc || doc.body.children.length === 0) {
-              // Iframe appears blocked or empty - redirect to form
-              window.location.href = iframeSrc;
-            }
-          } catch {
-            // Can't access iframe - likely CSP blocking, redirect to form
-            window.location.href = iframeSrc;
-          }
-        }
-      }
-    }, 2000);
-
-    return () => {
-      console.error = originalError;
-      clearTimeout(timeoutId);
-    };
-  }, [isFormModalOpen, iframeSrc]);
-
   // Function to handle form button click - extract and store transcript
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault(); // Prevent default navigation
@@ -412,9 +358,9 @@ function AssistantWithFormContent() {
       await storeTranscript('No conversation transcript available at time of form submission.');
     }
     
-    // Open the form in a modal instead of navigating away
-    setIsFormModalOpen(true);
-  }, [sessionId, storeTranscript]);
+    // Navigate directly to form (CSP blocks iframe embedding)
+    window.location.href = iframeSrc;
+  }, [sessionId, storeTranscript, iframeSrc]);
   
   // Create personalized greeting
   const greeting = useMemo(() => {
@@ -977,45 +923,6 @@ function AssistantWithFormContent() {
           </div>
         </div>
       </div>
-      
-      {/* Form Modal */}
-      {isFormModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="relative w-full h-full bg-white flex flex-col">
-            {/* Back Button */}
-            <button
-              onClick={() => setIsFormModalOpen(false)}
-              className="absolute top-4 left-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors border border-gray-200"
-              aria-label="Go back to chat"
-            >
-              <svg
-                className="h-6 w-6 text-gray-700"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-            </button>
-            
-            {/* Form Content */}
-            <div className="flex-1 overflow-auto relative">
-              <iframe
-                src={iframeSrc}
-                title="Support Request Form"
-                className="w-full h-full border-0"
-                allow="clipboard-read; clipboard-write"
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
