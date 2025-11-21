@@ -1009,8 +1009,17 @@ function AssistantWithFormContent() {
       
       {/* Support Request Form Modal */}
       {isFormModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 overflow-y-auto">
-          <div className="relative w-full max-w-4xl mx-4 my-8">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 overflow-y-auto"
+          onClick={() => {
+            setIsFormModalOpen(false);
+            setIsConversationForm(false);
+          }}
+        >
+          <div 
+            className="relative w-full max-w-4xl mx-4 my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Back Button */}
             <button
               onClick={() => {
