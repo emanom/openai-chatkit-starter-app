@@ -215,7 +215,7 @@ export default function SupportRequestForm({
         </div>
 
         <p className="text-gray-600 mb-6">
-          Use this form to add any other details to get your request solved quickly and then select "Submit" below!
+          Use this form to add any other details to get your request solved quickly and then select &quot;Submit&quot; below!
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -246,7 +246,7 @@ export default function SupportRequestForm({
               <strong>Examples:</strong> step-by-step instructions to replicate, when the issue started, number of users affected or example links etc.
             </p>
             <p className="text-xs text-gray-500 mb-2">
-              <strong>Note:</strong> the entire chat transcript will be automatically linked to the support request, so you don't need to repeat yourself.
+              <strong>Note:</strong> the entire chat transcript will be automatically linked to the support request, so you don&apos;t need to repeat yourself.
             </p>
             <textarea
               id="description"

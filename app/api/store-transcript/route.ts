@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { storeTranscript, getTranscript } from "@/lib/transcript-store";
+import { sanitizeCitationText } from "@/lib/sanitizeCitations";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,11 +14,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Store transcript
-    storeTranscript(sessionId, transcript);
+    const sanitizedTranscript =
+      typeof transcript === "string"
+        ? sanitizeCitationText(transcript, { preserveWhitespace: true })
+        : "";
 
-    const transcriptLength = typeof transcript === "string" ? transcript.length : JSON.stringify(transcript).length;
-    console.log(`[store-transcript] Stored transcript for session: ${sessionId}, length: ${transcriptLength} characters`);
+    if (!sanitizedTranscript) {
+      return NextResponse.json(
+        { error: "Transcript is empty after sanitization" },
+        { status: 400 }
+      );
+    }
+
+    // Store transcript
+    storeTranscript(sessionId, sanitizedTranscript);
+
+    console.log(
+      `[store-transcript] Stored transcript for session: ${sessionId}, length: ${sanitizedTranscript.length} characters`
+    );
 
     return NextResponse.json({ success: true, sessionId });
   } catch (error) {

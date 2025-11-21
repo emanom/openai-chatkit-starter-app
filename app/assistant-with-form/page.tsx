@@ -6,7 +6,11 @@ import { useSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
 import SupportRequestForm from "@/components/SupportRequestForm";
 import ConversationSupportForm from "@/components/ConversationSupportForm";
-import { sanitizeCitationsDeep } from "@/lib/sanitizeCitations";
+import ChatKitIconBadge from "@/components/ChatKitIconBadge";
+import {
+  sanitizeCitationsDeep,
+  sanitizeCitationText,
+} from "@/lib/sanitizeCitations";
 
 // Function to extract transcript from ChatKit shadow DOM
 function extractTranscript(): string {
@@ -24,13 +28,13 @@ function extractTranscript(): string {
           const role = turn.getAttribute('data-message-role') || 
                       turn.getAttribute('data-role') || 
                       'unknown';
-          const text = turn.textContent?.trim();
+          const cleanedText = sanitizeCitationText(turn.textContent ?? "");
           
-          if (text && text.length > 0) {
+          if (cleanedText) {
             const roleLabel = role === 'user' ? 'User' : 
                              role === 'assistant' ? 'Assistant' : 
                              'System';
-            messages.push(`${roleLabel}: ${text}`);
+            messages.push(`${roleLabel}: ${cleanedText}`);
           }
         });
       }
@@ -62,13 +66,13 @@ function extractTranscript(): string {
           const role = turn.getAttribute('data-message-role') || 
                       turn.getAttribute('data-role') || 
                       'unknown';
-          const text = turn.textContent?.trim();
+          const cleanedText = sanitizeCitationText(turn.textContent ?? "");
           
-          if (text && text.length > 0) {
+          if (cleanedText) {
             const roleLabel = role === 'user' ? 'User' : 
                              role === 'assistant' ? 'Assistant' : 
                              'System';
-            messages.push(`${roleLabel}: ${text}`);
+            messages.push(`${roleLabel}: ${cleanedText}`);
           }
         });
       }
@@ -93,18 +97,24 @@ function extractTranscript(): string {
         const elements = document.querySelectorAll(selector);
         
         elements.forEach((element) => {
-          const text = element.textContent?.trim();
-          if (text && text.length > 0 && !messages.includes(`User: ${text}`) && !messages.includes(`Assistant: ${text}`)) {
-            // Try to determine role from attributes or class names
-            const role = element.getAttribute('data-message-role') || 
-                        element.getAttribute('data-role') ||
-                        (element.className.includes('user') ? 'user' : 
-                         element.className.includes('assistant') ? 'assistant' : 'unknown');
-            
-            const roleLabel = role === 'user' ? 'User' : 
-                             role === 'assistant' ? 'Assistant' : 
-                             'System';
-            messages.push(`${roleLabel}: ${text}`);
+          const cleanedText = sanitizeCitationText(element.textContent ?? "");
+          if (!cleanedText) {
+            return;
+          }
+
+          // Try to determine role from attributes or class names
+          const role = element.getAttribute('data-message-role') || 
+                      element.getAttribute('data-role') ||
+                      (element.className.includes('user') ? 'user' : 
+                       element.className.includes('assistant') ? 'assistant' : 'unknown');
+          
+          const roleLabel = role === 'user' ? 'User' : 
+                           role === 'assistant' ? 'Assistant' : 
+                           'System';
+          const payload = `${roleLabel}: ${cleanedText}`;
+
+          if (!messages.includes(payload)) {
+            messages.push(payload);
           }
         });
       }
@@ -542,9 +552,9 @@ function AssistantWithFormContent() {
     startScreen: {
       greeting: greeting,
       prompts: [
-        { label: "Help with feature", prompt: "I need help with a feature: ", icon: "circle-question" },
-        { label: "Enhancement idea", prompt: "I have an enhancement idea", icon: "sparkle" },
-        { label: "Something's not working", prompt: "Something's not working as expected", icon: "bug" },
+        { label: "Tell me about Learning resources", prompt: "Learning resources: ", icon: "circle-question" },
+        { label: "What's new in FYI?", prompt: "What's new in FYI?: ", icon: "sparkle" },
+        { label: "Details on subscription plans", prompt: "Details on subscription plans: ", icon: "document" },
       ],
     },
     composer: {
@@ -987,25 +997,145 @@ function AssistantWithFormContent() {
             </div>
           )}
         </div>
+        
+        {/* Custom Composer Prefill Buttons */}
+        {chatkit.control && !showLoadingSpinner && (
+          <div className="border-t border-gray-200 bg-white py-4" style={{ paddingRight: '240px' }}>
+            <div className="max-w-2xl mx-auto px-4 sm:px-6">
+              <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    // Access the ChatKit web component directly
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const chatkitElement = document.querySelector('openai-chatkit') as any;
+                    if (chatkitElement && typeof chatkitElement.setComposerValue === 'function') {
+                      await chatkitElement.setComposerValue({ text: "I need help with a feature: " });
+                      if (typeof chatkitElement.focusComposer === 'function') {
+                        await chatkitElement.focusComposer();
+                      }
+                    } else {
+                      // Fallback: try to find composer in shadow DOM
+                      const shadow = chatkitElement?.shadowRoot;
+                      if (shadow) {
+                        const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]') as HTMLElement;
+                        if (composer) {
+                          composer.textContent = "I need help with a feature: ";
+                          composer.dispatchEvent(new Event('input', { bubbles: true }));
+                          composer.focus();
+                        }
+                      }
+                    }
+                  } catch (error) {
+                    console.error('[AssistantWithForm] Failed to set composer value:', error);
+                  }
+                }}
+                className="px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm font-normal transition-all duration-150 border border-gray-200 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] flex items-center gap-3 text-left justify-start whitespace-nowrap"
+                type="button"
+              >
+                <ChatKitIconBadge name="circle-question" />
+                <span className="text-sm font-normal text-gray-600">Help with feature</span>
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    // Access the ChatKit web component directly
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const chatkitElement = document.querySelector('openai-chatkit') as any;
+                    if (chatkitElement && typeof chatkitElement.setComposerValue === 'function') {
+                      await chatkitElement.setComposerValue({ text: "I have an enhancement idea: " });
+                      if (typeof chatkitElement.focusComposer === 'function') {
+                        await chatkitElement.focusComposer();
+                      }
+                    } else {
+                      // Fallback: try to find composer in shadow DOM
+                      const shadow = chatkitElement?.shadowRoot;
+                      if (shadow) {
+                        const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]') as HTMLElement;
+                        if (composer) {
+                          composer.textContent = "I have an enhancement idea: ";
+                          composer.dispatchEvent(new Event('input', { bubbles: true }));
+                          composer.focus();
+                        }
+                      }
+                    }
+                  } catch (error) {
+                    console.error('[AssistantWithForm] Failed to set composer value:', error);
+                  }
+                }}
+                className="px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm font-normal transition-all duration-150 border border-gray-200 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] flex items-center gap-3 text-left justify-start whitespace-nowrap"
+                type="button"
+              >
+                <ChatKitIconBadge name="sparkle" />
+                <span className="text-sm font-normal text-gray-600">Enhancement idea</span>
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    // Access the ChatKit web component directly
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const chatkitElement = document.querySelector('openai-chatkit') as any;
+                    if (chatkitElement && typeof chatkitElement.setComposerValue === 'function') {
+                      await chatkitElement.setComposerValue({ text: "Something's not working as expected: " });
+                      if (typeof chatkitElement.focusComposer === 'function') {
+                        await chatkitElement.focusComposer();
+                      }
+                    } else {
+                      // Fallback: try to find composer in shadow DOM
+                      const shadow = chatkitElement?.shadowRoot;
+                      if (shadow) {
+                        const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]') as HTMLElement;
+                        if (composer) {
+                          composer.textContent = "Something's not working as expected: ";
+                          composer.dispatchEvent(new Event('input', { bubbles: true }));
+                          composer.focus();
+                        }
+                      }
+                    }
+                  } catch (error) {
+                    console.error('[AssistantWithForm] Failed to set composer value:', error);
+                  }
+                }}
+                className="px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm font-normal transition-all duration-150 border border-gray-200 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] flex items-center gap-3 text-left justify-start whitespace-nowrap"
+                type="button"
+              >
+                <ChatKitIconBadge name="bug" />
+                <span className="text-sm font-normal text-gray-600">Something&apos;s not working</span>
+              </button>
+              <button
+                onClick={() => {
+                  window.open('https://support.fyi.app/', '_blank', 'noopener,noreferrer');
+                }}
+                className="px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm font-normal transition-all duration-150 border border-gray-200 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] flex items-center gap-3 text-left justify-start whitespace-nowrap"
+                type="button"
+              >
+                <ChatKitIconBadge name="document" />
+                <span className="text-sm font-normal text-gray-600">FYI Documentation</span>
+              </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Zapier Form Section */}
       <div className="border-t border-gray-200 bg-gray-50 p-6">
-        <div className="max-w-2xl pl-4 sm:pl-6">
+        <div className="w-full px-4 sm:px-6">
           <h2 className="text-2xl font-bold mb-4 text-gray-900">Submit Support Request</h2>
           
           {/* New conversation-based form (shown after bot responds) */}
           {hasBotResponded && (
-            <div className="mb-6">
+            <div className="mb-6 flex flex-col items-start gap-4">
               <p className="text-gray-600 mb-4">
-                Use the form below to submit a support request from this conversation with additional details:
+                Submit a support request from this conversation with additional details or attachments:
               </p>
               <button
                 onClick={handleConversationFormClick}
-                className="group flex items-center justify-between w-full rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md hover:border-gray-300 mb-4"
+                className="group flex items-center justify-between rounded-xl border bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md mb-4"
+                style={{ borderColor: '#4ccf96' }}
               >
                 <span className="text-lg font-semibold text-gray-900">
-                  Open Support Request from this conversation
+                  Submit a Support Request from this conversation
                 </span>
                 <svg
                   className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-disabled:translate-x-0"
@@ -1025,38 +1155,40 @@ function AssistantWithFormContent() {
             </div>
           )}
           
-          {/* Original form (always shown) */}
-          <div>
-            <p className="text-gray-600 mb-4">
-              Use the form below to submit a support request without using the assistant:
-            </p>
-            <button
-              onClick={handleFormLinkClick}
-              disabled={!iframeSrc}
-              className="group flex items-center justify-between w-full rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-sm disabled:hover:border-gray-200"
-            >
-              <span className="text-lg font-semibold text-gray-900">
-                Open Support Request Form
-              </span>
-              <svg
-                className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-disabled:translate-x-0"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
+          {/* Original form (only shown before bot responds) */}
+          {!hasBotResponded && (
+            <div className="flex flex-col items-start gap-4">
+              <p className="text-gray-600 mb-4">
+                Use the form below to submit a support request without using the assistant:
+              </p>
+              <button
+                onClick={handleFormLinkClick}
+                disabled={!iframeSrc}
+                className="group flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-sm disabled:hover:border-gray-200"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5l7 7-7 7"
-                />
-              </svg>
-            </button>
-            <p className="text-sm text-gray-500 mt-4">
-              {firstName && "Your details will be pre-filled in the form."}
-            </p>
-          </div>
+                <span className="text-lg font-semibold text-gray-900">
+                  Open Support Request Form
+                </span>
+                <svg
+                  className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-disabled:translate-x-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+              <p className="text-sm text-gray-500 mt-4">
+                {firstName && "Your details will be pre-filled in the form."}
+              </p>
+            </div>
+          )}
         </div>
       </div>
       

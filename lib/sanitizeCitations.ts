@@ -2,6 +2,47 @@
 
 const isDev = process.env.NODE_ENV !== "production";
 
+const SPECIAL_CHAR_PATTERN = /[\u200B-\u200D\uFEFF\uE000-\uF8FF]+/g;
+const TURN_PATTERN_WITH_SPECIALS = /turn\d+file\d+[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi;
+const TURN_PATTERN = /turn\d+file\d+/gi;
+const FILECITE_PATTERNS = [
+  /\[?filecite\]?[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
+  /\(?filecite\)?[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
+  /filecite[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
+  /filecite/gi,
+];
+const MULTISPACE_PATTERN = /\s{2,}/g;
+
+type StripOptions = {
+  preserveWhitespace?: boolean;
+};
+
+function stripCitationMarkers(
+  value: string,
+  options?: StripOptions
+): string {
+  if (!value) {
+    return "";
+  }
+
+  const preserveWhitespace = Boolean(options?.preserveWhitespace);
+
+  let cleaned = value;
+  for (const pattern of FILECITE_PATTERNS) {
+    cleaned = cleaned.replace(pattern, "");
+  }
+  cleaned = cleaned.replace(TURN_PATTERN, "");
+  cleaned = cleaned.replace(TURN_PATTERN_WITH_SPECIALS, "");
+  cleaned = cleaned.replace(SPECIAL_CHAR_PATTERN, "");
+
+  if (preserveWhitespace) {
+    return cleaned;
+  }
+
+  cleaned = cleaned.replace(MULTISPACE_PATTERN, " ");
+  return cleaned.trim();
+}
+
 /**
  * Removes raw file citation markers (e.g. "fileciteturn0file5turn0file12")
  * that can leak into ChatKit responses when citation rendering is disabled or fails.
@@ -13,13 +54,6 @@ export function sanitizeCitationsDeep(root: ShadowRoot) {
 
   try {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const turnPattern = /turn\d+file\d+/gi;
-    const fileciteVariations = [
-      /\[?filecite\]?[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-      /\(?filecite\)?[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-      /filecite[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-      /filecite/gi,
-    ];
 
     let node: Node | null;
     while ((node = walker.nextNode())) {
@@ -27,28 +61,8 @@ export function sanitizeCitationsDeep(root: ShadowRoot) {
       const original = textNode.textContent ?? "";
       if (!original) continue;
 
-      const hasFilecite = /filecite/i.test(original);
-      const hasTurnPattern = turnPattern.test(original);
-      if (!hasFilecite && !hasTurnPattern) continue;
-
-      turnPattern.lastIndex = 0;
-      let cleaned = original;
-
-      for (const pattern of fileciteVariations) {
-        pattern.lastIndex = 0;
-        cleaned = cleaned.replace(pattern, "");
-      }
-
-      turnPattern.lastIndex = 0;
-      cleaned = cleaned.replace(turnPattern, "");
-      cleaned = cleaned.replace(
-        /turn\d+file\d+[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-        ""
-      );
-      cleaned = cleaned.replace(/[\u200B-\u200D\uFEFF\uE000-\uF8FF]+/g, "");
-      cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
-
-      if (cleaned !== original.trim()) {
+      const cleaned = stripCitationMarkers(original);
+      if (cleaned && cleaned !== original.trim()) {
         textNode.textContent = cleaned;
       }
     }
@@ -63,15 +77,11 @@ export function sanitizeCitationsDeep(root: ShadowRoot) {
         if (!originalHTML) return;
 
         let cleanedHTML = originalHTML;
-        cleanedHTML = cleanedHTML.replace(
-          /filecite[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-          ""
-        );
-        cleanedHTML = cleanedHTML.replace(
-          /turn\d+file\d+[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-          ""
-        );
-        cleanedHTML = cleanedHTML.replace(/[\u200B-\u200D\uFEFF\uE000-\uF8FF]+/g, "");
+        for (const pattern of FILECITE_PATTERNS) {
+          cleanedHTML = cleanedHTML.replace(pattern, "");
+        }
+        cleanedHTML = cleanedHTML.replace(TURN_PATTERN_WITH_SPECIALS, "");
+        cleanedHTML = cleanedHTML.replace(SPECIAL_CHAR_PATTERN, "");
 
         if (cleanedHTML !== originalHTML) {
           el.innerHTML = cleanedHTML;
@@ -83,5 +93,15 @@ export function sanitizeCitationsDeep(root: ShadowRoot) {
       console.debug("[ChatKit] sanitizeCitationsDeep error", error);
     }
   }
+}
+
+export function sanitizeCitationText(
+  input: string | null | undefined,
+  options?: StripOptions
+): string {
+  if (typeof input !== "string" || input.length === 0) {
+    return "";
+  }
+  return stripCitationMarkers(input, options);
 }
 
