@@ -4,6 +4,7 @@ import { useCallback, Suspense, useEffect, useRef, useMemo, useState } from "rea
 import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
+import SupportRequestForm from "@/components/SupportRequestForm";
 
 // Function to extract transcript from ChatKit shadow DOM
 function extractTranscript(): string {
@@ -127,6 +128,7 @@ function AssistantWithFormContent() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
+  const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -358,9 +360,9 @@ function AssistantWithFormContent() {
       await storeTranscript('No conversation transcript available at time of form submission.');
     }
     
-    // Navigate directly to form (CSP blocks iframe embedding)
-    window.location.href = iframeSrc;
-  }, [sessionId, storeTranscript, iframeSrc]);
+    // Open form in modal
+    setIsFormModalOpen(true);
+  }, [sessionId, storeTranscript]);
   
   // Create personalized greeting
   const greeting = useMemo(() => {
@@ -923,6 +925,55 @@ function AssistantWithFormContent() {
           </div>
         </div>
       </div>
+      
+      {/* Support Request Form Modal */}
+      {isFormModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 overflow-y-auto">
+          <div className="relative w-full max-w-4xl mx-4 my-8">
+            {/* Back Button */}
+            <button
+              onClick={() => setIsFormModalOpen(false)}
+              className="absolute -top-12 left-0 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors border border-gray-200 text-gray-700"
+              aria-label="Go back to chat"
+            >
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+            </button>
+            
+            {/* Form Component */}
+            <SupportRequestForm
+              firstName={firstName}
+              sessionId={sessionId}
+              conversationId={conversationId}
+              threadId={threadId}
+              conversationLink={
+                conversationId
+                  ? `https://platform.openai.com/logs/${conversationId}`
+                  : sessionId
+                  ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conversation/${sessionId}${threadId ? `?threadId=${encodeURIComponent(threadId)}` : ''}`
+                  : undefined
+              }
+              onClose={() => setIsFormModalOpen(false)}
+              onSuccess={() => {
+                setIsFormModalOpen(false);
+                // Optionally show a success message
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
