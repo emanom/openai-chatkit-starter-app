@@ -927,11 +927,11 @@ function AssistantWithFormContent() {
       {/* Form Modal */}
       {isFormModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="relative w-full h-full bg-white flex flex-col">
+          <div className="relative w-full max-w-2xl mx-4 bg-white rounded-lg shadow-xl flex flex-col max-h-[90vh]">
             {/* Back Button */}
             <button
               onClick={() => setIsFormModalOpen(false)}
-              className="absolute top-4 left-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors"
+              className="absolute top-4 left-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors border border-gray-200"
               aria-label="Go back to chat"
             >
               <svg
@@ -950,13 +950,44 @@ function AssistantWithFormContent() {
               </svg>
             </button>
             
-            {/* Form Iframe */}
-            <iframe
-              src={iframeSrc}
-              title="Support Request Form"
-              className="w-full h-full border-0"
-              allow="clipboard-read; clipboard-write"
-            />
+            {/* Modal Content */}
+            <div className="p-8">
+              <h2 className="text-2xl font-bold mb-4 text-gray-900">Support Request Form</h2>
+              <p className="text-gray-600 mb-6">
+                The support request form will open in a new tab. You can keep chatting here while you fill it out.
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    window.open(iframeSrc, '_blank', 'noopener,noreferrer');
+                    setIsFormModalOpen(false);
+                  }}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <span>Open Form in New Tab</span>
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                    />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setIsFormModalOpen(false)}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
