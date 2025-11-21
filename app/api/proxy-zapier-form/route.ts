@@ -24,7 +24,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const html = await response.text();
+    let html = await response.text();
+    
+    // Parse the form URL to get the base domain
+    const formUrlObj = new URL(formUrl);
+    const baseUrl = `${formUrlObj.protocol}//${formUrlObj.host}`;
+    
+    // Rewrite relative URLs to absolute URLs pointing to Zapier
+    // Fix src, href, action, and data attributes
+    html = html.replace(
+      /(src|href|action|data-src|data-href)="([^"]+)"/gi,
+      (match, attr, url) => {
+        // Skip if already absolute or protocol-relative
+        if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//') || url.startsWith('data:') || url.startsWith('javascript:')) {
+          return match;
+        }
+        // Make relative URLs absolute
+        const absoluteUrl = url.startsWith('/') 
+          ? `${baseUrl}${url}` 
+          : `${baseUrl}/${url}`;
+        return `${attr}="${absoluteUrl}"`;
+      }
+    );
+    
+    // Also fix URLs in style attributes and inline styles
+    html = html.replace(
+      /url\((['"]?)([^'")]+)\1\)/gi,
+      (match, quote, url) => {
+        if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//') || url.startsWith('data:')) {
+          return match;
+        }
+        const absoluteUrl = url.startsWith('/') 
+          ? `${baseUrl}${url}` 
+          : `${baseUrl}/${url}`;
+        return `url(${quote}${absoluteUrl}${quote})`;
+      }
+    );
 
     // Return the HTML with appropriate headers
     return new NextResponse(html, {

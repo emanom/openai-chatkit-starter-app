@@ -130,6 +130,7 @@ function AssistantWithFormContent() {
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
   const [formHtml, setFormHtml] = useState<string>("");
   const [isLoadingForm, setIsLoadingForm] = useState<boolean>(false);
+  const formContainerRef = useRef<HTMLDivElement | null>(null);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -366,6 +367,44 @@ function AssistantWithFormContent() {
       fetchFormHtml();
     }
   }, [isFormModalOpen, iframeSrc, formHtml, fetchFormHtml]);
+
+  // Execute scripts when form HTML is injected
+  useEffect(() => {
+    if (formHtml && formContainerRef.current) {
+      // Use setTimeout to ensure DOM is updated before executing scripts
+      const timeoutId = setTimeout(() => {
+        const container = formContainerRef.current;
+        if (!container) return;
+        
+        // Extract and execute scripts
+        const scripts = container.querySelectorAll('script');
+        scripts.forEach((oldScript) => {
+          const newScript = document.createElement('script');
+          
+          // Copy attributes
+          Array.from(oldScript.attributes).forEach((attr) => {
+            newScript.setAttribute(attr.name, attr.value);
+          });
+          
+          // Copy content
+          if (oldScript.src) {
+            newScript.src = oldScript.src;
+          } else {
+            newScript.textContent = oldScript.textContent;
+          }
+          
+          // Replace old script with new one (this will execute it)
+          oldScript.parentNode?.replaceChild(newScript, oldScript);
+        });
+        
+        // Also trigger any initialization that might be needed
+        // Dispatch a custom event to notify that form is loaded
+        window.dispatchEvent(new Event('zapier-form-loaded'));
+      }, 100);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [formHtml]);
 
   // Function to handle form button click - extract and store transcript
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -996,6 +1035,7 @@ function AssistantWithFormContent() {
                 </div>
               ) : formHtml ? (
                 <div 
+                  ref={formContainerRef}
                   className="w-full h-full"
                   dangerouslySetInnerHTML={{ __html: formHtml }}
                 />
