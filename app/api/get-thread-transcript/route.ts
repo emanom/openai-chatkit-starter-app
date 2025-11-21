@@ -17,16 +17,24 @@ export async function GET(request: NextRequest) {
     }
 
     // Use threadId from parameter if provided, otherwise look it up from sessionId
-    const threadId = threadIdParam || getThreadId(sessionId!);
+    let threadId = threadIdParam || getThreadId(sessionId!);
+    
+    // If no threadId found and we have sessionId, return empty transcript (thread not created yet)
+    if (!threadId && sessionId) {
+      return NextResponse.json({
+        success: true,
+        sessionId,
+        threadId: null,
+        transcript: "",
+        formattedTranscript: "",
+        message: "Thread not created yet for this session"
+      });
+    }
     
     if (!threadId) {
       return NextResponse.json(
-        { 
-          error: "Thread ID not found",
-          sessionId,
-          message: "No thread ID found for this session. The thread may not have been created yet.",
-        },
-        { status: 404 }
+        { error: "Missing threadId parameter" },
+        { status: 400 }
       );
     }
 
