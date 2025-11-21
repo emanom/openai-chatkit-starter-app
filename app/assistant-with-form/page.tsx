@@ -16,7 +16,6 @@ function extractTranscript(): string {
       if (chatKitIframe && chatKitIframe.contentDocument) {
         const iframeDoc = chatKitIframe.contentDocument;
         const iframeThreadTurns = iframeDoc.querySelectorAll('[data-thread-turn]');
-        console.log(`[extractTranscript] Found ${iframeThreadTurns.length} thread turns in iframe`);
         
         iframeThreadTurns.forEach((turn) => {
           const role = turn.getAttribute('data-message-role') || 
@@ -33,7 +32,7 @@ function extractTranscript(): string {
         });
       }
     } catch (e) {
-      console.debug('[extractTranscript] Cannot access iframe content (CORS):', e);
+      // Cannot access iframe content (CORS) - expected
     }
     
     // Method 2: Try to find shadow root by searching all elements
@@ -55,7 +54,6 @@ function extractTranscript(): string {
       if (shadowRoot) {
         // Extract messages from shadow DOM
         const threadTurns = shadowRoot.querySelectorAll('[data-thread-turn]');
-        console.log(`[extractTranscript] Found ${threadTurns.length} thread turns in shadow DOM`);
         
         threadTurns.forEach((turn) => {
           const role = turn.getAttribute('data-message-role') || 
@@ -90,7 +88,6 @@ function extractTranscript(): string {
       
       for (const selector of selectors) {
         const elements = document.querySelectorAll(selector);
-        console.log(`[extractTranscript] Found ${elements.length} elements with selector: ${selector}`);
         
         elements.forEach((element) => {
           const text = element.textContent?.trim();
@@ -114,10 +111,6 @@ function extractTranscript(): string {
     const uniqueMessages = Array.from(new Set(messages));
     const transcript = uniqueMessages.join('\n\n');
     
-    console.log(`[extractTranscript] Extracted ${uniqueMessages.length} messages`);
-    if (uniqueMessages.length > 0) {
-      console.log(`[extractTranscript] Sample messages:`, uniqueMessages.slice(0, 3));
-    }
     return transcript;
   } catch (error) {
     console.error("[extractTranscript] Error extracting transcript:", error);
@@ -134,12 +127,61 @@ function AssistantWithFormContent() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
+  const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
   const conversationIdRef = useRef<string | null>(null);
+  const previousThreadIdRef = useRef<string | null>(null);
+  const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTranscriptRef = useRef<string>("");
+  const hasBotRespondedRef = useRef<boolean>(false);
   
   // Generate a unique session ID on mount
   useEffect(() => {
     const id = `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     setSessionId(id);
+  }, []);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    hasBotRespondedRef.current = hasBotResponded;
+  }, [hasBotResponded]);
+  
+  // Suppress ChatKit internal console errors (CORS issues from chatgpt.com)
+  useEffect(() => {
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    console.error = (...args: unknown[]) => {
+      const message = args.join(' ');
+      // Filter out ChatKit internal CORS errors
+      if (
+        message.includes('chatgpt.com/ces/v1/projects/oai/settings') ||
+        message.includes('CORS policy') ||
+        message.includes('Access-Control-Allow-Origin') ||
+        message.includes('Failed to fetch') ||
+        message.includes('ERR_FAILED 403')
+      ) {
+        return; // Suppress these errors
+      }
+      originalError.apply(console, args);
+    };
+    
+    console.warn = (...args: unknown[]) => {
+      const message = args.join(' ');
+      // Filter out ChatKit internal warnings
+      if (
+        message.includes('chatgpt.com/ces/v1/projects/oai/settings') ||
+        message.includes('CORS policy') ||
+        message.includes('Access-Control-Allow-Origin')
+      ) {
+        return; // Suppress these warnings
+      }
+      originalWarn.apply(console, args);
+    };
+    
+    return () => {
+      console.error = originalError;
+      console.warn = originalWarn;
+    };
   }, []);
   
   // Intercept fetch requests globally to capture conversation ID from ChatKit API responses
@@ -180,7 +222,7 @@ function AssistantWithFormContent() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId: currentSessionId, conversationId: convId }),
-              }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+              }).catch(() => {}); // Silently fail
               
               // Restore original fetch once we've found the ID
               window.fetch = originalFetch;
@@ -200,7 +242,7 @@ function AssistantWithFormContent() {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ sessionId: currentSessionId, conversationId: foundConvId }),
-                }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                }).catch(() => {}); // Silently fail
                 
                 window.fetch = originalFetch;
               }
@@ -265,17 +307,9 @@ function AssistantWithFormContent() {
   
   // Function to store transcript
   const storeTranscript = useCallback(async (transcriptText: string) => {
-    if (!sessionId) {
-      console.warn('[AssistantWithForm] Cannot store transcript: missing sessionId');
+    if (!sessionId || !transcriptText || transcriptText.length === 0) {
       return false;
     }
-    
-    if (!transcriptText || transcriptText.length === 0) {
-      console.warn('[AssistantWithForm] Cannot store transcript: transcript is empty');
-      return false;
-    }
-
-    console.log(`[AssistantWithForm] Attempting to store transcript for session: ${sessionId}, length: ${transcriptText.length}`);
 
     try {
       const response = await fetch('/api/store-transcript', {
@@ -290,9 +324,7 @@ function AssistantWithFormContent() {
         return false;
       }
 
-      const result = await response.json();
-      console.log('[AssistantWithForm] Transcript stored successfully:', result);
-      console.log(`[AssistantWithForm] SessionId: ${sessionId}, Transcript length: ${transcriptText.length}, Response:`, result);
+      await response.json();
       return true;
     } catch (error) {
       console.error('[AssistantWithForm] Error storing transcript:', error);
@@ -307,8 +339,6 @@ function AssistantWithFormContent() {
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault(); // Prevent default navigation
     
-    const targetUrl = iframeSrc;
-    
     // Try to extract transcript with retries (ChatKit might need a moment to render)
     let transcript = extractTranscript();
     let attempts = 0;
@@ -316,48 +346,21 @@ function AssistantWithFormContent() {
     
     while ((!transcript || transcript.length === 0) && attempts < maxAttempts) {
       attempts++;
-      console.log(`[AssistantWithForm] Attempt ${attempts} to extract transcript...`);
       await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms between attempts
       transcript = extractTranscript();
     }
     
-    console.log('[AssistantWithForm] Final transcript length:', transcript.length, 'SessionId:', sessionId);
-    console.log('[AssistantWithForm] Transcript preview (first 200 chars):', transcript.substring(0, 200));
-    
     if (transcript && transcript.length > 0 && sessionId) {
       // Store transcript and wait for it to complete
-      console.log('[AssistantWithForm] Storing transcript before navigation...');
-      const stored = await storeTranscript(transcript);
-      if (!stored) {
-        console.error('[AssistantWithForm] ⚠️ Transcript storage failed! SessionId:', sessionId);
-        console.error('[AssistantWithForm] This may cause issues when Zapier tries to retrieve the transcript.');
-        // Still continue navigation, but log the error
-      } else {
-        console.log('[AssistantWithForm] ✅ Transcript stored successfully before navigation');
-        // Verify storage by immediately checking
-        try {
-          const verifyResponse = await fetch(`/api/get-transcript?sessionId=${encodeURIComponent(sessionId)}`);
-          if (verifyResponse.ok) {
-            const verifyData = await verifyResponse.json();
-            console.log('[AssistantWithForm] ✅ Storage verified! Retrieved transcript length:', verifyData.transcript?.length || 0);
-          } else {
-            console.warn('[AssistantWithForm] ⚠️ Storage verification failed - transcript may not be available');
-          }
-        } catch (verifyError) {
-          console.warn('[AssistantWithForm] Could not verify storage:', verifyError);
-        }
-      }
-    } else {
-      console.warn('[AssistantWithForm] No transcript to store. Transcript length:', transcript.length, 'SessionId:', sessionId);
+      await storeTranscript(transcript);
+    } else if (sessionId) {
       // Still try to store a placeholder so the session ID is recorded
-      if (sessionId) {
-        await storeTranscript('No conversation transcript available at time of form submission.');
-      }
+      await storeTranscript('No conversation transcript available at time of form submission.');
     }
     
-    // Now navigate to the form
-    window.location.href = targetUrl;
-  }, [sessionId, storeTranscript, iframeSrc]);
+    // Open the form in a modal instead of navigating away
+    setIsFormModalOpen(true);
+  }, [sessionId, storeTranscript]);
   
   // Create personalized greeting
   const greeting = useMemo(() => {
@@ -370,8 +373,6 @@ function AssistantWithFormContent() {
   const getClientSecret = useCallback(async (currentSecret: string | null) => {
     if (currentSecret) return currentSecret;
 
-    console.log("[AssistantWithForm] Creating ChatKit session...");
-    
     const response = await fetch(CREATE_SESSION_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -390,8 +391,6 @@ function AssistantWithFormContent() {
     }
 
     const data = await response.json();
-    console.log("[AssistantWithForm] Session created successfully", data);
-    console.log("[AssistantWithForm] Full response data:", JSON.stringify(data, null, 2));
     
     // Try to extract conversation ID from the response
     // Check various possible fields
@@ -405,7 +404,6 @@ function AssistantWithFormContent() {
       const convIdInSecret = clientSecret.match(/conv_[a-f0-9]{40,}/i);
       if (convIdInSecret) {
         const foundConvId = convIdInSecret[0];
-        console.log("[AssistantWithForm] Found conversation ID in client_secret:", foundConvId);
         setConversationId(foundConvId);
         if (sessionId) {
           fetch('/api/store-conversation-id', {
@@ -418,7 +416,6 @@ function AssistantWithFormContent() {
     }
     
     if (convId && typeof convId === 'string' && convId.startsWith('conv_')) {
-      console.log("[AssistantWithForm] Found conversation ID in response:", convId);
       setConversationId(convId);
       // Store the conversation ID mapping
       if (sessionId) {
@@ -427,11 +424,6 @@ function AssistantWithFormContent() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId, conversationId: convId }),
         }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
-      }
-    } else {
-      console.log("[AssistantWithForm] No conversation ID (conv_...) found in response. Available fields:", Object.keys(data));
-      if (convId) {
-        console.log("[AssistantWithForm] Found ID but it's not a conversation ID:", convId);
       }
     }
     
@@ -464,24 +456,126 @@ function AssistantWithFormContent() {
       },
     },
     onReady: () => {
-      console.log("[AssistantWithForm] ChatKit ready, control:", chatkit.control);
+      // ChatKit is ready
     },
     onThreadChange: (event: { threadId: string | null }) => {
       const newThreadId = event.threadId;
+      const previousThreadId = previousThreadIdRef.current;
+      
+      // Check if this is a new conversation thread
+      // This happens when:
+      // 1. ThreadId changes from one value to a different value (new thread)
+      // 2. ThreadId becomes null (conversation cleared)
+      const isNewConversation = previousThreadId !== null && 
+                                 (newThreadId === null || newThreadId !== previousThreadId);
+      
+      if (isNewConversation) {
+        // Reset bot response state for new conversation
+        setHasBotResponded(false);
+        hasBotRespondedRef.current = false;
+        // Clear any monitoring intervals
+        if (botResponseCheckIntervalRef.current) {
+          clearInterval(botResponseCheckIntervalRef.current);
+          botResponseCheckIntervalRef.current = null;
+        }
+        lastTranscriptRef.current = "";
+      }
       
       if (newThreadId) {
-        console.log("[AssistantWithForm] ✅ Thread changed, threadId:", newThreadId);
         setThreadId(newThreadId);
+        previousThreadIdRef.current = newThreadId;
+        
         // Store thread ID mapping
         if (sessionId) {
           fetch('/api/store-thread-id', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId, threadId: newThreadId }),
-          }).catch(err => console.error('[AssistantWithForm] Failed to store thread ID:', err));
+          }).catch(() => {}); // Silently fail
         }
+        
+        // Start monitoring for bot response completion (streaming end)
+        // Use a ref to track if we should monitor (avoid stale closure)
+        const currentThreadId = newThreadId;
+        
+        // Clear any existing check interval
+        if (botResponseCheckIntervalRef.current) {
+          clearInterval(botResponseCheckIntervalRef.current);
+        }
+        
+        // Reset transcript tracking
+        lastTranscriptRef.current = "";
+        let stableCount = 0;
+        let checkCount = 0;
+        const maxChecks = 60; // Stop checking after 60 seconds
+        
+        // Check periodically for complete bot response using thread API
+        botResponseCheckIntervalRef.current = setInterval(() => {
+          checkCount++;
+          
+          // Stop checking after max attempts
+          if (checkCount > maxChecks) {
+            if (botResponseCheckIntervalRef.current) {
+              clearInterval(botResponseCheckIntervalRef.current);
+              botResponseCheckIntervalRef.current = null;
+            }
+            return;
+          }
+          
+          // Use thread API to check for assistant messages
+          if (currentThreadId && sessionId) {
+            fetch(`/api/get-thread-transcript?threadId=${encodeURIComponent(currentThreadId)}`)
+              .then(res => res.json())
+              .then(data => {
+                if (data.success && data.transcript) {
+                  const transcript = data.transcript;
+                  
+                  // Check if transcript contains assistant message with actual content
+                  if (transcript && transcript.includes('Assistant:')) {
+                    // Extract assistant messages
+                    const assistantMessages = transcript
+                      .split('\n\n')
+                      .filter((msg: string) => msg.trim().startsWith('Assistant:'));
+                    
+                    if (assistantMessages.length > 0) {
+                      // Get the last assistant message
+                      const lastAssistantMsg = assistantMessages[assistantMessages.length - 1];
+                      const assistantContent = lastAssistantMsg.replace(/^Assistant:\s*/i, '').trim();
+                      
+                      // Check if assistant message has substantial content
+                      if (assistantContent.length > 10) {
+                        // Check if transcript has stabilized
+                        if (transcript === lastTranscriptRef.current && transcript.length > 0) {
+                          stableCount++;
+                          // Require 2 consecutive stable checks (2 seconds) to ensure streaming is done
+                          if (stableCount >= 2 && !hasBotRespondedRef.current) {
+                            // Transcript is stable, bot has finished streaming
+                            hasBotRespondedRef.current = true;
+                            setHasBotResponded(true);
+                            if (botResponseCheckIntervalRef.current) {
+                              clearInterval(botResponseCheckIntervalRef.current);
+                              botResponseCheckIntervalRef.current = null;
+                            }
+                          }
+                        } else {
+                          // Transcript changed, reset stable count
+                          stableCount = 0;
+                          lastTranscriptRef.current = transcript;
+                        }
+                      }
+                    }
+                  }
+                }
+              })
+              .catch(() => {
+                // Silently fail - API might not be ready yet
+              });
+          }
+        }, 1000); // Check every second
       } else {
-        console.log("[AssistantWithForm] onThreadChange called but threadId is null");
+        // Thread was cleared
+        setThreadId(null);
+        previousThreadIdRef.current = null;
       }
     },
   });
@@ -499,14 +593,13 @@ function AssistantWithFormContent() {
         const data = event.data as Record<string, unknown>;
         const convId = (data.conversationId || data.conversation_id || data.convId || data.id) as string | undefined;
         if (convId && typeof convId === 'string' && convId.startsWith('conv_')) {
-          console.log("[AssistantWithForm] ✅ Found conversation ID in postMessage:", convId);
           setConversationId(convId);
           if (sessionId) {
             fetch('/api/store-conversation-id', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ sessionId, conversationId: convId }),
-            }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+            }).catch(() => {}); // Silently fail
           }
         }
       }
@@ -516,14 +609,13 @@ function AssistantWithFormContent() {
         const convIdMatch = event.data.match(/conv_[a-f0-9]{40,}/i);
         if (convIdMatch) {
           const convId = convIdMatch[0];
-          console.log("[AssistantWithForm] ✅ Found conversation ID in postMessage string:", convId);
           setConversationId(convId);
           if (sessionId) {
             fetch('/api/store-conversation-id', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ sessionId, conversationId: convId }),
-            }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+            }).catch(() => {}); // Silently fail
           }
         }
       }
@@ -548,14 +640,13 @@ function AssistantWithFormContent() {
               const convIdMatch = value.match(/conv_[a-f0-9]{40,}/i);
               if (convIdMatch) {
                 const convId = convIdMatch[0];
-                console.log("[AssistantWithForm] ✅ Found conversation ID in localStorage:", key, convId);
                 setConversationId(convId);
                 if (sessionId) {
                   fetch('/api/store-conversation-id', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ sessionId, conversationId: convId }),
-                  }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                  }).catch(() => {}); // Silently fail
                 }
                 clearInterval(checkInterval);
                 return;
@@ -573,14 +664,13 @@ function AssistantWithFormContent() {
             const convIdMatch = chatKitIframe.src.match(/conv_[a-f0-9]{40,}/i);
             if (convIdMatch) {
               const convId = convIdMatch[0];
-              console.log("[AssistantWithForm] ✅ Found conversation ID in iframe URL:", convId);
               setConversationId(convId);
               if (sessionId) {
                 fetch('/api/store-conversation-id', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ sessionId, conversationId: convId }),
-                }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                }).catch(() => {}); // Silently fail
               }
               clearInterval(checkInterval);
               return;
@@ -595,53 +685,42 @@ function AssistantWithFormContent() {
           // Try to access any properties that might contain conversation ID
           const allKeys = Object.keys(controlAny);
           
-          // Only log keys on first check to avoid spam
-          if (!hasLoggedKeys) {
-            console.log("[AssistantWithForm] Control object keys:", allKeys);
-            // Log detailed structure of handlers and options
-            if (controlAny.handlers) {
-              console.log("[AssistantWithForm] Control handlers:", Object.keys(controlAny.handlers as Record<string, unknown>));
-            }
-            if (controlAny.options) {
-              const options = controlAny.options as Record<string, unknown>;
-              console.log("[AssistantWithForm] Control options keys:", Object.keys(options));
-              // Try to stringify options to find conv_ pattern
-              try {
-                const optionsStr = JSON.stringify(options);
-                const convIdMatch = optionsStr.match(/conv_[a-f0-9]{40,}/i);
-                if (convIdMatch) {
-                  console.log("[AssistantWithForm] ✅ Found conversation ID in options:", convIdMatch[0]);
-                  const foundConvId = convIdMatch[0];
-                  setConversationId(foundConvId);
-                  if (sessionId) {
-                    fetch('/api/store-conversation-id', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ sessionId, conversationId: foundConvId }),
-                    }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
-                  }
-                  clearInterval(checkInterval);
-                  return;
+          // Check control object for conversation ID
+          if (controlAny.options) {
+            const options = controlAny.options as Record<string, unknown>;
+            // Try to stringify options to find conv_ pattern
+            try {
+              const optionsStr = JSON.stringify(options);
+              const convIdMatch = optionsStr.match(/conv_[a-f0-9]{40,}/i);
+              if (convIdMatch) {
+                const foundConvId = convIdMatch[0];
+                setConversationId(foundConvId);
+                if (sessionId) {
+                  fetch('/api/store-conversation-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId, conversationId: foundConvId }),
+                  }).catch(() => {}); // Silently fail
                 }
-              } catch (e) {
-                console.debug('[AssistantWithForm] Could not stringify options:', e);
+                clearInterval(checkInterval);
+                return;
               }
+            } catch (e) {
+              // Could not stringify options
             }
-            hasLoggedKeys = true;
           }
           
           // Check common property names
           for (const key of allKeys) {
             const value = controlAny[key];
             if (typeof value === 'string' && value.startsWith('conv_')) {
-              console.log("[AssistantWithForm] ✅ Found conversation ID in control property:", key, value);
               setConversationId(value);
               if (sessionId) {
                 fetch('/api/store-conversation-id', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ sessionId, conversationId: value }),
-                }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                }).catch(() => {}); // Silently fail
               }
               clearInterval(checkInterval);
               break;
@@ -654,14 +733,13 @@ function AssistantWithFormContent() {
                 const convIdMatch = valueStr.match(/conv_[a-f0-9]{40,}/i);
                 if (convIdMatch) {
                   const foundConvId = convIdMatch[0];
-                  console.log("[AssistantWithForm] ✅ Found conversation ID in nested control property:", key, foundConvId);
                   setConversationId(foundConvId);
                   if (sessionId) {
                     fetch('/api/store-conversation-id', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ sessionId, conversationId: foundConvId }),
-                    }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                    }).catch(() => {}); // Silently fail
                   }
                   clearInterval(checkInterval);
                   return;
@@ -672,14 +750,13 @@ function AssistantWithFormContent() {
                 for (const nestedKey of Object.keys(nestedObj)) {
                   const nestedValue = nestedObj[nestedKey];
                   if (typeof nestedValue === 'string' && nestedValue.startsWith('conv_')) {
-                    console.log("[AssistantWithForm] ✅ Found conversation ID in nested control property:", key, nestedKey, nestedValue);
                     setConversationId(nestedValue);
                     if (sessionId) {
                       fetch('/api/store-conversation-id', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId, conversationId: nestedValue }),
-                      }).catch(err => console.error('[AssistantWithForm] Failed to store conversation ID:', err));
+                      }).catch(() => {}); // Silently fail
                     }
                     clearInterval(checkInterval);
                     return;
@@ -690,7 +767,7 @@ function AssistantWithFormContent() {
           }
         }
       } catch (e) {
-        console.debug('[AssistantWithForm] Error checking for conversation ID:', e);
+        // Error checking for conversation ID - ignore
       }
     }, 2000); // Check every 2 seconds
 
@@ -707,14 +784,21 @@ function AssistantWithFormContent() {
     const interval = setInterval(() => {
       const transcript = extractTranscript();
       if (transcript && transcript.length > 0) {
-        storeTranscript(transcript).catch(err => {
-          console.error('[AssistantWithForm] Error in periodic transcript storage:', err);
-        });
+        storeTranscript(transcript).catch(() => {}); // Silently fail
       }
     }, 10000); // Store every 10 seconds
 
     return () => clearInterval(interval);
   }, [chatkit.control, sessionId, storeTranscript]);
+  
+  // Cleanup bot response check interval on unmount
+  useEffect(() => {
+    return () => {
+      if (botResponseCheckIntervalRef.current) {
+        clearInterval(botResponseCheckIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Also try to send firstName to Zapier form via postMessage (if it supports it)
   useEffect(() => {
@@ -773,27 +857,111 @@ function AssistantWithFormContent() {
       {/* Zapier Form Section */}
       <div className="border-t border-gray-200 bg-gray-50 p-6">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-2xl font-bold mb-4">Submit Support Request</h2>
-          <p className="text-gray-600 mb-6">
-            {firstName 
-              ? `Hi ${firstName}! Use the form below to submit a support request with additional details.`
-              : "Use the form below to submit a support request with additional details."}
-          </p>
-          <button
-            onClick={handleFormLinkClick}
-            disabled={!iframeSrc}
-            className="inline-block bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {hasBotResponded 
-              ? 'Open Support Request from this conversation'
-              : 'Open Support Request Form'}
-            {firstName && ` (for ${firstName})`}
-          </button>
-          <p className="text-sm text-gray-500 mt-4">
-            {firstName && `Your name (${firstName}) will be pre-filled in the form.`}
-          </p>
+          <h2 className="text-2xl font-bold mb-4 text-gray-900">Submit Support Request</h2>
+          
+          {/* New conversation-based form (shown after bot responds) */}
+          {hasBotResponded && (
+            <div className="mb-6">
+              <p className="text-gray-600 mb-4">
+                Use the form below to submit a support request from this conversation with additional details:
+              </p>
+              <button
+                onClick={handleFormLinkClick}
+                disabled={!iframeSrc}
+                className="group flex items-center justify-between w-full rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-sm disabled:hover:border-gray-200 mb-4"
+              >
+                <span className="text-lg font-semibold text-gray-900">
+                  Open Support Request from this conversation
+                </span>
+                <svg
+                  className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-disabled:translate-x-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+            </div>
+          )}
+          
+          {/* Original form (always shown) */}
+          <div>
+            <p className="text-gray-600 mb-4">
+              Use the form below to submit a support request without using the assistant:
+            </p>
+            <button
+              onClick={handleFormLinkClick}
+              disabled={!iframeSrc}
+              className="group flex items-center justify-between w-full rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-sm disabled:hover:border-gray-200"
+            >
+              <span className="text-lg font-semibold text-gray-900">
+                Open Support Request Form
+              </span>
+              <svg
+                className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-disabled:translate-x-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </button>
+            <p className="text-sm text-gray-500 mt-4">
+              {firstName && "Your details will be pre-filled in the form."}
+            </p>
+          </div>
         </div>
       </div>
+      
+      {/* Form Modal */}
+      {isFormModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="relative w-full h-full bg-white flex flex-col">
+            {/* Back Button */}
+            <button
+              onClick={() => setIsFormModalOpen(false)}
+              className="absolute top-4 left-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors"
+              aria-label="Go back to chat"
+            >
+              <svg
+                className="h-6 w-6 text-gray-700"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+            </button>
+            
+            {/* Form Iframe */}
+            <iframe
+              src={iframeSrc}
+              title="Support Request Form"
+              className="w-full h-full border-0"
+              allow="clipboard-read; clipboard-write"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
