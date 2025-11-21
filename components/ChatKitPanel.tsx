@@ -14,6 +14,7 @@ import {
 import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";
 import { stableStringify } from "@/lib/stableStringify";
+import { sanitizeCitationsDeep } from "@/lib/sanitizeCitations";
 
 // Component to auto-hide loading overlay after timeout
 function LoadingTimeoutHandler({ 
@@ -71,85 +72,6 @@ type PromptCacheInfo = {
   expiresAt: number;
   hash: string;
 };
-
-function sanitizeCitationsDeep(root: ShadowRoot) {
-  try {
-    // First, sanitize all text nodes
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    // More aggressive patterns to catch all variations including with special Unicode chars
-    const turnPattern = /turn\d+file\d+/gi;
-    // Also catch filecite in different contexts (with brackets, parentheses, special chars, etc.)
-    const fileciteVariations = [
-      /\[?filecite\]?[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-      /\(?filecite\)?[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-      /filecite[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-      /filecite/gi,
-    ];
-    let node: Node | null;
-    while ((node = walker.nextNode())) {
-      const textNode = node as Text;
-      const original = textNode.textContent ?? "";
-      if (!original) {
-        continue;
-      }
-      
-      // Check if text contains any citation markers
-      const hasFilecite = /filecite/i.test(original);
-      const hasTurnPattern = turnPattern.test(original);
-      
-      if (!hasFilecite && !hasTurnPattern) {
-        continue;
-      }
-      
-      turnPattern.lastIndex = 0;
-      let cleaned = original;
-      
-      // Remove all filecite variations
-      for (const pattern of fileciteVariations) {
-        pattern.lastIndex = 0;
-        cleaned = cleaned.replace(pattern, "");
-      }
-      
-      // Remove turn patterns (more aggressive)
-      turnPattern.lastIndex = 0;
-      cleaned = cleaned.replace(turnPattern, "");
-      // Also catch turn patterns with special chars
-      cleaned = cleaned.replace(/turn\d+file\d+[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi, "");
-      
-      // Clean up extra whitespace and special characters
-      cleaned = cleaned.replace(/[\u200B-\u200D\uFEFF\uE000-\uF8FF]+/g, ""); // Remove special Unicode chars
-      cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
-      
-      if (cleaned !== original.trim()) {
-        textNode.textContent = cleaned;
-      }
-    }
-    
-    // Also sanitize HTML elements directly (for cases where citations are in HTML)
-    const allElements = root.querySelectorAll('*');
-    allElements.forEach((el) => {
-      if (el.textContent && (/filecite/i.test(el.textContent) || /turn\d+file\d+/i.test(el.textContent))) {
-        // Check if this element contains citations
-        const originalHTML = el.innerHTML;
-        if (!originalHTML) return;
-        
-        let cleanedHTML = originalHTML;
-        // Remove filecite patterns from HTML
-        cleanedHTML = cleanedHTML.replace(/filecite[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi, "");
-        cleanedHTML = cleanedHTML.replace(/turn\d+file\d+[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi, "");
-        cleanedHTML = cleanedHTML.replace(/[\u200B-\u200D\uFEFF\uE000-\uF8FF]+/g, "");
-        
-        if (cleanedHTML !== originalHTML) {
-          el.innerHTML = cleanedHTML;
-        }
-      }
-    });
-  } catch (error) {
-    if (isDev) {
-      console.debug("[ChatKitPanel] sanitizeCitationsDeep error", error);
-    }
-  }
-}
 
 function sanitizeMetadata(
   input: Record<string, unknown> | null | undefined

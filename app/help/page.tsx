@@ -3,6 +3,7 @@
 import { useCallback, Suspense, useEffect, useRef } from "react";
 import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
+import { sanitizeCitationsDeep } from "@/lib/sanitizeCitations";
 import Image from "next/image";
 
 function HelpPageContent() {
@@ -193,6 +194,17 @@ function HelpPageContent() {
       }
     };
 
+    const sanitizeShadow = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) return;
+        sanitizeCitationsDeep(shadow);
+      } catch (e) {
+        console.debug('[HelpPage] sanitize shadow error:', e);
+      }
+    };
+
     let mo: MutationObserver | null = null;
     const attachObserver = () => {
       try {
@@ -206,7 +218,11 @@ function HelpPageContent() {
           mo?.disconnect();
         } catch {}
         applyStyles();
-        mo = new MutationObserver(() => applyStyles());
+        sanitizeShadow();
+        mo = new MutationObserver(() => {
+          applyStyles();
+          sanitizeShadow();
+        });
         mo.observe(shadow, { childList: true, subtree: true });
       } catch (e) {
         console.debug('[HelpPage] style observer error:', e);

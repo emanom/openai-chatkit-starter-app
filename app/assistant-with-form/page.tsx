@@ -132,6 +132,7 @@ function AssistantWithFormContent() {
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
   const [isConversationForm, setIsConversationForm] = useState<boolean>(false);
+  const [showLoadingSpinner, setShowLoadingSpinner] = useState<boolean>(true);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -153,17 +154,29 @@ function AssistantWithFormContent() {
   useEffect(() => {
     const originalError = console.error;
     const originalWarn = console.warn;
+    const originalLog = console.log;
+    
+    const shouldSuppress = (message: string): boolean => {
+      const lowerMessage = message.toLowerCase();
+      return (
+        lowerMessage.includes('chatgpt.com/ces/v1/projects/oai/settings') ||
+        lowerMessage.includes('ces/v1/projects/oai/settings') ||
+        lowerMessage.includes('chatgpt.com/ces/v1') ||
+        lowerMessage.includes('cors policy') ||
+        lowerMessage.includes('access-control-allow-origin') ||
+        lowerMessage.includes('failed to fetch') ||
+        lowerMessage.includes('err_failed 403') ||
+        lowerMessage.includes('err_failed') ||
+        lowerMessage.includes('403 (forbidden)') ||
+        (lowerMessage.includes('access to fetch') && lowerMessage.includes('chatgpt.com')) ||
+        (lowerMessage.includes('blocked by cors') && lowerMessage.includes('chatgpt.com')) ||
+        (lowerMessage.includes('from origin') && lowerMessage.includes('cdn.platform.openai.com') && lowerMessage.includes('chatgpt.com'))
+      );
+    };
     
     console.error = (...args: unknown[]) => {
       const message = args.join(' ');
-      // Filter out ChatKit internal CORS errors
-      if (
-        message.includes('chatgpt.com/ces/v1/projects/oai/settings') ||
-        message.includes('CORS policy') ||
-        message.includes('Access-Control-Allow-Origin') ||
-        message.includes('Failed to fetch') ||
-        message.includes('ERR_FAILED 403')
-      ) {
+      if (shouldSuppress(message)) {
         return; // Suppress these errors
       }
       originalError.apply(console, args);
@@ -171,23 +184,28 @@ function AssistantWithFormContent() {
     
     console.warn = (...args: unknown[]) => {
       const message = args.join(' ');
-      // Filter out ChatKit internal warnings
-      if (
-        message.includes('chatgpt.com/ces/v1/projects/oai/settings') ||
-        message.includes('CORS policy') ||
-        message.includes('Access-Control-Allow-Origin')
-      ) {
+      if (shouldSuppress(message)) {
         return; // Suppress these warnings
       }
       originalWarn.apply(console, args);
     };
     
+    // Also suppress in console.log for some cases
+    console.log = (...args: unknown[]) => {
+      const message = args.join(' ');
+      if (shouldSuppress(message)) {
+        return; // Suppress these logs
+      }
+      originalLog.apply(console, args);
+    };
+    
     return () => {
       console.error = originalError;
       console.warn = originalWarn;
+      console.log = originalLog;
     };
   }, []);
-
+  
   // Sanitize raw file citations rendered by ChatKit when sources are disabled
   useEffect(() => {
     const rootNode = chatContainerRef.current;
@@ -859,6 +877,19 @@ function AssistantWithFormContent() {
     };
   }, [chatkit.control, conversationId, sessionId]);
 
+  // Show loading spinner for minimum time and until ChatKit is ready
+  useEffect(() => {
+    if (chatkit.control) {
+      // Wait a bit to ensure ChatKit is actually rendered, then hide spinner
+      const timer = setTimeout(() => {
+        setShowLoadingSpinner(false);
+      }, 500); // Minimum 500ms display time
+      return () => clearTimeout(timer);
+    } else {
+      setShowLoadingSpinner(true);
+    }
+  }, [chatkit.control]);
+
   // Periodically store transcript as conversation progresses
   useEffect(() => {
     if (!chatkit.control || !sessionId) return;
@@ -910,7 +941,7 @@ function AssistantWithFormContent() {
       {/* Chatbot Section */}
       <div className="flex-1 flex flex-col min-h-0" ref={chatContainerRef}>
         <div className="flex-1 overflow-hidden">
-          {chatkit.control ? (
+          {chatkit.control && !showLoadingSpinner ? (
             <div 
               className="w-full h-full" 
               style={{ 
@@ -929,8 +960,30 @@ function AssistantWithFormContent() {
               />
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-lg">Loading chat...</div>
+            <div className="flex items-center justify-center h-full bg-white">
+              <div className="text-center">
+                <svg
+                  className="animate-spin h-12 w-12 text-green-600 mx-auto mb-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <p className="text-lg text-gray-600">Loading chat...</p>
+              </div>
             </div>
           )}
         </div>
@@ -938,7 +991,7 @@ function AssistantWithFormContent() {
       
       {/* Zapier Form Section */}
       <div className="border-t border-gray-200 bg-gray-50 p-6">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl pl-4 sm:pl-6">
           <h2 className="text-2xl font-bold mb-4 text-gray-900">Submit Support Request</h2>
           
           {/* New conversation-based form (shown after bot responds) */}

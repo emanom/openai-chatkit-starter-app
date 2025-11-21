@@ -4,6 +4,7 @@ import { useCallback, Suspense, useEffect, useRef, useMemo, useState } from "rea
 import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
+import { sanitizeCitationsDeep } from "@/lib/sanitizeCitations";
 
 function AssistantPageContent() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
@@ -387,6 +388,17 @@ function AssistantPageContent() {
       }
     };
 
+    const sanitizeShadow = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) return;
+        sanitizeCitationsDeep(shadow);
+      } catch (e) {
+        console.debug('[AssistantPage] sanitize shadow error:', e);
+      }
+    };
+
     let mo: MutationObserver | null = null;
     const attachObserver = () => {
       try {
@@ -400,7 +412,11 @@ function AssistantPageContent() {
           mo?.disconnect();
         } catch {}
         applyStyles();
-        mo = new MutationObserver(() => applyStyles());
+        sanitizeShadow();
+        mo = new MutationObserver(() => {
+          applyStyles();
+          sanitizeShadow();
+        });
         mo.observe(shadow, { childList: true, subtree: true });
       } catch (e) {
         console.debug('[AssistantPage] style observer error:', e);
