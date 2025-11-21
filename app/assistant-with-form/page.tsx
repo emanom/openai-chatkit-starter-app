@@ -5,6 +5,8 @@ import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
 import SupportRequestForm from "@/components/SupportRequestForm";
+import ConversationSupportForm from "@/components/ConversationSupportForm";
+import { sanitizeCitationsDeep } from "@/lib/sanitizeCitations";
 
 // Function to extract transcript from ChatKit shadow DOM
 function extractTranscript(): string {
@@ -129,6 +131,7 @@ function AssistantWithFormContent() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
+  const [isConversationForm, setIsConversationForm] = useState<boolean>(false);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -182,6 +185,56 @@ function AssistantWithFormContent() {
     return () => {
       console.error = originalError;
       console.warn = originalWarn;
+    };
+  }, []);
+
+  // Sanitize raw file citations rendered by ChatKit when sources are disabled
+  useEffect(() => {
+    const rootNode = chatContainerRef.current;
+    if (!rootNode) return;
+
+    let rafId: number | null = null;
+    let observer: MutationObserver | null = null;
+
+    const sanitizeShadow = () => {
+      try {
+        const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+        const shadow = wc?.shadowRoot;
+        if (!shadow) return;
+        sanitizeCitationsDeep(shadow);
+      } catch (e) {
+        console.debug('[AssistantWithForm] sanitize shadow error:', e);
+      }
+    };
+
+    const attachObserver = () => {
+      const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
+      const shadow = wc?.shadowRoot;
+      if (!shadow) {
+        rafId = window.requestAnimationFrame(attachObserver);
+        return;
+      }
+      rafId = null;
+      sanitizeShadow();
+      try {
+        observer?.disconnect();
+      } catch {}
+      observer = new MutationObserver(() => sanitizeShadow());
+      observer.observe(shadow, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    };
+
+    attachObserver();
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      try {
+        observer?.disconnect();
+      } catch {}
     };
   }, []);
   
@@ -337,9 +390,9 @@ function AssistantWithFormContent() {
   }, [sessionId]);
 
 
-  // Function to handle form button click - extract and store transcript
-  const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault(); // Prevent default navigation
+  // Function to handle conversation form button click - simpler form
+  const handleConversationFormClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
     
     // Try to extract transcript with retries (ChatKit might need a moment to render)
     let transcript = extractTranscript();
@@ -360,7 +413,36 @@ function AssistantWithFormContent() {
       await storeTranscript('No conversation transcript available at time of form submission.');
     }
     
-    // Open form in modal
+    // Open conversation form in modal
+    setIsConversationForm(true);
+    setIsFormModalOpen(true);
+  }, [sessionId, storeTranscript]);
+
+  // Function to handle general form button click - full form
+  const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    
+    // Try to extract transcript with retries (ChatKit might need a moment to render)
+    let transcript = extractTranscript();
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while ((!transcript || transcript.length === 0) && attempts < maxAttempts) {
+      attempts++;
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms between attempts
+      transcript = extractTranscript();
+    }
+    
+    if (transcript && transcript.length > 0 && sessionId) {
+      // Store transcript and wait for it to complete
+      await storeTranscript(transcript);
+    } else if (sessionId) {
+      // Still try to store a placeholder so the session ID is recorded
+      await storeTranscript('No conversation transcript available at time of form submission.');
+    }
+    
+    // Open full form in modal
+    setIsConversationForm(false);
     setIsFormModalOpen(true);
   }, [sessionId, storeTranscript]);
   
@@ -866,9 +948,8 @@ function AssistantWithFormContent() {
                 Use the form below to submit a support request from this conversation with additional details:
               </p>
               <button
-                onClick={handleFormLinkClick}
-                disabled={!iframeSrc}
-                className="group flex items-center justify-between w-full rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-sm disabled:hover:border-gray-200 mb-4"
+                onClick={handleConversationFormClick}
+                className="group flex items-center justify-between w-full rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md hover:border-gray-300 mb-4"
               >
                 <span className="text-lg font-semibold text-gray-900">
                   Open Support Request from this conversation
@@ -932,7 +1013,10 @@ function AssistantWithFormContent() {
           <div className="relative w-full max-w-4xl mx-4 my-8">
             {/* Back Button */}
             <button
-              onClick={() => setIsFormModalOpen(false)}
+              onClick={() => {
+                setIsFormModalOpen(false);
+                setIsConversationForm(false);
+              }}
               className="absolute -top-12 left-0 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors border border-gray-200 text-gray-700"
               aria-label="Go back to chat"
             >
@@ -953,24 +1037,50 @@ function AssistantWithFormContent() {
             </button>
             
             {/* Form Component */}
-            <SupportRequestForm
-              firstName={firstName}
-              sessionId={sessionId}
-              conversationId={conversationId}
-              threadId={threadId}
-              conversationLink={
-                conversationId
-                  ? `https://platform.openai.com/logs/${conversationId}`
-                  : sessionId
-                  ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conversation/${sessionId}${threadId ? `?threadId=${encodeURIComponent(threadId)}` : ''}`
-                  : undefined
-              }
-              onClose={() => setIsFormModalOpen(false)}
-              onSuccess={() => {
-                setIsFormModalOpen(false);
-                // Optionally show a success message
-              }}
-            />
+            {isConversationForm ? (
+              <ConversationSupportForm
+                sessionId={sessionId}
+                conversationId={conversationId}
+                threadId={threadId}
+                conversationLink={
+                  conversationId
+                    ? `https://platform.openai.com/logs/${conversationId}`
+                    : sessionId
+                    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conversation/${sessionId}${threadId ? `?threadId=${encodeURIComponent(threadId)}` : ''}`
+                    : undefined
+                }
+                onClose={() => {
+                  setIsFormModalOpen(false);
+                  setIsConversationForm(false);
+                }}
+                onSuccess={() => {
+                  setIsFormModalOpen(false);
+                  setIsConversationForm(false);
+                }}
+              />
+            ) : (
+              <SupportRequestForm
+                firstName={firstName}
+                sessionId={sessionId}
+                conversationId={conversationId}
+                threadId={threadId}
+                conversationLink={
+                  conversationId
+                    ? `https://platform.openai.com/logs/${conversationId}`
+                    : sessionId
+                    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conversation/${sessionId}${threadId ? `?threadId=${encodeURIComponent(threadId)}` : ''}`
+                    : undefined
+                }
+                onClose={() => {
+                  setIsFormModalOpen(false);
+                  setIsConversationForm(false);
+                }}
+                onSuccess={() => {
+                  setIsFormModalOpen(false);
+                  setIsConversationForm(false);
+                }}
+              />
+            )}
           </div>
         </div>
       )}
