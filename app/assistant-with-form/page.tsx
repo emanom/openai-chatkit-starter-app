@@ -128,9 +128,7 @@ function AssistantWithFormContent() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
-  const [formHtml, setFormHtml] = useState<string>("");
-  const [isLoadingForm, setIsLoadingForm] = useState<boolean>(false);
-  const formContainerRef = useRef<HTMLDivElement | null>(null);
+  const [iframeError, setIframeError] = useState<boolean>(false);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -338,73 +336,56 @@ function AssistantWithFormContent() {
     }
   }, [sessionId]);
 
-  // Function to fetch form HTML from proxy
-  const fetchFormHtml = useCallback(async () => {
-    if (!iframeSrc) return;
-    
-    setIsLoadingForm(true);
-    try {
-      const proxyUrl = `/api/proxy-zapier-form?url=${encodeURIComponent(iframeSrc)}`;
-      const response = await fetch(proxyUrl);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch form: ${response.status}`);
+
+  // Monitor for CSP errors when modal is open
+  useEffect(() => {
+    if (!isFormModalOpen) return;
+
+    const originalError = console.error;
+    let cspErrorDetected = false;
+
+    const errorHandler = (...args: unknown[]) => {
+      const message = args.join(' ');
+      // Check for CSP frame-ancestors errors
+      if (
+        message.includes('frame-ancestors') ||
+        message.includes('Content Security Policy') ||
+        message.includes('violates the following Content Security Policy directive')
+      ) {
+        cspErrorDetected = true;
+        setIframeError(true);
       }
-      
-      const html = await response.text();
-      setFormHtml(html);
-    } catch (error) {
-      console.error('[AssistantWithForm] Error fetching form HTML:', error);
-      setFormHtml(''); // Clear on error
-    } finally {
-      setIsLoadingForm(false);
-    }
-  }, [iframeSrc]);
+      originalError.apply(console, args);
+    };
 
-  // Fetch form HTML when modal opens
-  useEffect(() => {
-    if (isFormModalOpen && iframeSrc && !formHtml) {
-      fetchFormHtml();
-    }
-  }, [isFormModalOpen, iframeSrc, formHtml, fetchFormHtml]);
+    console.error = errorHandler;
 
-  // Execute scripts when form HTML is injected
-  useEffect(() => {
-    if (formHtml && formContainerRef.current) {
-      // Use setTimeout to ensure DOM is updated before executing scripts
-      const timeoutId = setTimeout(() => {
-        const container = formContainerRef.current;
-        if (!container) return;
-        
-        // Extract and execute scripts
-        const scripts = container.querySelectorAll('script');
-        scripts.forEach((oldScript) => {
-          const newScript = document.createElement('script');
-          
-          // Copy attributes
-          Array.from(oldScript.attributes).forEach((attr) => {
-            newScript.setAttribute(attr.name, attr.value);
-          });
-          
-          // Copy content
-          if (oldScript.src) {
-            newScript.src = oldScript.src;
-          } else {
-            newScript.textContent = oldScript.textContent;
+    // Also check after a delay if iframe hasn't loaded
+    const timeoutId = setTimeout(() => {
+      if (!cspErrorDetected) {
+        // Check if iframe is still empty/blocked
+        const iframe = document.querySelector('iframe[title="Support Request Form"]') as HTMLIFrameElement;
+        if (iframe) {
+          try {
+            // Try to access iframe content
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (!doc || doc.body.children.length === 0) {
+              // Iframe appears blocked or empty
+              setIframeError(true);
+            }
+          } catch {
+            // Can't access iframe - likely CSP blocking
+            setIframeError(true);
           }
-          
-          // Replace old script with new one (this will execute it)
-          oldScript.parentNode?.replaceChild(newScript, oldScript);
-        });
-        
-        // Also trigger any initialization that might be needed
-        // Dispatch a custom event to notify that form is loaded
-        window.dispatchEvent(new Event('zapier-form-loaded'));
-      }, 100);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [formHtml]);
+        }
+      }
+    }, 2000);
+
+    return () => {
+      console.error = originalError;
+      clearTimeout(timeoutId);
+    };
+  }, [isFormModalOpen]);
 
   // Function to handle form button click - extract and store transcript
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -430,6 +411,7 @@ function AssistantWithFormContent() {
     }
     
     // Open the form in a modal instead of navigating away
+    setIframeError(false); // Reset error state
     setIsFormModalOpen(true);
   }, [sessionId, storeTranscript]);
   
@@ -1003,7 +985,7 @@ function AssistantWithFormContent() {
             <button
               onClick={() => {
                 setIsFormModalOpen(false);
-                setFormHtml(''); // Clear form HTML when closing
+                setIframeError(false); // Reset error state when closing
               }}
               className="absolute top-4 left-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors border border-gray-200"
               aria-label="Go back to chat"
@@ -1025,35 +1007,32 @@ function AssistantWithFormContent() {
             </button>
             
             {/* Form Content */}
-            <div className="flex-1 overflow-auto">
-              {isLoadingForm ? (
+            <div className="flex-1 overflow-auto relative">
+              {iframeError ? (
                 <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mb-4"></div>
-                    <p className="text-gray-600">Loading form...</p>
-                  </div>
-                </div>
-              ) : formHtml ? (
-                <div 
-                  ref={formContainerRef}
-                  className="w-full h-full"
-                  dangerouslySetInnerHTML={{ __html: formHtml }}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <p className="text-gray-600 mb-4">Failed to load form.</p>
+                  <div className="text-center p-8">
+                    <p className="text-gray-600 mb-4">
+                      The form cannot be embedded due to security restrictions. Please open it in a new tab instead.
+                    </p>
                     <button
                       onClick={() => {
                         window.open(iframeSrc, '_blank', 'noopener,noreferrer');
                         setIsFormModalOpen(false);
                       }}
-                      className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                      className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                     >
                       Open Form in New Tab
                     </button>
                   </div>
                 </div>
+              ) : (
+                <iframe
+                  src={iframeSrc}
+                  title="Support Request Form"
+                  className="w-full h-full border-0"
+                  allow="clipboard-read; clipboard-write"
+                  onError={() => setIframeError(true)}
+                />
               )}
             </div>
           </div>
