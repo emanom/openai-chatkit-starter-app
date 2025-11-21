@@ -187,7 +187,15 @@ export default function ConversationSupportForm({
               Video Recording Link
             </label>
             <p className="text-xs text-gray-500 mb-2">
-              Click here to record a video of your issue in FYI and paste the link here.
+              <a
+                href="https://go.fyi.app/recordme/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-600 hover:text-green-700 underline"
+              >
+                Click here
+              </a>{" "}
+              to record a video of your issue in FYI and paste the link here.
             </p>
             <input
               type="url"
