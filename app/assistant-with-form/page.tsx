@@ -1012,16 +1012,15 @@ function AssistantWithFormContent() {
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center p-8">
                     <p className="text-gray-600 mb-4">
-                      The form cannot be embedded due to security restrictions. Please open it in a new tab instead.
+                      The form cannot be embedded due to security restrictions. Click below to open it in this tab.
                     </p>
                     <button
                       onClick={() => {
-                        window.open(iframeSrc, '_blank', 'noopener,noreferrer');
-                        setIsFormModalOpen(false);
+                        window.location.href = iframeSrc;
                       }}
                       className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                     >
-                      Open Form in New Tab
+                      Open Form
                     </button>
                   </div>
                 </div>
