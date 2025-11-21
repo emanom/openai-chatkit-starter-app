@@ -128,7 +128,6 @@ function AssistantWithFormContent() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
-  const [iframeError, setIframeError] = useState<boolean>(false);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -337,9 +336,9 @@ function AssistantWithFormContent() {
   }, [sessionId]);
 
 
-  // Monitor for CSP errors when modal is open
+  // Monitor for CSP errors when modal is open and auto-redirect
   useEffect(() => {
-    if (!isFormModalOpen) return;
+    if (!isFormModalOpen || !iframeSrc) return;
 
     const originalError = console.error;
     let cspErrorDetected = false;
@@ -352,8 +351,11 @@ function AssistantWithFormContent() {
         message.includes('Content Security Policy') ||
         message.includes('violates the following Content Security Policy directive')
       ) {
-        cspErrorDetected = true;
-        setIframeError(true);
+        if (!cspErrorDetected) {
+          cspErrorDetected = true;
+          // Automatically navigate to form in same tab
+          window.location.href = iframeSrc;
+        }
       }
       originalError.apply(console, args);
     };
@@ -370,12 +372,12 @@ function AssistantWithFormContent() {
             // Try to access iframe content
             const doc = iframe.contentDocument || iframe.contentWindow?.document;
             if (!doc || doc.body.children.length === 0) {
-              // Iframe appears blocked or empty
-              setIframeError(true);
+              // Iframe appears blocked or empty - redirect to form
+              window.location.href = iframeSrc;
             }
           } catch {
-            // Can't access iframe - likely CSP blocking
-            setIframeError(true);
+            // Can't access iframe - likely CSP blocking, redirect to form
+            window.location.href = iframeSrc;
           }
         }
       }
@@ -385,7 +387,7 @@ function AssistantWithFormContent() {
       console.error = originalError;
       clearTimeout(timeoutId);
     };
-  }, [isFormModalOpen]);
+  }, [isFormModalOpen, iframeSrc]);
 
   // Function to handle form button click - extract and store transcript
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -411,7 +413,6 @@ function AssistantWithFormContent() {
     }
     
     // Open the form in a modal instead of navigating away
-    setIframeError(false); // Reset error state
     setIsFormModalOpen(true);
   }, [sessionId, storeTranscript]);
   
@@ -983,10 +984,7 @@ function AssistantWithFormContent() {
           <div className="relative w-full h-full bg-white flex flex-col">
             {/* Back Button */}
             <button
-              onClick={() => {
-                setIsFormModalOpen(false);
-                setIframeError(false); // Reset error state when closing
-              }}
+              onClick={() => setIsFormModalOpen(false)}
               className="absolute top-4 left-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors border border-gray-200"
               aria-label="Go back to chat"
             >
@@ -1008,31 +1006,12 @@ function AssistantWithFormContent() {
             
             {/* Form Content */}
             <div className="flex-1 overflow-auto relative">
-              {iframeError ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center p-8">
-                    <p className="text-gray-600 mb-4">
-                      The form cannot be embedded due to security restrictions. Click below to open it in this tab.
-                    </p>
-                    <button
-                      onClick={() => {
-                        window.location.href = iframeSrc;
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-                    >
-                      Open Form
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <iframe
-                  src={iframeSrc}
-                  title="Support Request Form"
-                  className="w-full h-full border-0"
-                  allow="clipboard-read; clipboard-write"
-                  onError={() => setIframeError(true)}
-                />
-              )}
+              <iframe
+                src={iframeSrc}
+                title="Support Request Form"
+                className="w-full h-full border-0"
+                allow="clipboard-read; clipboard-write"
+              />
             </div>
           </div>
         </div>
