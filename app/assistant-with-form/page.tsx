@@ -584,8 +584,6 @@ function AssistantWithFormContent() {
   useEffect(() => {
     if (!chatkit.control || conversationId) return;
 
-    let hasLoggedKeys = false; // Track if we've logged the control keys
-
     // Listen for postMessage events from ChatKit iframe
     const handleMessage = (event: MessageEvent) => {
       // Check if message contains conversation ID
