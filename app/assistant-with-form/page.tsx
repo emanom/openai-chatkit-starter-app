@@ -128,6 +128,8 @@ function AssistantWithFormContent() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
+  const [formHtml, setFormHtml] = useState<string>("");
+  const [isLoadingForm, setIsLoadingForm] = useState<boolean>(false);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -334,6 +336,36 @@ function AssistantWithFormContent() {
       return false;
     }
   }, [sessionId]);
+
+  // Function to fetch form HTML from proxy
+  const fetchFormHtml = useCallback(async () => {
+    if (!iframeSrc) return;
+    
+    setIsLoadingForm(true);
+    try {
+      const proxyUrl = `/api/proxy-zapier-form?url=${encodeURIComponent(iframeSrc)}`;
+      const response = await fetch(proxyUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch form: ${response.status}`);
+      }
+      
+      const html = await response.text();
+      setFormHtml(html);
+    } catch (error) {
+      console.error('[AssistantWithForm] Error fetching form HTML:', error);
+      setFormHtml(''); // Clear on error
+    } finally {
+      setIsLoadingForm(false);
+    }
+  }, [iframeSrc]);
+
+  // Fetch form HTML when modal opens
+  useEffect(() => {
+    if (isFormModalOpen && iframeSrc && !formHtml) {
+      fetchFormHtml();
+    }
+  }, [isFormModalOpen, iframeSrc, formHtml, fetchFormHtml]);
 
   // Function to handle form button click - extract and store transcript
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -927,10 +959,13 @@ function AssistantWithFormContent() {
       {/* Form Modal */}
       {isFormModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="relative w-full max-w-2xl mx-4 bg-white rounded-lg shadow-xl flex flex-col max-h-[90vh]">
+          <div className="relative w-full h-full bg-white flex flex-col">
             {/* Back Button */}
             <button
-              onClick={() => setIsFormModalOpen(false)}
+              onClick={() => {
+                setIsFormModalOpen(false);
+                setFormHtml(''); // Clear form HTML when closing
+              }}
               className="absolute top-4 left-4 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors border border-gray-200"
               aria-label="Go back to chat"
             >
@@ -950,43 +985,36 @@ function AssistantWithFormContent() {
               </svg>
             </button>
             
-            {/* Modal Content */}
-            <div className="p-8">
-              <h2 className="text-2xl font-bold mb-4 text-gray-900">Support Request Form</h2>
-              <p className="text-gray-600 mb-6">
-                The support request form will open in a new tab. You can keep chatting here while you fill it out.
-              </p>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => {
-                    window.open(iframeSrc, '_blank', 'noopener,noreferrer');
-                    setIsFormModalOpen(false);
-                  }}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  <span>Open Form in New Tab</span>
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                    />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setIsFormModalOpen(false)}
-                  className="px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
+            {/* Form Content */}
+            <div className="flex-1 overflow-auto">
+              {isLoadingForm ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mb-4"></div>
+                    <p className="text-gray-600">Loading form...</p>
+                  </div>
+                </div>
+              ) : formHtml ? (
+                <div 
+                  className="w-full h-full"
+                  dangerouslySetInnerHTML={{ __html: formHtml }}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <p className="text-gray-600 mb-4">Failed to load form.</p>
+                    <button
+                      onClick={() => {
+                        window.open(iframeSrc, '_blank', 'noopener,noreferrer');
+                        setIsFormModalOpen(false);
+                      }}
+                      className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                    >
+                      Open Form in New Tab
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
