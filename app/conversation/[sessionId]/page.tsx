@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
 
 async function ConversationContent({ sessionId, threadIdParam }: { sessionId: string; threadIdParam?: string }) {
   // Try to get OpenAI conversation ID first

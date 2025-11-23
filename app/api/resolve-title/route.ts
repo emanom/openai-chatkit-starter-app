@@ -21,7 +21,7 @@ export async function POST(req: Request): Promise<Response> {
     }
     const title = await resolveTitle(url);
     return json({ url, title }, 200);
-  } catch (err) {
+  } catch {
     return json({ error: "Unable to resolve title" }, 500);
   }
 }

@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     if (!key.startsWith(prefix)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const signed = await getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 60 });
     return NextResponse.json({ url: signed });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "download failed" }, { status: 500 });
   }
 }

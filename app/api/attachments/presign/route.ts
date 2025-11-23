@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
     const url = await getSignedUrl(s3, cmd, { expiresIn: 60 });
     return NextResponse.json({ key, url });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "presign failed" }, { status: 500 });
   }
 }

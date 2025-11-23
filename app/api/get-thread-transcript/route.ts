@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Use threadId from parameter if provided, otherwise look it up from sessionId
-    let threadId = threadIdParam || getThreadId(sessionId!);
+    const threadId = threadIdParam || getThreadId(sessionId!);
     
     // If no threadId found and we have sessionId, return empty transcript (thread not created yet)
     if (!threadId && sessionId) {
@@ -345,7 +345,7 @@ function buildFormattedTranscript(thread: ThreadResponse): string {
             second: '2-digit',
             hour12: false,
           });
-        } catch (e) {
+        } catch {
           // Fallback to ISO string if timezone conversion fails
           timeStr = new Date(timestamp * 1000).toISOString();
         }

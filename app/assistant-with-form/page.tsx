@@ -38,7 +38,7 @@ function extractTranscript(): string {
           }
         });
       }
-    } catch (e) {
+    } catch {
       // Cannot access iframe content (CORS) - expected
     }
     
@@ -815,7 +815,7 @@ function AssistantWithFormContent() {
                 clearInterval(checkInterval);
                 return;
               }
-            } catch (e) {
+            } catch {
               // Could not stringify options
             }
           }
@@ -854,7 +854,7 @@ function AssistantWithFormContent() {
                   clearInterval(checkInterval);
                   return;
                 }
-              } catch (e) {
+              } catch {
                 // If stringify fails, try direct property access
                 const nestedObj = value as Record<string, unknown>;
                 for (const nestedKey of Object.keys(nestedObj)) {
@@ -874,11 +874,11 @@ function AssistantWithFormContent() {
                 }
               }
             }
-          }
         }
-      } catch (e) {
-        // Error checking for conversation ID - ignore
       }
+    } catch {
+      // Error checking for conversation ID - ignore
+    }
     }, 2000); // Check every 2 seconds
 
     return () => {

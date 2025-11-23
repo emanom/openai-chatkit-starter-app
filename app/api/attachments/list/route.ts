@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     } while (token);
 
     return NextResponse.json(results);
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "list failed" }, { status: 500 });
   }
 }
