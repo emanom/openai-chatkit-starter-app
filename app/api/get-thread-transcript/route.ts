@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getThreadId } from "@/lib/thread-id-store";
+import { sanitizeCitationText } from "@/lib/sanitizeCitations";
 
 const DEFAULT_CHATKIT_BASE = "https://api.openai.com";
 
@@ -265,7 +266,10 @@ function buildTranscript(thread: ThreadResponse): string {
     }
     
     if (text && text.trim().length > 0) {
-      messages.push(`${role}: ${text.trim()}`);
+      const cleaned = sanitizeCitationText(text, { preserveWhitespace: true }).trim();
+      if (cleaned.length > 0) {
+        messages.push(`${role}: ${cleaned}`);
+      }
     }
   }
   
@@ -320,6 +324,10 @@ function buildFormattedTranscript(thread: ThreadResponse): string {
     }
     
     if (text && text.trim().length > 0) {
+      const cleaned = sanitizeCitationText(text, { preserveWhitespace: true }).trim();
+      if (!cleaned) {
+        continue;
+      }
       // Format with timestamp in Adelaide timezone if available
       const timestamp = (item as { created_at?: number }).created_at;
       let timeStr = '';
@@ -344,7 +352,7 @@ function buildFormattedTranscript(thread: ThreadResponse): string {
       }
       // Remove ACST from timestamp since it's already mentioned at the top, make header bold
       const header = timeStr ? `**[${timeStr}] ${role}:**` : `**${role}:**`;
-      messages.push(`${header}\n${text.trim()}\n`);
+      messages.push(`${header}\n${cleaned}\n`);
     }
   }
   

@@ -1,5 +1,3 @@
-"use client";
-
 const isDev = process.env.NODE_ENV !== "production";
 
 const SPECIAL_CHAR_PATTERN = /[\u200B-\u200D\uFEFF\uE000-\uF8FF]+/g;
@@ -12,6 +10,7 @@ const FILECITE_PATTERNS = [
   /filecite/gi,
 ];
 const MULTISPACE_PATTERN = /\s{2,}/g;
+const DETECTION_PATTERN = /(filecite|turn\d+file\d+)/i;
 
 type StripOptions = {
   preserveWhitespace?: boolean;
@@ -47,8 +46,13 @@ function stripCitationMarkers(
  * Removes raw file citation markers (e.g. "fileciteturn0file5turn0file12")
  * that can leak into ChatKit responses when citation rendering is disabled or fails.
  */
-export function sanitizeCitationsDeep(root: ShadowRoot) {
-  if (!root) {
+export function sanitizeCitationsDeep(root: ShadowRoot | null | undefined) {
+  if (
+    !root ||
+    typeof document === "undefined" ||
+    typeof NodeFilter === "undefined" ||
+    typeof document.createTreeWalker !== "function"
+  ) {
     return;
   }
 
@@ -61,8 +65,16 @@ export function sanitizeCitationsDeep(root: ShadowRoot) {
       const original = textNode.textContent ?? "";
       if (!original) continue;
 
+      const needsCleanup =
+        DETECTION_PATTERN.test(original) ||
+        SPECIAL_CHAR_PATTERN.test(original);
+
+      if (!needsCleanup) {
+        continue;
+      }
+
       const cleaned = stripCitationMarkers(original);
-      if (cleaned && cleaned !== original.trim()) {
+      if (cleaned !== original) {
         textNode.textContent = cleaned;
       }
     }

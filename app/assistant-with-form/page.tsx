@@ -552,9 +552,9 @@ function AssistantWithFormContent() {
     startScreen: {
       greeting: greeting,
       prompts: [
-        { label: "Tell me about Learning resources", prompt: "Learning resources: ", icon: "circle-question" },
-        { label: "What's new in FYI?", prompt: "What's new in FYI?: ", icon: "sparkle" },
-        { label: "Details on subscription plans", prompt: "Details on subscription plans: ", icon: "document" },
+        { label: "Tell me about Learning resources", prompt: "Tell me about Learning resources", icon: "circle-question" },
+        { label: "What's new in FYI?", prompt: "What's new in FYI? ", icon: "sparkle" },
+        { label: "Details on subscription plans", prompt: "Details on subscription plans", icon: "document" },
       ],
     },
     composer: {
@@ -1121,7 +1121,7 @@ function AssistantWithFormContent() {
       {/* Zapier Form Section */}
       <div className="border-t border-gray-200 bg-gray-50 p-6">
         <div className="w-full px-4 sm:px-6">
-          <h2 className="text-2xl font-bold mb-4 text-gray-900">Submit Support Request</h2>
+          <h2 className="text-2xl font-bold mb-4 text-gray-900">Submit a support request</h2>
           
           {/* New conversation-based form (shown after bot responds) */}
           {hasBotResponded && (
@@ -1159,7 +1159,7 @@ function AssistantWithFormContent() {
           {!hasBotResponded && (
             <div className="flex flex-col items-start gap-4">
               <p className="text-gray-600 mb-4">
-                Use the form below to submit a support request without using the assistant:
+                Submit a support request without the assistant:
               </p>
               <button
                 onClick={handleFormLinkClick}
@@ -1167,7 +1167,7 @@ function AssistantWithFormContent() {
                 className="group flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-sm disabled:hover:border-gray-200"
               >
                 <span className="text-lg font-semibold text-gray-900">
-                  Open Support Request Form
+                  Support Request Form
                 </span>
                 <svg
                   className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-disabled:translate-x-0"
