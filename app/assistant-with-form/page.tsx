@@ -12,6 +12,57 @@ import {
   sanitizeCitationText,
   ensureGlobalCitationObserver,
 } from "@/lib/sanitizeCitations";
+import type { UserMetadata, UserMetadataKey } from "@/types/userMetadata";
+import { USER_METADATA_KEYS } from "@/types/userMetadata";
+
+const USER_METADATA_KEY_SET = new Set<UserMetadataKey>(USER_METADATA_KEYS);
+
+const sanitizeMetadataParamValue = (value: string | null): string | null => {
+  if (!value) return null;
+  if (value.includes("{{") || value.includes("}}")) {
+    return null;
+  }
+  return value;
+};
+
+const normalizeMetadataParamKey = (rawKey: string): UserMetadataKey | null => {
+  if (USER_METADATA_KEY_SET.has(rawKey as UserMetadataKey)) {
+    return rawKey as UserMetadataKey;
+  }
+  if (rawKey.startsWith("meta.")) {
+    const trimmed = rawKey.slice(5);
+    if (USER_METADATA_KEY_SET.has(trimmed as UserMetadataKey)) {
+      return trimmed as UserMetadataKey;
+    }
+    return null;
+  }
+  if (rawKey.startsWith("meta_")) {
+    const trimmed = rawKey.slice(5);
+    if (USER_METADATA_KEY_SET.has(trimmed as UserMetadataKey)) {
+      return trimmed as UserMetadataKey;
+    }
+  }
+  return null;
+};
+
+const extractUserMetadataFromQuery = (queryString: string): UserMetadata => {
+  const metadata: UserMetadata = {};
+  if (!queryString) {
+    return metadata;
+  }
+  const params = new URLSearchParams(queryString);
+  params.forEach((value, key) => {
+    const normalizedKey = normalizeMetadataParamKey(key);
+    if (!normalizedKey) {
+      return;
+    }
+    const sanitized = sanitizeMetadataParamValue(value);
+    if (sanitized) {
+      metadata[normalizedKey] = sanitized;
+    }
+  });
+  return metadata;
+};
 
 // Function to extract transcript from ChatKit shadow DOM
 function extractTranscript(): string {
@@ -135,7 +186,13 @@ function extractTranscript(): string {
 function AssistantWithFormContent() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const searchParams = useSearchParams();
+  const searchParamsString = searchParams.toString();
+  const metadata = useMemo(
+    () => extractUserMetadataFromQuery(searchParamsString),
+    [searchParamsString]
+  );
   const [firstName, setFirstName] = useState<string | null>(null);
+  const metadataFirstName = metadata.first_name ?? null;
   const [iframeSrc, setIframeSrc] = useState<string>("");
   const [sessionId, setSessionId] = useState<string>("");
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -143,6 +200,7 @@ function AssistantWithFormContent() {
   const [hasBotResponded, setHasBotResponded] = useState<boolean>(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
   const [isConversationForm, setIsConversationForm] = useState<boolean>(false);
+  const [submittedFormType, setSubmittedFormType] = useState<"support" | "conversation" | null>(null);
   const [showLoadingSpinner, setShowLoadingSpinner] = useState<boolean>(true);
   const conversationIdRef = useRef<string | null>(null);
   const previousThreadIdRef = useRef<string | null>(null);
@@ -150,6 +208,26 @@ function AssistantWithFormContent() {
   const lastTranscriptRef = useRef<string>("");
   const hasBotRespondedRef = useRef<boolean>(false);
   
+  const handleModalClose = useCallback(() => {
+    setIsFormModalOpen(false);
+    setIsConversationForm(false);
+    setSubmittedFormType(null);
+  }, []);
+
+  const handleSupportFormSuccess = useCallback(() => {
+    setSubmittedFormType("support");
+  }, []);
+
+  const handleConversationFormSuccess = useCallback(() => {
+    setSubmittedFormType("conversation");
+  }, []);
+
+  useEffect(() => {
+    if (!firstName && metadataFirstName) {
+      setFirstName(metadataFirstName);
+    }
+  }, [firstName, metadataFirstName]);
+
   // Generate a unique session ID on mount
   useEffect(() => {
     const id = `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -396,20 +474,26 @@ function AssistantWithFormContent() {
     };
   }, [sessionId]);
   
-  // Get first-name from query parameters (try multiple variations)
-  const firstNameFromUrl = searchParams.get("first-name") || 
+  // Get first_name from query parameters (try multiple variations)
+  const firstNameFromUrlRaw = searchParams.get("first_name") || 
+                          searchParams.get("first-name") ||
                           searchParams.get("firstName") ||
                           searchParams.get("firstname");
+  const firstNameFromUrl =
+    firstNameFromUrlRaw && !firstNameFromUrlRaw.includes("{{") && !firstNameFromUrlRaw.includes("}}")
+      ? firstNameFromUrlRaw
+      : null;
   
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
     // Always build the Zapier form URL, even if sessionId isn't ready yet
     const zapierFormUrl = new URL("https://fyi-support-centre.zapier.app/support-request-form");
+    const resolvedFirstName = firstNameFromUrl || metadataFirstName;
     
-    if (firstNameFromUrl && !firstNameFromUrl.includes('{{')) {
-      setFirstName(firstNameFromUrl);
-      zapierFormUrl.searchParams.set("first-name", firstNameFromUrl);
+    if (resolvedFirstName) {
+      setFirstName(resolvedFirstName);
+      zapierFormUrl.searchParams.set("first_name", resolvedFirstName);
     }
     
     // Add session-related parameters if available
@@ -435,7 +519,7 @@ function AssistantWithFormContent() {
     }
     
     setIframeSrc(zapierFormUrl.toString());
-  }, [firstNameFromUrl, sessionId, conversationId, threadId]);
+  }, [firstNameFromUrl, metadataFirstName, sessionId, conversationId, threadId]);
   
   // Function to store transcript
   const storeTranscript = useCallback(async (transcriptText: string) => {
@@ -471,6 +555,7 @@ function AssistantWithFormContent() {
   // Function to handle conversation form button click - simpler form
   const handleConversationFormClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    setSubmittedFormType(null);
     
     // Try to extract transcript with retries (ChatKit might need a moment to render)
     let transcript = extractTranscript();
@@ -499,6 +584,7 @@ function AssistantWithFormContent() {
   // Function to handle general form button click - full form
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    setSubmittedFormType(null);
     
     // Full form doesn't need transcript - user is submitting without conversation context
     // Just open the form modal
@@ -964,7 +1050,7 @@ function AssistantWithFormContent() {
         if (iframe && iframe.contentWindow) {
           try {
             iframe.contentWindow.postMessage(
-              { firstName, 'first-name': firstName },
+              { firstName, first_name: firstName },
               'https://fyi-support-centre.zapier.app'
             );
             console.log('[AssistantWithForm] Sent firstName to Zapier form via postMessage:', firstName);
@@ -1228,10 +1314,7 @@ function AssistantWithFormContent() {
       {isFormModalOpen && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 overflow-y-auto"
-          onClick={() => {
-            setIsFormModalOpen(false);
-            setIsConversationForm(false);
-          }}
+          onClick={handleModalClose}
         >
           <div 
             className="relative w-full max-w-4xl mx-4 my-8"
@@ -1239,10 +1322,7 @@ function AssistantWithFormContent() {
           >
             {/* Back Button */}
             <button
-              onClick={() => {
-                setIsFormModalOpen(false);
-                setIsConversationForm(false);
-              }}
+              onClick={handleModalClose}
               className="absolute -top-12 left-0 z-10 flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-lg hover:bg-gray-50 transition-colors border border-gray-200 text-gray-700"
               aria-label="Go back to chat"
             >
@@ -1263,7 +1343,46 @@ function AssistantWithFormContent() {
             </button>
             
             {/* Form Component */}
-            {isConversationForm ? (
+            {submittedFormType ? (
+              <div className="w-full max-w-3xl mx-auto bg-white rounded-lg shadow-xl p-10 text-center">
+                <div className="flex flex-col items-center gap-6">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600">
+                    <svg className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                      {submittedFormType === "conversation" ? "Conversation request sent" : "Support request sent"}
+                    </h2>
+                    <p className="text-gray-600 max-w-2xl mx-auto">
+                      {submittedFormType === "conversation"
+                        ? "We attached this chat (and any files) to your ticket so the team has full context. We'll follow up via email soon."
+                        : "Thanks for sharing the details. Our support team received your request and will reach out using the contact information you provided."}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-4">
+                      You can keep chatting with the assistant while we review your request.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setSubmittedFormType(null)}
+                      className="flex-1 border border-gray-300 text-gray-700 font-semibold rounded-lg px-6 py-3 hover:bg-gray-50 transition-colors"
+                    >
+                      Submit another request
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleModalClose}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg px-6 py-3 transition-colors"
+                    >
+                      Back to chat
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : isConversationForm ? (
               <ConversationSupportForm
                 sessionId={sessionId}
                 conversationId={conversationId}
@@ -1275,14 +1394,11 @@ function AssistantWithFormContent() {
                     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conversation/${sessionId}${threadId ? `?threadId=${encodeURIComponent(threadId)}` : ''}`
                     : undefined
                 }
-                onClose={() => {
-                  setIsFormModalOpen(false);
-                  setIsConversationForm(false);
-                }}
-                onSuccess={() => {
-                  setIsFormModalOpen(false);
-                  setIsConversationForm(false);
-                }}
+                metadata={metadata}
+                firstName={firstName || metadata?.first_name || undefined}
+                lastName={metadata?.last_name || undefined}
+                onClose={handleModalClose}
+                onSuccess={handleConversationFormSuccess}
               />
             ) : (
               <SupportRequestForm
@@ -1297,14 +1413,9 @@ function AssistantWithFormContent() {
                     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conversation/${sessionId}${threadId ? `?threadId=${encodeURIComponent(threadId)}` : ''}`
                     : undefined
                 }
-                onClose={() => {
-                  setIsFormModalOpen(false);
-                  setIsConversationForm(false);
-                }}
-                onSuccess={() => {
-                  setIsFormModalOpen(false);
-                  setIsConversationForm(false);
-                }}
+                metadata={metadata}
+                onClose={handleModalClose}
+                onSuccess={handleSupportFormSuccess}
               />
             )}
           </div>

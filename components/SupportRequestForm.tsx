@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useCallback, useRef, DragEvent } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, DragEvent } from "react";
+import type { UserMetadata, UserMetadataKey } from "@/types/userMetadata";
+import { USER_METADATA_KEYS } from "@/types/userMetadata";
 
 interface SupportRequestFormProps {
   firstName?: string | null;
@@ -10,6 +12,7 @@ interface SupportRequestFormProps {
   conversationLink?: string;
   onClose: () => void;
   onSuccess?: () => void;
+  metadata?: UserMetadata;
 }
 
 interface FormData {
@@ -30,20 +33,77 @@ export default function SupportRequestForm({
   conversationLink,
   onClose,
   onSuccess,
+  metadata,
 }: SupportRequestFormProps) {
-  const [formData, setFormData] = useState<FormData>({
-    firstName: firstName || "",
-    lastName: "",
-    email: "",
+  const [formData, setFormData] = useState<FormData>(() => ({
+    firstName: firstName || metadata?.first_name || "",
+    lastName: metadata?.last_name || "",
+    email: metadata?.user_email || "",
     description: "",
     videoLink: "",
-    relatedPageLink: "",
+    relatedPageLink: metadata?.link_url || "",
     files: [],
-  });
+  }));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setFormData((prev) => {
+      const nextFirstName = prev.firstName || metadata?.first_name || "";
+      const nextLastName = prev.lastName || metadata?.last_name || "";
+      const nextEmail = prev.email || metadata?.user_email || "";
+      const nextRelatedLink = prev.relatedPageLink || metadata?.link_url || "";
+      if (
+        nextFirstName === prev.firstName &&
+        nextLastName === prev.lastName &&
+        nextEmail === prev.email &&
+        nextRelatedLink === prev.relatedPageLink
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        firstName: nextFirstName,
+        lastName: nextLastName,
+        email: nextEmail,
+        relatedPageLink: nextRelatedLink,
+      };
+    });
+  }, [
+    metadata?.first_name,
+    metadata?.last_name,
+    metadata?.user_email,
+    metadata?.link_url,
+  ]);
+
+  const metadataPayload = useMemo(() => {
+    const payload: UserMetadata = {};
+    const assign = (key: UserMetadataKey, value?: string | null) => {
+      if (typeof value === "string" && value.trim()) {
+        payload[key] = value.trim();
+      }
+    };
+    assign("first_name", formData.firstName || metadata?.first_name);
+    assign("last_name", formData.lastName || metadata?.last_name);
+    assign("user_email", formData.email || metadata?.user_email);
+    assign("link_url", formData.relatedPageLink || metadata?.link_url);
+    assign("user_subscription_plan", metadata?.user_subscription_plan);
+    assign("user_admin_status", metadata?.user_admin_status);
+    assign("fyi_region", metadata?.fyi_region);
+    assign("practice_mgmt", metadata?.practice_mgmt);
+    assign("fyi_age", metadata?.fyi_age);
+    return payload;
+  }, [formData.firstName, formData.lastName, formData.email, formData.relatedPageLink, metadata]);
+
+  const hiddenMetadataKeys = useMemo<UserMetadataKey[]>(
+    () =>
+      USER_METADATA_KEYS.filter(
+        (key): key is UserMetadataKey => key !== "user_email"
+      ),
+    []
+  );
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -144,6 +204,8 @@ export default function SupportRequestForm({
           const urlObj = new URL(url);
           const headers: Record<string, string> = {
             "Content-Type": file.type,
+            // This header must be sent because the presigned URL signs SSE usage.
+            "x-amz-server-side-encryption": "AES256",
           };
           
           // Don't send checksum headers - the presigned URL should not have checksum parameters
@@ -180,12 +242,13 @@ export default function SupportRequestForm({
           email: formData.email,
           description: formData.description,
           videoLink: formData.videoLink,
-          relatedPageLink: formData.relatedPageLink,
+          relatedPageLink: formData.relatedPageLink || metadata?.link_url || "",
           files: fileUrls,
           chatSessionId: sessionId,
           threadId: threadId,
           conversationId: conversationId,
           conversationLink: conversationLink,
+          metadata: metadataPayload,
         }),
       });
 
@@ -231,6 +294,16 @@ export default function SupportRequestForm({
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {hiddenMetadataKeys.map((key) => (
+            <input
+              key={key}
+              type="hidden"
+              name={`meta.${key}`}
+              value={metadataPayload[key] ?? ""}
+              readOnly
+            />
+          ))}
+
           {/* Related FYI Page Link */}
           <div>
             <label htmlFor="relatedPageLink" className="block text-sm font-medium text-gray-700 mb-2">

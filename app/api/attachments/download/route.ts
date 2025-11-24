@@ -15,17 +15,58 @@ const BUCKET = process.env.UPLOADS_BUCKET;
 
 export const runtime = "nodejs";
 
+interface DownloadTokenPayload {
+  key: string;
+  appSessionId: string;
+}
+
+const decodeToken = (token: string): DownloadTokenPayload | null => {
+  try {
+    const decoded = Buffer.from(token, "base64url").toString("utf8");
+    const payload = JSON.parse(decoded) as DownloadTokenPayload;
+    if (typeof payload.key === "string" && typeof payload.appSessionId === "string") {
+      return payload;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 export async function GET(req: Request) {
   try {
     if (!BUCKET) return NextResponse.json({ error: "Missing UPLOADS_BUCKET" }, { status: 500 });
     const url = new URL(req.url);
-    const key = url.searchParams.get("key");
-    const appSessionId = url.searchParams.get("appSessionId");
-    if (!key || !appSessionId) return NextResponse.json({ error: "Missing key/appSessionId" }, { status: 400 });
+    const token = url.searchParams.get("token");
+    const wantsJson = url.searchParams.get("format") === "json";
+
+    let key: string | null = null;
+    let appSessionId: string | null = null;
+
+    if (token) {
+      const payload = decodeToken(token);
+      if (payload) {
+        key = payload.key;
+        appSessionId = payload.appSessionId;
+      }
+    } else {
+      key = url.searchParams.get("key");
+      appSessionId = url.searchParams.get("appSessionId");
+    }
+
+    if (!key || !appSessionId) {
+      return NextResponse.json({ error: "Missing key/appSessionId" }, { status: 400 });
+    }
+
     const prefix = `chat-uploads/${appSessionId}/`;
     if (!key.startsWith(prefix)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const signed = await getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 60 });
-    return NextResponse.json({ url: signed });
+
+    if (wantsJson) {
+      return NextResponse.json({ url: signed });
+    }
+
+    return NextResponse.redirect(signed, 302);
   } catch {
     return NextResponse.json({ error: "download failed" }, { status: 500 });
   }

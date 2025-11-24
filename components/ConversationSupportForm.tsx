@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useCallback, useRef, DragEvent } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, DragEvent } from "react";
+import type { UserMetadata, UserMetadataKey } from "@/types/userMetadata";
+import { USER_METADATA_KEYS } from "@/types/userMetadata";
 
 interface ConversationSupportFormProps {
   sessionId?: string;
@@ -9,9 +11,13 @@ interface ConversationSupportFormProps {
   conversationLink?: string;
   onClose: () => void;
   onSuccess?: () => void;
+  metadata?: UserMetadata;
+  firstName?: string | null;
+  lastName?: string | null;
 }
 
 interface FormData {
+  email: string;
   videoLink: string;
   otherDetails: string;
   files: File[];
@@ -24,8 +30,12 @@ export default function ConversationSupportForm({
   conversationLink,
   onClose,
   onSuccess,
+  metadata,
+  firstName,
+  lastName,
 }: ConversationSupportFormProps) {
   const [formData, setFormData] = useState<FormData>({
+    email: metadata?.user_email || "",
     videoLink: "",
     otherDetails: "",
     files: [],
@@ -34,6 +44,58 @@ export default function ConversationSupportForm({
   const [error, setError] = useState<string>("");
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const resolvedFirstName = useMemo(() => {
+    const fromProp = typeof firstName === "string" ? firstName.trim() : "";
+    if (fromProp) return fromProp;
+    return typeof metadata?.first_name === "string" ? metadata.first_name.trim() : "";
+  }, [firstName, metadata?.first_name]);
+
+  const resolvedLastName = useMemo(() => {
+    const fromProp = typeof lastName === "string" ? lastName.trim() : "";
+    if (fromProp) return fromProp;
+    return typeof metadata?.last_name === "string" ? metadata.last_name.trim() : "";
+  }, [lastName, metadata?.last_name]);
+
+  useEffect(() => {
+    setFormData((prev) => {
+      const nextEmail = prev.email || metadata?.user_email || "";
+      if (nextEmail === prev.email) {
+        return prev;
+      }
+      return {
+        ...prev,
+        email: nextEmail,
+      };
+    });
+  }, [metadata?.user_email]);
+
+  const metadataPayload = useMemo(() => {
+    const payload: UserMetadata = {};
+    const assign = (key: UserMetadataKey, value?: string | null) => {
+      if (typeof value === "string" && value.trim()) {
+        payload[key] = value.trim();
+      }
+    };
+    assign("first_name", resolvedFirstName || metadata?.first_name);
+    assign("last_name", resolvedLastName || metadata?.last_name);
+    assign("user_email", formData.email || metadata?.user_email);
+    assign("link_url", metadata?.link_url);
+    assign("user_subscription_plan", metadata?.user_subscription_plan);
+    assign("user_admin_status", metadata?.user_admin_status);
+    assign("fyi_region", metadata?.fyi_region);
+    assign("practice_mgmt", metadata?.practice_mgmt);
+    assign("fyi_age", metadata?.fyi_age);
+    return payload;
+  }, [formData.email, metadata, resolvedFirstName, resolvedLastName]);
+
+  const hiddenMetadataKeys = useMemo<UserMetadataKey[]>(
+    () =>
+      USER_METADATA_KEYS.filter(
+        (key): key is UserMetadataKey => key !== "user_email"
+      ),
+    []
+  );
 
   const handleFileSelect = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -111,6 +173,8 @@ export default function ConversationSupportForm({
           const urlObj = new URL(url);
           const headers: Record<string, string> = {
             "Content-Type": file.type,
+            // SSE is part of the signed headers, so we must include it here.
+            "x-amz-server-side-encryption": "AES256",
           };
           
           // Don't send checksum headers - the presigned URL should not have checksum parameters
@@ -138,6 +202,9 @@ export default function ConversationSupportForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userEmail: formData.email || metadata?.user_email || "",
+          firstName: resolvedFirstName,
+          lastName: resolvedLastName,
           videoLink: formData.videoLink,
           otherDetails: formData.otherDetails,
           files: fileUrls,
@@ -146,6 +213,7 @@ export default function ConversationSupportForm({
           conversationId: conversationId,
           conversationLink: conversationLink,
           isConversationRequest: true, // Flag to indicate this is from conversation
+          metadata: metadataPayload,
         }),
       });
 
@@ -189,6 +257,35 @@ export default function ConversationSupportForm({
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {hiddenMetadataKeys.map((key) => (
+            <input
+              key={key}
+              type="hidden"
+              name={`meta.${key}`}
+              value={metadataPayload[key] ?? ""}
+              readOnly
+            />
+          ))}
+
+          {/* Contact Email */}
+          <div>
+            <label htmlFor="conversation-email" className="block text-sm font-medium text-gray-700 mb-2">
+              Contact Email <span className="text-red-500">*</span>
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              We&apos;ll use this address to follow up on your request.
+            </p>
+            <input
+              type="email"
+              id="conversation-email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              required={!metadata?.user_email}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
+              placeholder="you@practice.com"
+            />
+          </div>
+
           {/* Video Recording Link */}
           <div>
             <label htmlFor="videoLink" className="block text-sm font-medium text-gray-700 mb-2">
