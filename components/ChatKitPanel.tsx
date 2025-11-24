@@ -933,6 +933,7 @@ export function ChatKitPanel({
     };
 
     // Observe updates in the shadow DOM and apply styles
+    let sanitizeTimeout: number | null = null;
     const sanitizeShadow = () => {
       try {
         const wc = rootNode.querySelector<HTMLElement>("openai-chatkit");
@@ -944,7 +945,19 @@ export function ChatKitPanel({
       }
     };
 
+    const debouncedSanitize = () => {
+      if (sanitizeTimeout !== null) {
+        clearTimeout(sanitizeTimeout);
+      }
+      sanitizeShadow();
+      sanitizeTimeout = window.setTimeout(() => {
+        sanitizeShadow();
+        sanitizeTimeout = null;
+      }, 50);
+    };
+
     let mo: MutationObserver | null = null;
+    let sanitizeInterval: number | null = null;
     const attachObserver = () => {
       try {
         const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
@@ -955,18 +968,25 @@ export function ChatKitPanel({
         }
         try {
           mo?.disconnect();
+          if (sanitizeInterval !== null) {
+            clearInterval(sanitizeInterval);
+          }
         } catch {}
         applyStyles();
         sanitizeShadow();
         mo = new MutationObserver(() => {
           applyStyles();
-          sanitizeShadow();
+          debouncedSanitize();
         });
         mo.observe(shadow, {
           childList: true,
           subtree: true,
           characterData: true, // Also observe text content changes
         });
+        // Also run periodically during active streaming (every 200ms)
+        sanitizeInterval = window.setInterval(() => {
+          sanitizeShadow();
+        }, 200);
       } catch (e) {
         if (isDev) console.debug('[ChatKitPanel] style observer error:', e);
       }
@@ -974,6 +994,12 @@ export function ChatKitPanel({
 
     attachObserver();
     return () => {
+      if (sanitizeTimeout !== null) {
+        clearTimeout(sanitizeTimeout);
+      }
+      if (sanitizeInterval !== null) {
+        clearInterval(sanitizeInterval);
+      }
       try {
         mo?.disconnect();
       } catch {}

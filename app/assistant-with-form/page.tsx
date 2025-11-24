@@ -224,6 +224,7 @@ function AssistantWithFormContent() {
     let rafId: number | null = null;
     let observer: MutationObserver | null = null;
 
+    let sanitizeTimeout: number | null = null;
     const sanitizeShadow = () => {
       try {
         const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
@@ -233,6 +234,19 @@ function AssistantWithFormContent() {
       } catch (e) {
         console.debug('[AssistantWithForm] sanitize shadow error:', e);
       }
+    };
+
+    const debouncedSanitize = () => {
+      if (sanitizeTimeout !== null) {
+        clearTimeout(sanitizeTimeout);
+      }
+      // Run immediately
+      sanitizeShadow();
+      // Then run again after a short delay to catch rapid changes
+      sanitizeTimeout = window.setTimeout(() => {
+        sanitizeShadow();
+        sanitizeTimeout = null;
+      }, 50);
     };
 
     const attachObserver = () => {
@@ -247,12 +261,18 @@ function AssistantWithFormContent() {
       try {
         observer?.disconnect();
       } catch {}
-      observer = new MutationObserver(() => sanitizeShadow());
+      observer = new MutationObserver(() => debouncedSanitize());
       observer.observe(shadow, {
         childList: true,
         subtree: true,
         characterData: true,
       });
+      // Also run periodically during active streaming (every 200ms)
+      const intervalId = setInterval(() => {
+        sanitizeShadow();
+      }, 200);
+      // Store interval ID for cleanup
+      (observer as any)._intervalId = intervalId;
     };
 
     attachObserver();
@@ -260,8 +280,15 @@ function AssistantWithFormContent() {
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
+      if (sanitizeTimeout !== null) {
+        clearTimeout(sanitizeTimeout);
+      }
       try {
         observer?.disconnect();
+        // Clear interval if it exists
+        if ((observer as any)?._intervalId) {
+          clearInterval((observer as any)._intervalId);
+        }
       } catch {}
     };
   }, []);

@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFront distribution with Lambda@Edge for ChatKit global routing (test version)'
+
+Resources:
+  LambdaEdgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - edgelambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  RoutingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: chatkit-geographic-routing-test
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaEdgeRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = (event, context, callback) => {
+              const request = event.Records[0].cf.request;
+              const headers = request.headers;
+              
+              const country = headers['cloudfront-viewer-country'] 
+                  ? headers['cloudfront-viewer-country'][0].value 
+                  : 'US';
+              
+              const apacCountries = ['AU', 'NZ'];
+              const useApac = apacCountries.includes(country);
+              
+              // Add custom header to indicate preferred origin
+              request.headers['x-preferred-origin'] = [{
+                  key: 'X-Preferred-Origin',
+                  value: useApac ? 'apac' : 'us'
+              }];
+              
+              callback(null, request);
+          };
+
+  RoutingFunctionVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref RoutingFunction
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        DefaultCacheBehavior:
+          TargetOriginId: origin-group
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf
+          LambdaFunctionAssociations:
+            - EventType: viewer-request
+              LambdaFunctionARN: !Ref RoutingFunctionVersion
+        Origins:
+          - Id: us-east-1-origin
+            DomainName: main.d2xcz3k9ugtvab.amplifyapp.com
+            CustomOriginConfig:
+              HTTPPort: 443
+              OriginProtocolPolicy: https-only
+          - Id: ap-southeast-2-origin
+            DomainName: main.d1m1p4jeb6ymp7.amplifyapp.com
+            CustomOriginConfig:
+              HTTPPort: 443
+              OriginProtocolPolicy: https-only
+        OriginGroups:
+          Quantity: 1
+          Items:
+            - Id: origin-group
+              FailoverCriteria:
+                StatusCodes:
+                  Quantity: 3
+                  Items: [403, 404, 500]
+              Members:
+                Quantity: 2
+                Items:
+                  - OriginId: us-east-1-origin
+                  - OriginId: ap-southeast-2-origin
+        Enabled: true
+        HttpVersion: http2
+        PriceClass: PriceClass_All
+
+Outputs:
+  CloudFrontURL:
+    Description: 'Test URL - use this to test geographic routing'
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+  
+  DistributionId:
+    Description: 'CloudFront distribution ID'
+    Value: !Ref CloudFrontDistribution

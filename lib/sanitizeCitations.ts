@@ -3,12 +3,16 @@ const isDev = process.env.NODE_ENV !== "production";
 const SPECIAL_CHAR_PATTERN = /[\u200B-\u200D\uFEFF\uE000-\uF8FF]+/g;
 const TURN_PATTERN_WITH_SPECIALS = /turn\d+file\d+[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi;
 const TURN_PATTERN = /turn\d+file\d+/gi;
+// More aggressive patterns to catch filecite with special chars before/after
 const FILECITE_PATTERNS = [
-  /\[?filecite\]?[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
-  /\(?filecite\)?[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
+  /[\uE000-\uF8FF]*\[?filecite\]?[\uE000-\uF8FF]*[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
+  /[\uE000-\uF8FF]*\(?filecite\)?[\uE000-\uF8FF]*[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
+  /[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]*[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
   /filecite[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*/gi,
   /filecite/gi,
 ];
+// Pattern to catch filecite followed by turn patterns (common format)
+const FILECITE_WITH_TURNS = /[\uE000-\uF8FF]*filecite[\uE000-\uF8FF]*[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*(?:turn\d+file\d+[\s\u200B-\u200D\uFEFF\uE000-\uF8FF]*)+[\uE000-\uF8FF]*/gi;
 const MULTISPACE_PATTERN = /\s{2,}/g;
 const DETECTION_PATTERN = /(filecite|turn\d+file\d+)/i;
 
@@ -27,6 +31,9 @@ function stripCitationMarkers(
   const preserveWhitespace = Boolean(options?.preserveWhitespace);
 
   let cleaned = value;
+  // First remove the combined filecite + turn patterns (most common case)
+  cleaned = cleaned.replace(FILECITE_WITH_TURNS, "");
+  // Then remove individual patterns
   for (const pattern of FILECITE_PATTERNS) {
     cleaned = cleaned.replace(pattern, "");
   }
@@ -89,10 +96,14 @@ export function sanitizeCitationsDeep(root: ShadowRoot | null | undefined) {
         if (!originalHTML) return;
 
         let cleanedHTML = originalHTML;
+        // First remove combined patterns
+        cleanedHTML = cleanedHTML.replace(FILECITE_WITH_TURNS, "");
+        // Then remove individual patterns
         for (const pattern of FILECITE_PATTERNS) {
           cleanedHTML = cleanedHTML.replace(pattern, "");
         }
         cleanedHTML = cleanedHTML.replace(TURN_PATTERN_WITH_SPECIALS, "");
+        cleanedHTML = cleanedHTML.replace(TURN_PATTERN, "");
         cleanedHTML = cleanedHTML.replace(SPECIAL_CHAR_PATTERN, "");
 
         if (cleanedHTML !== originalHTML) {

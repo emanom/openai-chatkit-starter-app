@@ -194,6 +194,7 @@ function HelpPageContent() {
       }
     };
 
+    let sanitizeTimeout: number | null = null;
     const sanitizeShadow = () => {
       try {
         const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
@@ -205,7 +206,19 @@ function HelpPageContent() {
       }
     };
 
+    const debouncedSanitize = () => {
+      if (sanitizeTimeout !== null) {
+        clearTimeout(sanitizeTimeout);
+      }
+      sanitizeShadow();
+      sanitizeTimeout = window.setTimeout(() => {
+        sanitizeShadow();
+        sanitizeTimeout = null;
+      }, 50);
+    };
+
     let mo: MutationObserver | null = null;
+    let sanitizeInterval: number | null = null;
     const attachObserver = () => {
       try {
         const wc = rootNode.querySelector<HTMLElement>('openai-chatkit');
@@ -216,14 +229,21 @@ function HelpPageContent() {
         }
         try {
           mo?.disconnect();
+          if (sanitizeInterval !== null) {
+            clearInterval(sanitizeInterval);
+          }
         } catch {}
         applyStyles();
         sanitizeShadow();
         mo = new MutationObserver(() => {
           applyStyles();
-          sanitizeShadow();
+          debouncedSanitize();
         });
         mo.observe(shadow, { childList: true, subtree: true });
+        // Also run periodically during active streaming (every 200ms)
+        sanitizeInterval = window.setInterval(() => {
+          sanitizeShadow();
+        }, 200);
       } catch (e) {
         console.debug('[HelpPage] style observer error:', e);
       }
@@ -231,6 +251,12 @@ function HelpPageContent() {
 
     attachObserver();
     return () => {
+      if (sanitizeTimeout !== null) {
+        clearTimeout(sanitizeTimeout);
+      }
+      if (sanitizeInterval !== null) {
+        clearInterval(sanitizeInterval);
+      }
       try {
         mo?.disconnect();
       } catch {}
