@@ -4,7 +4,7 @@ import { useCallback, Suspense, useEffect, useRef, useMemo, useState } from "rea
 import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
-import { sanitizeCitationsDeep } from "@/lib/sanitizeCitations";
+import { sanitizeCitationsDeep, ensureGlobalCitationObserver } from "@/lib/sanitizeCitations";
 
 function AssistantPageContent() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
@@ -268,6 +268,10 @@ function AssistantPageContent() {
 
   // Custom styling to make ChatKit look clean and full-page
   useEffect(() => {
+    ensureGlobalCitationObserver();
+  }, []);
+
+  useEffect(() => {
     const rootNode = chatContainerRef.current;
     if (!rootNode) return;
 
@@ -395,6 +399,9 @@ function AssistantPageContent() {
         const shadow = wc?.shadowRoot;
         if (!shadow) return;
         sanitizeCitationsDeep(shadow);
+        if (typeof document !== 'undefined') {
+          sanitizeCitationsDeep(document.body);
+        }
       } catch (e) {
         console.debug('[AssistantPage] sanitize shadow error:', e);
       }

@@ -14,7 +14,7 @@ import {
 import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";
 import { stableStringify } from "@/lib/stableStringify";
-import { sanitizeCitationsDeep } from "@/lib/sanitizeCitations";
+import { sanitizeCitationsDeep, ensureGlobalCitationObserver } from "@/lib/sanitizeCitations";
 
 // Component to auto-hide loading overlay after timeout
 function LoadingTimeoutHandler({ 
@@ -164,6 +164,7 @@ export function ChatKitPanel({
   }, []);
 
   useEffect(() => {
+    ensureGlobalCitationObserver();
     return () => {
       isMountedRef.current = false;
     };
@@ -940,6 +941,7 @@ export function ChatKitPanel({
         const shadow = wc?.shadowRoot;
         if (!shadow) return;
         sanitizeCitationsDeep(shadow);
+        sanitizeCitationsDeep(document.body);
       } catch (error) {
         if (isDev) console.debug("[ChatKitPanel] sanitize shadow error", error);
       }

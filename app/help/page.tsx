@@ -3,7 +3,7 @@
 import { useCallback, Suspense, useEffect, useRef } from "react";
 import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
-import { sanitizeCitationsDeep } from "@/lib/sanitizeCitations";
+import { sanitizeCitationsDeep, ensureGlobalCitationObserver } from "@/lib/sanitizeCitations";
 import Image from "next/image";
 
 function HelpPageContent() {
@@ -73,6 +73,10 @@ function HelpPageContent() {
   }, [chatkit.control]);
 
   // Custom styling to make ChatKit look clean and full-page
+  useEffect(() => {
+    ensureGlobalCitationObserver();
+  }, []);
+
   useEffect(() => {
     const rootNode = chatContainerRef.current;
     if (!rootNode) return;
@@ -201,6 +205,9 @@ function HelpPageContent() {
         const shadow = wc?.shadowRoot;
         if (!shadow) return;
         sanitizeCitationsDeep(shadow);
+        if (typeof document !== 'undefined') {
+          sanitizeCitationsDeep(document.body);
+        }
       } catch (e) {
         console.debug('[HelpPage] sanitize shadow error:', e);
       }

@@ -53,18 +53,33 @@ function stripCitationMarkers(
  * Removes raw file citation markers (e.g. "fileciteturn0file5turn0file12")
  * that can leak into ChatKit responses when citation rendering is disabled or fails.
  */
-export function sanitizeCitationsDeep(root: ShadowRoot | null | undefined) {
+type SanitizableRoot = Document | ShadowRoot | Element | DocumentFragment;
+
+function isQueryableRoot(node: Node | SanitizableRoot | null | undefined): node is SanitizableRoot {
+  return Boolean(
+    node &&
+    typeof (node as Partial<SanitizableRoot>).querySelectorAll === "function"
+  );
+}
+
+export function sanitizeCitationsDeep(root?: Node | null) {
+  if (typeof document === "undefined" || typeof NodeFilter === "undefined") {
+    return;
+  }
+  const context: Node | null =
+    root ?? (typeof document !== "undefined" ? document.body : null);
   if (
-    !root ||
-    typeof document === "undefined" ||
-    typeof NodeFilter === "undefined" ||
+    !context ||
     typeof document.createTreeWalker !== "function"
   ) {
     return;
   }
 
   try {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(
+      context,
+      NodeFilter.SHOW_TEXT
+    );
 
     let node: Node | null;
     while ((node = walker.nextNode())) {
@@ -86,35 +101,102 @@ export function sanitizeCitationsDeep(root: ShadowRoot | null | undefined) {
       }
     }
 
-    const allElements = root.querySelectorAll("*");
-    allElements.forEach((el) => {
-      if (
-        el.textContent &&
-        (/filecite/i.test(el.textContent) || /turn\d+file\d+/i.test(el.textContent))
-      ) {
-        const originalHTML = el.innerHTML;
-        if (!originalHTML) return;
+    if (isQueryableRoot(context)) {
+      const allElements = context.querySelectorAll("*");
+      allElements.forEach((el) => {
+        if (
+          el.textContent &&
+          (/filecite/i.test(el.textContent) || /turn\d+file\d+/i.test(el.textContent))
+        ) {
+          const originalHTML = el.innerHTML;
+          if (!originalHTML) return;
 
-        let cleanedHTML = originalHTML;
-        // First remove combined patterns
-        cleanedHTML = cleanedHTML.replace(FILECITE_WITH_TURNS, "");
-        // Then remove individual patterns
-        for (const pattern of FILECITE_PATTERNS) {
-          cleanedHTML = cleanedHTML.replace(pattern, "");
-        }
-        cleanedHTML = cleanedHTML.replace(TURN_PATTERN_WITH_SPECIALS, "");
-        cleanedHTML = cleanedHTML.replace(TURN_PATTERN, "");
-        cleanedHTML = cleanedHTML.replace(SPECIAL_CHAR_PATTERN, "");
+          let cleanedHTML = originalHTML;
+          // First remove combined patterns
+          cleanedHTML = cleanedHTML.replace(FILECITE_WITH_TURNS, "");
+          // Then remove individual patterns
+          for (const pattern of FILECITE_PATTERNS) {
+            cleanedHTML = cleanedHTML.replace(pattern, "");
+          }
+          cleanedHTML = cleanedHTML.replace(TURN_PATTERN_WITH_SPECIALS, "");
+          cleanedHTML = cleanedHTML.replace(TURN_PATTERN, "");
+          cleanedHTML = cleanedHTML.replace(SPECIAL_CHAR_PATTERN, "");
 
-        if (cleanedHTML !== originalHTML) {
-          el.innerHTML = cleanedHTML;
+          if (cleanedHTML !== originalHTML) {
+            el.innerHTML = cleanedHTML;
+          }
         }
-      }
-    });
+      });
+    }
   } catch (error) {
     if (isDev) {
       console.debug("[ChatKit] sanitizeCitationsDeep error", error);
     }
+  }
+}
+
+let globalObserverStarted = false;
+
+export function ensureGlobalCitationObserver() {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+  if (globalObserverStarted) {
+    return;
+  }
+  globalObserverStarted = true;
+
+  const runSanitizer = () => {
+    try {
+      sanitizeCitationsDeep(document.body);
+    } catch (error) {
+      if (isDev) {
+        console.debug("[ChatKit] global citation sanitizer error", error);
+      }
+    }
+  };
+
+  let debounceId: number | null = null;
+  const debouncedRun = () => {
+    runSanitizer();
+    if (debounceId !== null) {
+      window.clearTimeout(debounceId);
+    }
+    debounceId = window.setTimeout(() => {
+      debounceId = null;
+      runSanitizer();
+    }, 50);
+  };
+
+  const attachObserver = () => {
+    try {
+      const target =
+        document.body || document.documentElement || (document as Node);
+      if (!target) {
+        window.requestAnimationFrame(attachObserver);
+        return;
+      }
+      const observer = new MutationObserver(() => {
+        debouncedRun();
+      });
+      observer.observe(target, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      runSanitizer();
+      window.setInterval(runSanitizer, 200);
+    } catch (error) {
+      if (isDev) {
+        console.debug("[ChatKit] failed to start global citation observer", error);
+      }
+    }
+  };
+
+  if (document.readyState === "complete" || document.readyState === "interactive") {
+    attachObserver();
+  } else {
+    window.addEventListener("DOMContentLoaded", attachObserver, { once: true });
   }
 }
 

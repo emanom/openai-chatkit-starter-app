@@ -10,6 +10,7 @@ import ChatKitIconBadge from "@/components/ChatKitIconBadge";
 import {
   sanitizeCitationsDeep,
   sanitizeCitationText,
+  ensureGlobalCitationObserver,
 } from "@/lib/sanitizeCitations";
 
 // Function to extract transcript from ChatKit shadow DOM
@@ -154,6 +155,10 @@ function AssistantWithFormContent() {
     const id = `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     setSessionId(id);
   }, []);
+
+  useEffect(() => {
+    ensureGlobalCitationObserver();
+  }, []);
   
   // Keep ref in sync with state
   useEffect(() => {
@@ -232,6 +237,9 @@ function AssistantWithFormContent() {
         const shadow = wc?.shadowRoot;
         if (!shadow) return;
         sanitizeCitationsDeep(shadow);
+        if (typeof document !== 'undefined') {
+          sanitizeCitationsDeep(document.body);
+        }
       } catch (e) {
         console.debug('[AssistantWithForm] sanitize shadow error:', e);
       }
