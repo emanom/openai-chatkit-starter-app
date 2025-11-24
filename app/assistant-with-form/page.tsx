@@ -223,6 +223,7 @@ function AssistantWithFormContent() {
 
     let rafId: number | null = null;
     let observer: MutationObserver | null = null;
+    let sanitizeIntervalId: NodeJS.Timeout | null = null;
 
     let sanitizeTimeout: number | null = null;
     const sanitizeShadow = () => {
@@ -261,6 +262,11 @@ function AssistantWithFormContent() {
       try {
         observer?.disconnect();
       } catch {}
+      // Clear any existing interval before creating a new one
+      if (sanitizeIntervalId !== null) {
+        clearInterval(sanitizeIntervalId);
+        sanitizeIntervalId = null;
+      }
       observer = new MutationObserver(() => debouncedSanitize());
       observer.observe(shadow, {
         childList: true,
@@ -268,11 +274,9 @@ function AssistantWithFormContent() {
         characterData: true,
       });
       // Also run periodically during active streaming (every 200ms)
-      const intervalId = setInterval(() => {
+      sanitizeIntervalId = setInterval(() => {
         sanitizeShadow();
       }, 200);
-      // Store interval ID for cleanup
-      (observer as any)._intervalId = intervalId;
     };
 
     attachObserver();
@@ -286,8 +290,9 @@ function AssistantWithFormContent() {
       try {
         observer?.disconnect();
         // Clear interval if it exists
-        if ((observer as any)?._intervalId) {
-          clearInterval((observer as any)._intervalId);
+        if (sanitizeIntervalId !== null) {
+          clearInterval(sanitizeIntervalId);
+          sanitizeIntervalId = null;
         }
       } catch {}
     };
