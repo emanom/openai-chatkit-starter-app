@@ -39,6 +39,7 @@ const createS3Client = () => {
     (next) => async (args) => {
       // Remove checksum algorithm from input to prevent middleware from adding checksums
       if (args.input && typeof args.input === 'object') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const input = args.input as any;
         // Explicitly set ChecksumAlgorithm to undefined to prevent SDK from using it
         if ('ChecksumAlgorithm' in input) {

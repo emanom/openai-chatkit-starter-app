@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useRef, DragEvent } from "react";
-import { computeCRC32 } from "@/lib/crc32";
 
 interface ConversationSupportFormProps {
   sessionId?: string;
@@ -113,11 +112,6 @@ export default function ConversationSupportForm({
           const headers: Record<string, string> = {
             "Content-Type": file.type,
           };
-          
-          // Check if the presigned URL requires a CRC32 checksum
-          const urlChecksum = urlObj.searchParams.get("x-amz-checksum-crc32");
-          const requiresChecksum = urlObj.searchParams.has("x-amz-checksum-crc32") || 
-                                   urlObj.searchParams.has("x-amz-sdk-checksum-algorithm");
           
           // Don't send checksum headers - the presigned URL should not have checksum parameters
           // If it does, they've been removed server-side because they weren't in the signed headers
