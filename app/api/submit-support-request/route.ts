@@ -36,11 +36,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Get Zapier webhook URL from environment variable
-    const zapierWebhookUrl = process.env.ZAPIER_WEBHOOK_URL;
+    // Support separate webhooks for conversation requests vs full form requests
+    const zapierWebhookUrl = body.isConversationRequest
+      ? (process.env.ZAPIER_CONVERSATION_WEBHOOK_URL || process.env.ZAPIER_WEBHOOK_URL)
+      : (process.env.ZAPIER_FULL_FORM_WEBHOOK_URL || process.env.ZAPIER_WEBHOOK_URL);
+    
     if (!zapierWebhookUrl) {
-      console.error("[submit-support-request] ZAPIER_WEBHOOK_URL not configured");
+      const missingVar = body.isConversationRequest
+        ? "ZAPIER_CONVERSATION_WEBHOOK_URL or ZAPIER_WEBHOOK_URL"
+        : "ZAPIER_FULL_FORM_WEBHOOK_URL or ZAPIER_WEBHOOK_URL";
+      console.error(`[submit-support-request] ${missingVar} not configured`);
       return NextResponse.json(
-        { error: "Webhook URL not configured" },
+        { 
+          error: "Webhook URL not configured",
+          details: `Please set ${missingVar} environment variable in AWS Amplify`
+        },
         { status: 500 }
       );
     }
