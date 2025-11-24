@@ -3,9 +3,9 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Create S3 client without checksum middleware
-// We'll create a new client for each request to avoid middleware issues
+// We'll create a new client for each request and remove checksum middleware
 const createS3Client = () => {
-  return new S3Client({
+  const client = new S3Client({
     region: process.env.SAWS_REGION || process.env.AWS_REGION,
     credentials: process.env.SAWS_ACCESS_KEY_ID && process.env.SAWS_SECRET_ACCESS_KEY
       ? {
@@ -14,6 +14,47 @@ const createS3Client = () => {
         }
       : undefined,
   });
+  
+  // Add middleware at the 'finalizeRequest' step to add checksum header to SignedHeaders
+  // If checksum query params are present, we need to include the header in SignedHeaders
+  // This runs right before signing
+  client.middlewareStack.add(
+    (next) => async (args) => {
+      const result = await next(args);
+      // After the request is built, check if checksum query params exist
+      // If they do, we need to regenerate with the header in SignedHeaders
+      // Actually, this is too late - the signature is already computed
+      // We need to prevent checksums from being added in the first place
+      return result;
+    },
+    {
+      step: 'finalizeRequest',
+      name: 'handleChecksums',
+    }
+  );
+  
+  // Try to remove checksum middleware by adding a middleware that runs before it
+  // and removes checksum properties from the input
+  client.middlewareStack.add(
+    (next) => async (args) => {
+      // Remove checksum algorithm from input to prevent middleware from adding checksums
+      if (args.input && typeof args.input === 'object') {
+        const input = args.input as any;
+        // Explicitly set ChecksumAlgorithm to undefined to prevent SDK from using it
+        if ('ChecksumAlgorithm' in input) {
+          delete input.ChecksumAlgorithm;
+        }
+      }
+      return next(args);
+    },
+    {
+      step: 'initialize',
+      name: 'preventChecksums',
+      priority: 'high',
+    }
+  );
+  
+  return client;
 };
 const BUCKET = process.env.UPLOADS_BUCKET;
 
