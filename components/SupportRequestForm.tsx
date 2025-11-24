@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, DragEvent } from "react";
+import { computeCRC32 } from "@/lib/crc32";
 
 interface SupportRequestFormProps {
   firstName?: string | null;
@@ -138,19 +139,36 @@ export default function SupportRequestForm({
             throw new Error("Failed to get upload URL");
           }
 
-          const { url, key } = await presignResponse.json();
+          const { url, key, checksumInfo } = await presignResponse.json();
 
+          // Parse the presigned URL to extract required headers from query params
+          const urlObj = new URL(url);
+          const headers: Record<string, string> = {
+            "Content-Type": file.type,
+          };
+          
+          // Check if the presigned URL requires a CRC32 checksum
+          const urlChecksum = urlObj.searchParams.get("x-amz-checksum-crc32");
+          const requiresChecksum = urlObj.searchParams.has("x-amz-checksum-crc32") || 
+                                   urlObj.searchParams.has("x-amz-sdk-checksum-algorithm");
+          
+          // Don't send checksum headers - the presigned URL should not have checksum parameters
+          // If it does, they've been removed server-side because they weren't in the signed headers
+          // Sending checksum headers would cause "headers not signed" errors
+          
+          console.log("[SupportRequestForm] Uploading file with headers:", Object.keys(headers));
+          
           // Upload file to S3
           const uploadResponse = await fetch(url, {
             method: "PUT",
             body: file,
-            headers: {
-              "Content-Type": file.type,
-            },
+            headers,
           });
 
           if (!uploadResponse.ok) {
-            throw new Error("Failed to upload file");
+            const errorText = await uploadResponse.text().catch(() => "Unknown error");
+            console.error("[SupportRequestForm] Upload failed:", uploadResponse.status, errorText);
+            throw new Error(`Failed to upload file: ${uploadResponse.status} ${errorText}`);
           }
 
           // Store the S3 key/URL (you may want to construct a public URL)

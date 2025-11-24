@@ -316,10 +316,20 @@ function AssistantWithFormContent() {
       const response = await originalFetch(...args);
       
       // Check if this is a ChatKit conversation API request
+      // Skip S3 uploads, file uploads, and other non-ChatKit requests
       const url = args[0];
-      if (typeof url === 'string' && url.includes('/v1/chatkit/conversation')) {
+      if (typeof url === 'string' && 
+          url.includes('/v1/chatkit/conversation') && 
+          !url.includes('s3.amazonaws.com') && 
+          !url.includes('amazonaws.com')) {
         console.log("[AssistantWithForm] Intercepted ChatKit conversation API request:", url);
         try {
+          // Only intercept JSON responses, skip binary/binary-like responses
+          const contentType = response.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            return response; // Return original response for non-JSON content
+          }
+          
           // Clone the response so we can read it without consuming it
           const clonedResponse = response.clone();
           const data = await clonedResponse.json().catch(() => null);
@@ -490,29 +500,11 @@ function AssistantWithFormContent() {
   const handleFormLinkClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     
-    // Try to extract transcript with retries (ChatKit might need a moment to render)
-    let transcript = extractTranscript();
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    while ((!transcript || transcript.length === 0) && attempts < maxAttempts) {
-      attempts++;
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms between attempts
-      transcript = extractTranscript();
-    }
-    
-    if (transcript && transcript.length > 0 && sessionId) {
-      // Store transcript and wait for it to complete
-      await storeTranscript(transcript);
-    } else if (sessionId) {
-      // Still try to store a placeholder so the session ID is recorded
-      await storeTranscript('No conversation transcript available at time of form submission.');
-    }
-    
-    // Open full form in modal
+    // Full form doesn't need transcript - user is submitting without conversation context
+    // Just open the form modal
     setIsConversationForm(false);
     setIsFormModalOpen(true);
-  }, [sessionId, storeTranscript]);
+  }, []);
   
   // Create personalized greeting
   const greeting = useMemo(() => {
