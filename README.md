@@ -43,7 +43,8 @@ Update `.env.local` with the variables that match your setup.
 - `OPENAI_PROJECT_ID` — your project id (required for project-scoped keys)
 - `NEXT_PUBLIC_CHATKIT_WORKFLOW_ID` — This is the ID of the workflow you created in [Agent Builder](https://platform.openai.com/agent-builder), which starts with `wf_...`
 - (optional) `CHATKIT_API_BASE` - customizable base URL for the ChatKit API endpoint
-- (production) `CHATKIT_DOMAIN_KEY` — domain allowlist key from the OpenAI dashboard
+- (production) `CHATKIT_DOMAIN_KEY` — domain allowlist key from the OpenAI dashboard (used only when citations are enabled)
+- (optional) `CHATKIT_ENABLE_CITATIONS` — set to `1` if you want ChatKit citations rendered (defaults to disabled so raw `filecite` markers never appear)
 
 > Note: if your workflow is using a model requiring organization verification, such as GPT-5, make sure you verify your organization first. Visit your [organization settings](https://platform.openai.com/settings/organization/general) and click on "Verify Organization".
 
@@ -94,4 +95,4 @@ Run the PowerShell setup script to create your `.env.local` file:
 
 - In Amplify, add env vars: `OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `NEXT_PUBLIC_CHATKIT_WORKFLOW_ID`, `CHATKIT_DOMAIN_KEY`.
 - This repo writes env vars to `.env.production` in `amplify.yml` so Next.js can access them at build/runtime.
-- Get the domain key from the OpenAI domain allowlist page and set it as `CHATKIT_DOMAIN_KEY`. The API layer forwards it via `ChatKit-Domain-Key` header.
+- Get the domain key from the OpenAI domain allowlist page and set it as `CHATKIT_DOMAIN_KEY`. The API layer only forwards it when `CHATKIT_ENABLE_CITATIONS=1` (otherwise the header is omitted to suppress file citations entirely).

@@ -41,11 +41,16 @@ export async function POST(request: Request): Promise<Response> {
   
   // Check and log domain key status early
   const domainKey = process.env.OPENAI_DOMAIN_KEY || process.env.CHATKIT_DOMAIN_KEY;
+  const citationsEnabled =
+    (process.env.CHATKIT_ENABLE_CITATIONS || process.env.ENABLE_CHATKIT_CITATIONS || "")
+      .trim()
+      .toLowerCase() === "1";
   console.log("[create-session] ===== DOMAIN KEY STATUS =====");
   console.log("[create-session] OPENAI_DOMAIN_KEY:", process.env.OPENAI_DOMAIN_KEY ? `SET (${process.env.OPENAI_DOMAIN_KEY.slice(0, 8)}...)` : "NOT SET");
   console.log("[create-session] CHATKIT_DOMAIN_KEY:", process.env.CHATKIT_DOMAIN_KEY ? `SET (${process.env.CHATKIT_DOMAIN_KEY.slice(0, 8)}...)` : "NOT SET");
   console.log("[create-session] Domain key resolved:", domainKey ? `✅ FOUND (${domainKey.slice(0, 8)}...)` : "❌ NOT FOUND");
-  if (!domainKey) {
+  console.log("[create-session] ChatKit citations enabled:", citationsEnabled ? "✅ yes" : "🚫 no (forcing citations off)");
+  if (!domainKey && citationsEnabled) {
     console.warn("[create-session] ⚠️ WARNING: No domain key configured - file citations may not render properly!");
   }
   console.log("[create-session] ============================");
@@ -121,11 +126,13 @@ export async function POST(request: Request): Promise<Response> {
     
     // Add domain key for domain verification in production
     // Domain key was already checked and logged at the start of the function
-    if (domainKey) {
+    if (domainKey && citationsEnabled) {
       headers["ChatKit-Domain-Key"] = domainKey;
-      console.log("[create-session] ✅ Domain key added to request headers");
+      console.log("[create-session] ✅ Domain key added to request headers (citations enabled)");
+    } else if (domainKey && !citationsEnabled) {
+      console.log("[create-session] ℹ️ Domain key present but skipped because citations are disabled");
     } else {
-      console.log("[create-session] ⚠️ No domain key in headers - file citations may not render");
+      console.log("[create-session] ⚠️ No domain key available - citations remain disabled");
     }
     
     const normalizedParameters: PromptParameters = normalizePromptParameters(
