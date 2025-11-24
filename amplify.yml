@@ -17,6 +17,10 @@ frontend:
         - echo "SAWS_REGION=${SAWS_REGION}" >> .env.production
         - echo "SAWS_ACCESS_KEY_ID=${SAWS_ACCESS_KEY_ID}" >> .env.production
         - echo "SAWS_SECRET_ACCESS_KEY=${SAWS_SECRET_ACCESS_KEY}" >> .env.production
+        - echo "ZAPIER_FULL_FORM_WEBHOOK_URL=${ZAPIER_FULL_FORM_WEBHOOK_URL}" >> .env.production
+        - echo "ZAPIER_CONVERSATION_WEBHOOK_URL=${ZAPIER_CONVERSATION_WEBHOOK_URL}" >> .env.production
+        - echo "ZAPIER_WEBHOOK_URL=${ZAPIER_WEBHOOK_URL}" >> .env.production
+        - echo "NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}" >> .env.production
         - npm run build
   artifacts:
     baseDirectory: .next
