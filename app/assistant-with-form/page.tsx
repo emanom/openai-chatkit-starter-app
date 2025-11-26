@@ -318,6 +318,15 @@ function AssistantWithFormContent() {
         if (typeof document !== 'undefined') {
           sanitizeCitationsDeep(document.body);
         }
+        const iframes = shadow.querySelectorAll('iframe');
+        iframes.forEach((iframe) => {
+          try {
+            const doc = iframe.contentDocument;
+            if (doc) {
+              sanitizeCitationsDeep(doc);
+            }
+          } catch {}
+        });
       } catch (e) {
         console.debug('[AssistantWithForm] sanitize shadow error:', e);
       }

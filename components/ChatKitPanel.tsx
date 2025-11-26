@@ -942,6 +942,15 @@ export function ChatKitPanel({
         if (!shadow) return;
         sanitizeCitationsDeep(shadow);
         sanitizeCitationsDeep(document.body);
+        const iframes = shadow.querySelectorAll("iframe");
+        iframes.forEach((iframe) => {
+          try {
+            const doc = iframe.contentDocument;
+            if (doc) {
+              sanitizeCitationsDeep(doc);
+            }
+          } catch {}
+        });
       } catch (error) {
         if (isDev) console.debug("[ChatKitPanel] sanitize shadow error", error);
       }

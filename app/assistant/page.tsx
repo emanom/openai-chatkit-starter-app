@@ -2,178 +2,201 @@
 
 import { useCallback, Suspense, useEffect, useRef, useMemo, useState } from "react";
 import { useChatKit, ChatKit } from "@openai/chatkit-react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
 import { sanitizeCitationsDeep, ensureGlobalCitationObserver } from "@/lib/sanitizeCitations";
+
+const FIRST_NAME_PARAM_KEYS = ["first_name", "first-name", "firstName", "firstname"] as const;
+
+const sanitizeNameValue = (value: string | null): string | null => {
+  if (!value) return null;
+  if (value.includes("{{") || value.includes("}}")) {
+    return null;
+  }
+  return value;
+};
+
+const extractFirstNameFromSearchParams = (
+  params: URLSearchParams | ReadonlyURLSearchParams | null | undefined
+): string | null => {
+  if (!params) return null;
+  for (const key of FIRST_NAME_PARAM_KEYS) {
+    const value = params.get(key);
+    const sanitized = sanitizeNameValue(value);
+    if (sanitized) {
+      return sanitized;
+    }
+  }
+  return null;
+};
+
+const extractFirstNameFromRecord = (record: Record<string, unknown> | null | undefined): string | null => {
+  if (!record) return null;
+  for (const key of FIRST_NAME_PARAM_KEYS) {
+    const value = record[key];
+    if (typeof value === "string") {
+      const sanitized = sanitizeNameValue(value);
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+  }
+  return null;
+};
+
+const ASSISTANT_FIRST_NAME_COOKIE_KEYS = ["assistant-first_name", "assistant-first-name"];
+
+const readAssistantFirstNameCookie = (): string | null => {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  for (const cookieKey of ASSISTANT_FIRST_NAME_COOKIE_KEYS) {
+    const value = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith(`${cookieKey}=`))
+      ?.split("=")[1];
+    if (value) {
+      const decoded = decodeURIComponent(value);
+      const sanitized = sanitizeNameValue(decoded);
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+  }
+  return null;
+};
 
 function AssistantPageContent() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const searchParams = useSearchParams();
   const [firstNameFromParent, setFirstNameFromParent] = useState<string | null>(null);
   
-  // Get first-name from query parameters (try multiple variations)
-  const firstNameFromUrlRaw = searchParams.get("first-name") || 
-                               searchParams.get("firstName") ||
-                               searchParams.get("firstname");
-  
-  // Filter out template variables (like {{input.first-name}}, {{query.firstname}}, etc. from Zapier)
-  const isTemplateVariable = firstNameFromUrlRaw && (
-    firstNameFromUrlRaw.includes('{{') || 
-    firstNameFromUrlRaw.includes('}}') ||
-    firstNameFromUrlRaw.startsWith('{{') ||
-    firstNameFromUrlRaw.endsWith('}}')
+  const firstNameFromUrl = useMemo(
+    () => extractFirstNameFromSearchParams(searchParams),
+    [searchParams]
   );
-  
-  const firstNameFromUrl = isTemplateVariable ? null : firstNameFromUrlRaw;
   
   // Read firstName from cookie set by middleware (from Referer header)
   useEffect(() => {
-    console.log('[AssistantPage] Checking for cookie, firstNameFromUrl:', firstNameFromUrl);
-    console.log('[AssistantPage] All cookies:', document.cookie);
-    
-    if (!firstNameFromUrl && typeof document !== 'undefined') {
-      const cookieValue = document.cookie
-        .split('; ')
-        .find(row => row.startsWith('assistant-first-name='))
-        ?.split('=')[1];
-      
-      console.log('[AssistantPage] Cookie value found:', cookieValue);
-      
+    if (typeof document === "undefined") {
+      return;
+    }
+    console.log("[AssistantPage] Checking for cookie, firstNameFromUrl:", firstNameFromUrl);
+    console.log("[AssistantPage] All cookies:", document.cookie);
+    if (!firstNameFromUrl) {
+      const cookieValue = readAssistantFirstNameCookie();
+      console.log("[AssistantPage] Cookie value found:", cookieValue);
       if (cookieValue) {
-        const decoded = decodeURIComponent(cookieValue);
-        console.log('[AssistantPage] Decoded cookie value:', decoded);
-        if (decoded && !decoded.includes('{{')) {
-          console.log('[AssistantPage] Setting firstName from cookie:', decoded);
-          setFirstNameFromParent(decoded);
-        } else {
-          console.log('[AssistantPage] Cookie contains template variable, ignoring');
-        }
+        console.log("[AssistantPage] Setting firstName from cookie:", cookieValue);
+        setFirstNameFromParent(cookieValue);
       } else {
-        console.log('[AssistantPage] No assistant-first-name cookie found');
+        console.log("[AssistantPage] No assistant-first-name cookie found");
       }
     }
   }, [firstNameFromUrl]);
   
   // If we're in an iframe and don't have valid URL params, try to read from parent window URL
   useEffect(() => {
-    // Only try if we don't already have a valid firstName from URL or cookie
-    if (!firstNameFromUrl && !firstNameFromParent && typeof window !== 'undefined') {
-      // Method 0: Check URL hash fragment (not sent to server but available client-side)
-      if (typeof window !== 'undefined' && window.location.hash) {
-        try {
-          const hashParams = new URLSearchParams(window.location.hash.substring(1));
-          const hashFirstName = hashParams.get('first-name') || hashParams.get('firstName') || hashParams.get('firstname');
-          if (hashFirstName && !hashFirstName.includes('{{')) {
-            console.log('[AssistantPage] Found firstName in URL hash:', hashFirstName);
-            setFirstNameFromParent(hashFirstName);
-            return;
-          }
-        } catch (e) {
-          console.debug('[AssistantPage] Error reading hash params:', e);
-        }
+    if (firstNameFromUrl || firstNameFromParent || typeof window === "undefined") {
+      return;
+    }
+
+    const trySetFirstName = (value: string | null, source: string): boolean => {
+      if (value) {
+        console.log(`[AssistantPage] Found firstName in ${source}:`, value);
+        setFirstNameFromParent(value);
+        return true;
       }
-      
-      // Method 1: Try to access parent window's URL directly (works if same origin)
-      if (window.self !== window.top) {
-        try {
-          const parentParams = new URLSearchParams(window.parent.location.search);
-          const parentFirstName = parentParams.get('first-name') || 
-                                 parentParams.get('first_name') ||
-                                 parentParams.get('firstName') ||
-                                 parentParams.get('firstname');
-          if (parentFirstName) {
-            console.log('[AssistantPage] Found firstName in parent URL:', parentFirstName);
-            setFirstNameFromParent(parentFirstName);
-            return;
-          }
-        } catch (e) {
-          // Cross-origin restriction - expected if parent is on different domain
-          console.debug('[AssistantPage] Cannot access parent URL (cross-origin):', e);
-        }
-      }
-      
-      // Method 2: Try document.referrer (works even with cross-origin, but query params are stripped)
+      return false;
+    };
+
+    if (window.location.hash) {
       try {
-        const referrer = document.referrer;
-        console.log('[AssistantPage] document.referrer:', referrer);
-        if (referrer) {
-          const referrerUrl = new URL(referrer);
-          const referrerParams = new URLSearchParams(referrerUrl.search);
-          const referrerFirstName = referrerParams.get('first-name') || 
-                                   referrerParams.get('first_name') ||
-                                   referrerParams.get('firstName') ||
-                                   referrerParams.get('firstname');
-          console.log('[AssistantPage] firstName from referrer:', referrerFirstName);
-          if (referrerFirstName) {
-            setFirstNameFromParent(referrerFirstName);
-            return;
-          }
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        if (trySetFirstName(extractFirstNameFromSearchParams(hashParams), "URL hash")) {
+          return;
         }
       } catch (e) {
-        console.debug('[AssistantPage] Error reading referrer:', e);
+        console.debug("[AssistantPage] Error reading hash params:", e);
       }
-      
-      // Method 3: Try to extract from parent page's __NEXT_DATA__ script tag (Zapier stores query params there)
-      if (window.self !== window.top) {
-        try {
-          const parentDoc = window.parent.document;
-          const nextDataScript = parentDoc.querySelector('script#__NEXT_DATA__');
-          console.log('[AssistantPage] Attempting to read parent __NEXT_DATA__ script tag');
-          console.log('[AssistantPage] Parent document accessible:', !!parentDoc);
-          console.log('[AssistantPage] Script tag found:', !!nextDataScript);
-          
-          if (nextDataScript && nextDataScript.textContent) {
-            const nextData = JSON.parse(nextDataScript.textContent);
-            console.log('[AssistantPage] Parsed __NEXT_DATA__:', JSON.stringify(nextData?.props?.pageProps?.query || {}, null, 2));
-            
-            const queryParams = nextData?.props?.pageProps?.query || {};
-            const zapierFirstName = queryParams['first-name'] || 
-                                   queryParams['firstName'] || 
-                                   queryParams['firstname'] ||
-                                   queryParams['first_name'];
-            console.log('[AssistantPage] Found firstName in parent __NEXT_DATA__:', zapierFirstName);
-            
-            if (zapierFirstName && !zapierFirstName.includes('{{') && typeof zapierFirstName === 'string') {
-              console.log('[AssistantPage] Setting firstName from __NEXT_DATA__:', zapierFirstName);
-              setFirstNameFromParent(zapierFirstName);
-              return;
-            } else {
-              console.log('[AssistantPage] firstName from __NEXT_DATA__ is invalid or contains template variable');
-            }
-          } else {
-            console.log('[AssistantPage] __NEXT_DATA__ script tag not found or empty');
-          }
-        } catch (e) {
-          console.error('[AssistantPage] Cannot access parent __NEXT_DATA__ (cross-origin or not found):', e);
-          console.error('[AssistantPage] Error details:', e instanceof Error ? e.message : String(e));
+    }
+
+    if (window.self !== window.top) {
+      try {
+        const parentParams = new URLSearchParams(window.parent.location.search);
+        if (trySetFirstName(extractFirstNameFromSearchParams(parentParams), "parent URL")) {
+          return;
+        }
+      } catch (e) {
+        console.debug("[AssistantPage] Cannot access parent URL (cross-origin):", e);
+      }
+    }
+
+    try {
+      const referrer = document.referrer;
+      console.log("[AssistantPage] document.referrer:", referrer);
+      if (referrer) {
+        const referrerUrl = new URL(referrer);
+        const referrerParams = new URLSearchParams(referrerUrl.search);
+        if (trySetFirstName(extractFirstNameFromSearchParams(referrerParams), "referrer")) {
+          return;
         }
       }
-      
-      // Method 4: Try API endpoint that reads Referer header (servers can see full referer)
-      if (window.self !== window.top) {
-        fetch('/api/get-parent-params')
-          .then(res => res.json())
-          .then(data => {
-            console.log('[AssistantPage] Parent params from API:', JSON.stringify(data, null, 2));
-            console.log('[AssistantPage] API params object:', data.params);
-            console.log('[AssistantPage] API referer:', data.referer);
-            if (data.params && (data.params['first-name'] || data.params['first_name'] || data.params['firstname'])) {
-              const apiFirstName = data.params['first-name'] || data.params['first_name'] || data.params['firstname'];
-              console.log('[AssistantPage] Found firstName in API params:', apiFirstName);
-              if (apiFirstName && !apiFirstName.includes('{{')) {
-                console.log('[AssistantPage] Setting firstName from API:', apiFirstName);
-                setFirstNameFromParent(apiFirstName);
-              } else {
-                console.log('[AssistantPage] firstName contains template variable, ignoring');
-              }
-            } else {
-              console.log('[AssistantPage] No firstName found in API params');
-            }
-          })
-          .catch(e => {
-            console.error('[AssistantPage] Error fetching parent params:', e);
-          });
+    } catch (e) {
+      console.debug("[AssistantPage] Error reading referrer:", e);
+    }
+
+    if (window.self !== window.top) {
+      try {
+        const parentDoc = window.parent.document;
+        const nextDataScript = parentDoc.querySelector("script#__NEXT_DATA__");
+        console.log("[AssistantPage] Attempting to read parent __NEXT_DATA__ script tag");
+        console.log("[AssistantPage] Parent document accessible:", !!parentDoc);
+        console.log("[AssistantPage] Script tag found:", !!nextDataScript);
+
+        if (nextDataScript?.textContent) {
+          const nextData = JSON.parse(nextDataScript.textContent) as {
+            props?: { pageProps?: { query?: Record<string, unknown> } };
+          };
+          const queryParams = nextData?.props?.pageProps?.query ?? {};
+          console.log(
+            "[AssistantPage] Parsed __NEXT_DATA__:",
+            JSON.stringify(queryParams, null, 2)
+          );
+          if (trySetFirstName(extractFirstNameFromRecord(queryParams), "parent __NEXT_DATA__")) {
+            return;
+          }
+        } else {
+          console.log("[AssistantPage] __NEXT_DATA__ script tag not found or empty");
+        }
+      } catch (e) {
+        console.error("[AssistantPage] Cannot access parent __NEXT_DATA__ (cross-origin or not found):", e);
+        console.error("[AssistantPage] Error details:", e instanceof Error ? e.message : String(e));
       }
+    }
+
+    if (window.self !== window.top) {
+      fetch("/api/get-parent-params")
+        .then((res) => res.json())
+        .then((data) => {
+          console.log("[AssistantPage] Parent params from API:", JSON.stringify(data, null, 2));
+          console.log("[AssistantPage] API params object:", data?.params);
+          console.log("[AssistantPage] API referer:", data?.referer);
+          const paramsRecord =
+            (data?.params && typeof data.params === "object"
+              ? (data.params as Record<string, unknown>)
+              : null) ?? null;
+          const apiFirstName = extractFirstNameFromRecord(paramsRecord);
+          if (apiFirstName) {
+            console.log("[AssistantPage] Setting firstName from API:", apiFirstName);
+            setFirstNameFromParent(apiFirstName);
+          } else {
+            console.log("[AssistantPage] No firstName found in API params");
+          }
+        })
+        .catch((e) => {
+          console.error("[AssistantPage] Error fetching parent params:", e);
+        });
     }
   }, [firstNameFromUrl, firstNameFromParent]);
   
@@ -181,9 +204,11 @@ function AssistantPageContent() {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       // For security, you might want to check event.origin
-      if (event.data && typeof event.data === 'object') {
-        if (event.data.firstName || event.data['first-name']) {
-          setFirstNameFromParent(event.data.firstName || event.data['first-name']);
+      if (event.data && typeof event.data === "object") {
+        const messageData = event.data as Record<string, unknown>;
+        const messageFirstName = extractFirstNameFromRecord(messageData);
+        if (messageFirstName) {
+          setFirstNameFromParent(messageFirstName);
         }
       }
     };
@@ -402,6 +427,15 @@ function AssistantPageContent() {
         if (typeof document !== 'undefined') {
           sanitizeCitationsDeep(document.body);
         }
+        const iframes = shadow.querySelectorAll('iframe');
+        iframes.forEach((iframe) => {
+          try {
+            const doc = iframe.contentDocument;
+            if (doc) {
+              sanitizeCitationsDeep(doc);
+            }
+          } catch {}
+        });
       } catch (e) {
         console.debug('[AssistantPage] sanitize shadow error:', e);
       }

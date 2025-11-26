@@ -208,6 +208,15 @@ function HelpPageContent() {
         if (typeof document !== 'undefined') {
           sanitizeCitationsDeep(document.body);
         }
+        const iframes = shadow.querySelectorAll('iframe');
+        iframes.forEach((iframe) => {
+          try {
+            const doc = iframe.contentDocument;
+            if (doc) {
+              sanitizeCitationsDeep(doc);
+            }
+          } catch {}
+        });
       } catch (e) {
         console.debug('[HelpPage] sanitize shadow error:', e);
       }
