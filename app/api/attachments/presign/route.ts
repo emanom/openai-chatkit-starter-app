@@ -76,9 +76,15 @@ export async function POST(req: Request) {
     }
 
     const safe = String(filename).replace(/[^\w.\- ]+/g, "_").slice(-180);
-    const timestamp = new Date().toISOString().replace(/[:]/g, "-");
     const unique = (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : Math.random().toString(36).slice(2));
-    const key = `chat-uploads/${appSessionId}/${timestamp}-${unique}-${safe}`;
+    const extension = safe.includes(".")
+      ? safe
+          .slice(safe.lastIndexOf("."))
+          .replace(/[^.\w-]/g, "")
+          .slice(0, 10)
+      : "";
+    const shortName = extension ? `${unique}${extension}` : unique;
+    const key = `chat-uploads/${appSessionId}/${shortName}`;
 
     const cmd = new PutObjectCommand({
       Bucket: BUCKET,

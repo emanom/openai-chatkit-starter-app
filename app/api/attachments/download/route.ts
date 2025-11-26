@@ -37,13 +37,21 @@ export async function GET(req: Request) {
   try {
     if (!BUCKET) return NextResponse.json({ error: "Missing UPLOADS_BUCKET" }, { status: 500 });
     const url = new URL(req.url);
+    const sessionParam = url.searchParams.get("session");
+    const fileParam = url.searchParams.get("file");
     const token = url.searchParams.get("token");
     const wantsJson = url.searchParams.get("format") === "json";
 
     let key: string | null = null;
     let appSessionId: string | null = null;
 
-    if (token) {
+    if (sessionParam && fileParam) {
+      if (fileParam.includes("..") || fileParam.includes("//")) {
+        return NextResponse.json({ error: "Invalid file parameter" }, { status: 400 });
+      }
+      appSessionId = sessionParam;
+      key = `chat-uploads/${sessionParam}/${fileParam}`;
+    } else if (token) {
       const payload = decodeToken(token);
       if (payload) {
         key = payload.key;

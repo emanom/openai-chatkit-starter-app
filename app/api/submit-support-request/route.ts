@@ -106,6 +106,19 @@ const createProxyDownloadUrl = (
   if (!sessionId || !baseUrl) {
     return null;
   }
+
+  const sessionPrefix = `chat-uploads/${sessionId}/`;
+  if (key.startsWith(sessionPrefix)) {
+    const filePart = key.slice(sessionPrefix.length);
+    if (filePart && !filePart.includes("..") && !filePart.includes("//")) {
+      const params = new URLSearchParams({
+        session: sessionId,
+        file: filePart,
+      });
+      return `${baseUrl}/api/attachments/download?${params.toString()}`;
+    }
+  }
+
   const payload = Buffer.from(
     JSON.stringify({ key, appSessionId: sessionId }),
     "utf8"
