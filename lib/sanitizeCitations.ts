@@ -104,9 +104,16 @@ export function sanitizeCitationsDeep(root?: Node | null) {
     if (isQueryableRoot(context)) {
       const allElements = context.querySelectorAll("*");
       allElements.forEach((el) => {
+        if (!el.textContent) {
+          return;
+        }
+        if (/^filecite/i.test(el.textContent.trim())) {
+          el.remove();
+          return;
+        }
         if (
-          el.textContent &&
-          (/filecite/i.test(el.textContent) || /turn\d+file\d+/i.test(el.textContent))
+          /filecite/i.test(el.textContent) ||
+          /turn\d+file\d+/i.test(el.textContent)
         ) {
           const originalHTML = el.innerHTML;
           if (!originalHTML) return;
