@@ -104,6 +104,15 @@ export function sanitizeCitationsDeep(root?: Node | null) {
     if (isQueryableRoot(context)) {
       const allElements = context.querySelectorAll("*");
       allElements.forEach((el) => {
+        const className = (el.getAttribute("class") || "").toLowerCase();
+        if (
+          className.includes("filecite") ||
+          className.includes("citation") ||
+          className.includes("mcqiz")
+        ) {
+          el.remove();
+          return;
+        }
         if (!el.textContent) {
           return;
         }
