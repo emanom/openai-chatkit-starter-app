@@ -108,12 +108,6 @@ export default function SupportRequestForm({
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.firstName.trim()) {
-      newErrors.firstName = "First name is required";
-    }
-    if (!formData.lastName.trim()) {
-      newErrors.lastName = "Last name is required";
-    }
     if (!formData.email.trim()) {
       newErrors.email = "Email is required";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
@@ -275,8 +269,8 @@ export default function SupportRequestForm({
 
   return (
     <div className="w-full max-w-3xl mx-auto bg-white rounded-lg shadow-xl">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="p-5 sm:p-6">
+        <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-gray-900">Support Request</h2>
           <button
             onClick={onClose}
@@ -289,11 +283,11 @@ export default function SupportRequestForm({
           </button>
         </div>
 
-        <p className="text-gray-600 mb-6">
-          Use this form to add any other details to get your request solved quickly and then select &quot;Submit&quot; below!
+        <p className="text-gray-600 mb-4">
+          Share a detailed description of the issue or question so our team has the full context.
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {hiddenMetadataKeys.map((key) => (
             <input
               key={key}
@@ -303,6 +297,8 @@ export default function SupportRequestForm({
               readOnly
             />
           ))}
+          <input type="hidden" name="firstName" value={formData.firstName} readOnly />
+          <input type="hidden" name="lastName" value={formData.lastName} readOnly />
 
           {/* Related FYI Page Link */}
           <div>
@@ -325,13 +321,7 @@ export default function SupportRequestForm({
               Description
             </label>
             <p className="text-xs text-gray-500 mb-2">
-              <strong>Purpose:</strong> to include any information to help us resolve your request.
-            </p>
-            <p className="text-xs text-gray-500 mb-2">
-              <strong>Examples:</strong> step-by-step instructions to replicate, when the issue started, number of users affected or example links etc.
-            </p>
-            <p className="text-xs text-gray-500 mb-2">
-              <strong>Note:</strong> the entire chat transcript will be automatically linked to the support request, so you don&apos;t need to repeat yourself.
+              Include any information to help us resolve your request. (step-by-step instructions to replicate, number of users affected...)
             </p>
             <textarea
               id="description"
@@ -339,44 +329,8 @@ export default function SupportRequestForm({
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={6}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
-              placeholder="Enter additional details..."
+              placeholder="Enter description with details..."
             />
-          </div>
-
-          {/* First Name */}
-          <div>
-            <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-2">
-              First name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              id="firstName"
-              required
-              value={formData.firstName}
-              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 ${
-                errors.firstName ? "border-red-500" : "border-gray-300"
-              }`}
-            />
-            {errors.firstName && <p className="mt-1 text-sm text-red-500">{errors.firstName}</p>}
-          </div>
-
-          {/* Last Name */}
-          <div>
-            <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-2">
-              Last name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              id="lastName"
-              required
-              value={formData.lastName}
-              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 ${
-                errors.lastName ? "border-red-500" : "border-gray-300"
-              }`}
-            />
-            {errors.lastName && <p className="mt-1 text-sm text-red-500">{errors.lastName}</p>}
           </div>
 
           {/* Email */}
@@ -404,7 +358,15 @@ export default function SupportRequestForm({
               Video Recording Link
             </label>
             <p className="text-xs text-gray-500 mb-2">
-              Use <strong>Record Support Video</strong> available from the <strong>? icon</strong> at the top left of FYI to capture your issue and paste the link here.
+              <a
+                href="https://go.fyi.app/recordme/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-600 hover:text-green-700 underline"
+              >
+                Click here
+              </a>{" "}
+              to record a video of your issue in FYI and paste the link here.
             </p>
             <input
               type="url"
@@ -425,7 +387,7 @@ export default function SupportRequestForm({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+              className={`border-2 border-dashed rounded-lg p-5 text-center transition-colors ${
                 isDragging ? "border-green-500 bg-green-50" : "border-gray-300"
               }`}
             >
@@ -438,14 +400,14 @@ export default function SupportRequestForm({
                 accept="image/*,.pdf,.doc,.docx"
               />
               <svg
-                className="mx-auto h-12 w-12 text-gray-400 mb-4"
+                className="mx-auto h-10 w-10 text-gray-400 mb-4"
                 stroke="currentColor"
                 fill="none"
-                viewBox="0 0 48 48"
+                viewBox="0 0 24 24"
               >
                 <path
-                  d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 8M9 32h10m-10 0v10a4 4 0 004 4h10m-14-14v-10"
-                  strokeWidth={2}
+                  d="M21.44 11.05l-8.49 8.49a5.5 5.5 0 01-7.78-7.78l8.49-8.49a3.5 3.5 0 014.95 4.95l-8.49 8.49a1.5 1.5 0 01-2.12-2.12l7.78-7.78"
+                  strokeWidth={1.8}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
@@ -465,7 +427,7 @@ export default function SupportRequestForm({
 
             {/* File list */}
             {formData.files.length > 0 && (
-              <div className="mt-4 space-y-2">
+              <div className="mt-3 space-y-2">
                 {formData.files.map((file, index) => (
                   <div
                     key={index}
@@ -510,7 +472,7 @@ export default function SupportRequestForm({
           )}
 
           {/* Submit button */}
-          <div className="flex gap-4 pt-4">
+          <div className="flex gap-4 pt-3">
             <button
               type="submit"
               disabled={isSubmitting}
