@@ -35,8 +35,8 @@ You can customize the following in `/app/help/page.tsx`:
 ### Prompt Buttons
 ```typescript
 prompts: [
-  { label: "Help with feature", prompt: "I need help with a feature", icon: "sparkle" },
-  { label: "Enhancement idea", prompt: "I want to request a product enhancement", icon: "sparkle" },
+  { label: "Help with feature", prompt: "I need help with a feature", icon: "circle-question" },
+  { label: "Enhancement idea", prompt: "I want to request a product enhancement", icon: "lightbulb" },
   { label: "Something's not working", prompt: "I want to report an issue", icon: "bug" },
 ],
 ```

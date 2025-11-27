@@ -445,7 +445,7 @@
           // Inject custom prompts (Enhancement request, Report an issue)
           (function injectCustomPrompts(){
             const prompts = [
-              { label: 'Enhancement request', icon: 'sparkle', action: () => showForm() },
+              { label: 'Enhancement request', icon: 'lightbulb', action: () => showForm() },
               { label: 'Report an issue', icon: 'bug', action: async () => {
                 await el.setComposerValue({ text: 'I want to report the following issue: ' });
               }}

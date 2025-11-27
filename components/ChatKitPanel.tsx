@@ -1420,6 +1420,12 @@ export function ChatKitPanel({
             <path fill="currentColor" d="M9.5 1.75a.75.75 0 0 1 1 0l1.8 1.64c.2.18.31.43.31.7 0 .27-.11.52-.31.7L10.5 6.43a.75.75 0 0 1-1 0L7.7 4.79a.98.98 0 0 1-.31-.7c0-.27.11-.52.31-.7L9.5 1.75zM3.2 9.2a.6.6 0 0 1 .8 0l1.28 1.16c.18.16.28.38.28.62s-.1.46-.28.62L4 12.76a.6.6 0 0 1-.8 0l-1.28-1.16A.86.86 0 0 1 1.64 11c0-.24.1-.46.28-.62L3.2 9.2zm13.6 0a.6.6 0 0 1 .8 0l1.28 1.16c.18.16.28.38.28.62s-.1.46-.28.62L17.6 12.76a.6.6 0 0 1-.8 0l-1.28-1.16a.86.86 0 0 1-.28-.62c0-.24.1-.46.28-.62L16.8 9.2zM8.5 8.75a1 1 0 0 1 3 0l.41 1.25c.14.44.5.8.94.94L14.1 11a1 1 0 0 1 0 2l-1.25.41a1.5 1.5 0 0 0-.94.94L11.5 15a1 1 0 0 1-3 0l-.41-1.25a1.5 1.5 0 0 0-.94-.94L5.9 13a1 1 0 0 1 0-2l1.25-.41c.44-.14.8-.5.94-.94L8.5 8.75z"/>
           </svg>
         );
+      case "lightbulb":
+        return (
+          <svg viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth={1.6}>
+            <path d="M9 18h6m-5 3h4m-2-6v-3m0 0a6 6 0 1 0-2 0v3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        );
       case "bug":
         return (
           <svg viewBox="0 0 24 24" className={common} fill="currentColor">

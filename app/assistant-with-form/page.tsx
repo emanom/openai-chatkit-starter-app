@@ -1085,6 +1085,7 @@ function AssistantWithFormContent() {
             <div className="max-w-2xl mx-auto px-4 sm:px-6">
               <div className="flex gap-2">
               <button
+                title="Conversation starter"
                 onClick={async () => {
                   try {
                     // Access the ChatKit web component directly
@@ -1118,6 +1119,7 @@ function AssistantWithFormContent() {
                 <span className="text-sm font-normal text-gray-600">Help with feature</span>
               </button>
               <button
+                title="Conversation starter"
                 onClick={async () => {
                   try {
                     // Access the ChatKit web component directly
@@ -1147,10 +1149,11 @@ function AssistantWithFormContent() {
                 className="px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600 text-sm font-normal transition-all duration-150 border border-gray-200 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] flex items-center gap-3 text-left justify-start whitespace-nowrap"
                 type="button"
               >
-                <ChatKitIconBadge name="sparkle" />
+                <ChatKitIconBadge name="lightbulb" />
                 <span className="text-sm font-normal text-gray-600">Enhancement idea</span>
               </button>
               <button
+                title="Conversation starter"
                 onClick={async () => {
                   try {
                     // Access the ChatKit web component directly
@@ -1190,9 +1193,9 @@ function AssistantWithFormContent() {
       </div>
       
       {/* Zapier Form Section */}
-      <div className="border-t border-gray-200 bg-gray-50 p-6">
-        <div className="w-full px-4 sm:px-6">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:gap-10">
+      <div className="border-top-0 border-t border-gray-200 bg-gray-50 py-4 px-6">
+        <div className="w-full px-2 sm:px-4">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:gap-8">
             <div className="flex-1">
               <h2 className="text-2xl font-bold mb-4 text-gray-900">Submit a support request</h2>
               
@@ -1230,7 +1233,7 @@ function AssistantWithFormContent() {
               
               {/* Original form (only shown before bot responds) */}
               {!hasBotResponded && (
-                <div className="flex flex-col items-start gap-4">
+                <div className="flex flex-col items-start gap-3">
                   <p className="text-gray-600 mb-4">
                     Submit a blank request without the assistant:
                   </p>
@@ -1257,23 +1260,17 @@ function AssistantWithFormContent() {
                       />
                     </svg>
                   </button>
-                  <p className="text-sm text-gray-500 mt-4">
-                    {firstName && "Your details will be pre-filled in the form."}
-                  </p>
                 </div>
               )}
             </div>
 
             <div className="hidden lg:block w-px bg-gray-200 self-stretch" aria-hidden="true" />
 
-            <div className="flex-1 lg:max-w-sm mt-8 lg:mt-0">
-              <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+            <div className="flex-1 lg:max-w-sm mt-6 lg:mt-0">
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col gap-3">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-2">Resources</p>
                   <p className="text-lg font-semibold text-gray-900">Browse FYI documentation</p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Read our help articles.
-                  </p>
                 </div>
                 <button
                   onClick={() => {
