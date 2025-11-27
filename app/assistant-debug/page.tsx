@@ -1,7 +1,81 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
+
+const FIRST_NAME_PARAM_KEYS = ["first_name", "first-name", "firstName", "firstname"] as const;
+
+const sanitizeNameValue = (value: string | null): string | null =>
+  value && !value.includes("{{") && !value.includes("}}") ? value : null;
+
+const extractFirstNameFromSearchParams = (
+  params: URLSearchParams | ReadonlyURLSearchParams | null | undefined
+): string | null => {
+  if (!params) return null;
+  for (const key of FIRST_NAME_PARAM_KEYS) {
+    const value = params.get(key);
+    const sanitized = sanitizeNameValue(value);
+    if (sanitized) {
+      return sanitized;
+    }
+  }
+  return null;
+};
+
+const extractFirstNameFromStringRecord = (record: Record<string, string> | null | undefined): string | null => {
+  if (!record) return null;
+  for (const key of FIRST_NAME_PARAM_KEYS) {
+    const value = record[key];
+    const sanitized = sanitizeNameValue(value ?? null);
+    if (sanitized) {
+      return sanitized;
+    }
+  }
+  return null;
+};
+
+const extractFirstNameFromUnknownRecord = (record: Record<string, unknown> | null | undefined): string | null => {
+  if (!record) return null;
+  for (const key of FIRST_NAME_PARAM_KEYS) {
+    const value = record[key];
+    if (typeof value === "string") {
+      const sanitized = sanitizeNameValue(value);
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+  }
+  return null;
+};
+
+const FIRST_NAME_COOKIE_KEYS = ["assistant-first_name", "assistant-first-name"];
+
+const readAssistantFirstNameCookie = (): string | null => {
+  if (typeof document === "undefined") return null;
+  const cookies = document.cookie;
+  for (const cookieKey of FIRST_NAME_COOKIE_KEYS) {
+    const value = cookies
+      .split("; ")
+      .find((row) => row.startsWith(`${cookieKey}=`))
+      ?.split("=")[1];
+    if (value) {
+      const decoded = decodeURIComponent(value);
+      const sanitized = sanitizeNameValue(decoded);
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+  }
+  return null;
+};
+
+const buildFirstNameParamSnapshot = (params: ReadonlyURLSearchParams) => {
+  const snapshot: Record<string, string | null> = {};
+  FIRST_NAME_PARAM_KEYS.forEach((key) => {
+    snapshot[key] = params.get(key);
+  });
+  return snapshot;
+};
 
 type TestResult = {
   value: unknown;
@@ -19,20 +93,20 @@ function AssistantDebugContent() {
     if (!isIframe) return;
     
     const handleMessage = (event: MessageEvent) => {
-      if (event.data && typeof event.data === 'object') {
-        const firstName = (event.data as Record<string, unknown>).firstName || (event.data as Record<string, unknown>)['first-name'];
-        if (firstName && typeof firstName === 'string') {
-          setResults(prev => ({
+      if (event.data && typeof event.data === "object") {
+        const firstName = extractFirstNameFromUnknownRecord(event.data as Record<string, unknown>);
+        if (firstName) {
+          setResults((prev) => ({
             ...prev,
-            '8_postmessage': {
+            "8_postmessage": {
               value: {
                 origin: event.origin,
                 data: event.data,
-                firstName
+                firstName,
               },
               success: true,
-              description: 'postMessage from parent window'
-            }
+              description: "postMessage from parent window",
+            },
           }));
         }
       }
@@ -59,15 +133,11 @@ function AssistantDebugContent() {
     };
 
     // Test 2: Direct URL query parameters
-    const urlParams = {
-      'first-name': searchParams.get('first-name'),
-      'firstName': searchParams.get('firstName'),
-      'firstname': searchParams.get('firstname'),
-    };
-    testResults['2_url_query_params'] = {
+    const urlParams = buildFirstNameParamSnapshot(searchParams);
+    testResults["2_url_query_params"] = {
       value: urlParams,
-      success: Object.values(urlParams).some(v => v && !v.includes('{{')),
-      description: 'Query parameters from current page URL'
+      success: Object.values(urlParams).some((v) => Boolean(sanitizeNameValue(v))),
+      description: "Query parameters from current page URL",
     };
 
     // Test 3: document.referrer
@@ -84,15 +154,16 @@ function AssistantDebugContent() {
           referrerParams = { error: String(e) };
         }
       }
-      testResults['3_document_referrer'] = {
+      const referrerFirstName = extractFirstNameFromStringRecord(referrerParams);
+      testResults["3_document_referrer"] = {
         value: {
           referrer,
           hostname: referrer ? new URL(referrer).hostname : null,
           params: referrerParams,
-          'first-name': referrerParams['first-name'] || referrerParams['first_name']
+          first_name: referrerFirstName,
         },
-        success: !!(referrerParams['first-name'] || referrerParams['first_name']),
-        description: 'document.referrer (browsers often strip query params)'
+        success: !!referrerFirstName,
+        description: "document.referrer (browsers often strip query params)",
       };
     } catch (e) {
       testResults['3_document_referrer'] = {
@@ -108,15 +179,15 @@ function AssistantDebugContent() {
         const parentUrl = window.parent.location.href;
         const parentSearch = window.parent.location.search;
         const parentParams = new URLSearchParams(parentSearch);
-        const parentFirstName = parentParams.get('first-name') || parentParams.get('first_name');
-        testResults['4_parent_location'] = {
+        const parentFirstName = extractFirstNameFromSearchParams(parentParams);
+        testResults["4_parent_location"] = {
           value: {
             url: parentUrl,
             search: parentSearch,
-            'first-name': parentFirstName
+            first_name: parentFirstName,
           },
           success: !!parentFirstName,
-          description: 'window.parent.location (works if same-origin)'
+          description: "window.parent.location (works if same-origin)",
         };
       } catch (e) {
         testResults['4_parent_location'] = {
@@ -139,18 +210,24 @@ function AssistantDebugContent() {
 
     // Test 5: Cookies set by middleware
     try {
-      const cookies = typeof document !== 'undefined' ? document.cookie : '';
-      const cookieValue = cookies
-        .split('; ')
-        .find(row => row.startsWith('assistant-first-name='))
-        ?.split('=')[1];
-      testResults['5_cookie_from_middleware'] = {
+      const cookies = typeof document !== "undefined" ? document.cookie : "";
+      const cookieValue = readAssistantFirstNameCookie();
+      const cookieSnapshots: Record<string, string | null> = {};
+      FIRST_NAME_COOKIE_KEYS.forEach((key) => {
+        const match = cookies
+          .split("; ")
+          .find((row) => row.startsWith(`${key}=`))
+          ?.split("=")[1];
+        cookieSnapshots[key] = match ? decodeURIComponent(match) : null;
+      });
+      testResults["5_cookie_from_middleware"] = {
         value: {
           allCookies: cookies,
-          'assistant-first-name': cookieValue ? decodeURIComponent(cookieValue) : null
+          cookies: cookieSnapshots,
+          resolvedFirstName: cookieValue,
         },
         success: !!cookieValue,
-        description: 'Cookie set by middleware (from Referer header)'
+        description: "Cookie set by middleware (from Referer header)",
       };
     } catch (e) {
       testResults['5_cookie_from_middleware'] = {
@@ -165,10 +242,17 @@ function AssistantDebugContent() {
       fetch('/api/get-parent-params')
         .then(res => res.json())
         .then(data => {
+          const paramsRecord =
+            data?.params && typeof data.params === 'object'
+              ? (data.params as Record<string, unknown>)
+              : null;
+          const apiFirstName = extractFirstNameFromUnknownRecord(paramsRecord);
           testResults['6_api_referer_header'] = {
-            value: data,
-            success: !!(data.params && (data.params['first-name'] || data.params['first_name']) && 
-                      !data.params['first-name']?.includes('{{')),
+            value: {
+              ...data,
+              resolvedFirstName: apiFirstName,
+            },
+            success: !!apiFirstName,
             description: 'API endpoint reading Referer header (server-side)'
           };
           setResults(prev => ({ ...prev, ...testResults }));
@@ -200,13 +284,14 @@ function AssistantDebugContent() {
           hashParams[key] = value;
         });
       }
+      const hashFirstName = extractFirstNameFromStringRecord(hashParams);
       testResults['7_url_hash'] = {
         value: {
           hash,
           params: hashParams,
-          'first-name': hashParams['first-name'] || hashParams['first_name']
+          first_name: hashFirstName
         },
-        success: !!(hashParams['first-name'] || hashParams['first_name']),
+        success: !!hashFirstName,
         description: 'URL hash fragments (#param=value)'
       };
     } catch (e) {
@@ -234,7 +319,7 @@ function AssistantDebugContent() {
         nameData = windowName;
       }
       const nameDataObj = nameData && typeof nameData === 'object' ? nameData as Record<string, unknown> : null;
-      const firstNameFromName = nameDataObj ? (nameDataObj['first-name'] || nameDataObj.firstName) : null;
+      const firstNameFromName = extractFirstNameFromUnknownRecord(nameDataObj);
       testResults['9_window_name'] = {
         value: {
           name: windowName,
@@ -252,11 +337,11 @@ function AssistantDebugContent() {
     }
 
     // Test 10: Check if template variables are present
-    const hasTemplateVars = Object.values(urlParams).some(v => v && (v.includes('{{') || v.includes('}}')));
+    const hasTemplateVars = Object.values(urlParams).some(v => v != null && !sanitizeNameValue(v));
     testResults['10_template_variables'] = {
       value: {
         detected: hasTemplateVars,
-        variables: Object.entries(urlParams).filter(([, v]) => v && (v.includes('{{') || v.includes('}}')))
+        variables: Object.entries(urlParams).filter(([, v]) => v != null && !sanitizeNameValue(v))
       },
       success: !hasTemplateVars,
       description: 'Template variables detected (Zapier not interpolating)'
@@ -269,8 +354,14 @@ function AssistantDebugContent() {
   const getFirstNameFromValue = (value: unknown): string | null => {
     if (!value || typeof value !== 'object') return null;
     const obj = value as Record<string, unknown>;
-    const firstName = obj['first-name'] || obj.firstName || (obj.params && typeof obj.params === 'object' ? (obj.params as Record<string, unknown>)['first-name'] : null);
-    return typeof firstName === 'string' ? firstName : null;
+    const directFirstName = extractFirstNameFromUnknownRecord(obj);
+    if (directFirstName) {
+      return directFirstName;
+    }
+    if (obj.params && typeof obj.params === 'object') {
+      return extractFirstNameFromUnknownRecord(obj.params as Record<string, unknown>);
+    }
+    return null;
   };
 
   const bestFirstName = (() => {
@@ -315,7 +406,7 @@ function AssistantDebugContent() {
               <strong>First Name:</strong> <code className="bg-white px-2 py-1 rounded">{bestFirstName}</code>
             </p>
           ) : (
-            <p>No valid first-name parameter was found using any method.</p>
+            <p>No valid first_name parameter was found using any method.</p>
           )}
         </div>
 
@@ -358,7 +449,7 @@ function AssistantDebugContent() {
           <h3 className="font-semibold text-blue-900 mb-2">How to use:</h3>
           <ol className="list-decimal list-inside space-y-1 text-blue-800 text-sm">
             <li>Embed this page in your Zapier interface using an iframe</li>
-            <li>Visit the Zapier page with <code>?first-name=John</code> in the URL</li>
+            <li>Visit the Zapier page with <code>?first_name=John</code> in the URL</li>
             <li>Check which test methods successfully read the parameter</li>
             <li>Use the successful method in the actual assistant page</li>
           </ol>

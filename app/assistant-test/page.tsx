@@ -9,7 +9,7 @@ export default function AssistantTestPage() {
   const buildAssistantUrl = () => {
     const params = new URLSearchParams();
     if (firstName.trim()) {
-      params.set("first-name", firstName.trim());
+      params.set("first_name", firstName.trim());
     }
     return `/assistant${params.toString() ? `?${params.toString()}` : ""}`;
   };
@@ -39,13 +39,13 @@ export default function AssistantTestPage() {
           <div className="space-y-4">
             <div>
               <label
-                htmlFor="first-name"
+                htmlFor="first_name"
                 className="block text-sm font-medium text-gray-700 mb-2"
               >
                 First Name
               </label>
               <input
-                id="first-name"
+                id="first_name"
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
@@ -126,7 +126,7 @@ export default function AssistantTestPage() {
             <li>Click &quot;Update Assistant&quot; to reload the iframe with new parameters</li>
             <li>Or click &quot;Open in New Tab&quot; to view the assistant page directly</li>
             <li>
-              The greeting message will personalize based on the first-name
+              The greeting message will personalize based on the first_name
               parameter
             </li>
           </ul>

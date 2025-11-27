@@ -1232,7 +1232,7 @@ function AssistantWithFormContent() {
               {!hasBotResponded && (
                 <div className="flex flex-col items-start gap-4">
                   <p className="text-gray-600 mb-4">
-                    Submit a support request without the assistant:
+                    Submit a blank request without the assistant:
                   </p>
                   <button
                     onClick={handleFormLinkClick}
@@ -1272,7 +1272,7 @@ function AssistantWithFormContent() {
                   <p className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-2">Resources</p>
                   <p className="text-lg font-semibold text-gray-900">Browse FYI documentation</p>
                   <p className="text-sm text-gray-600 mt-1">
-                    Read help articles to learn more about features, troubleshooting, and best practices.
+                    Read our help articles.
                   </p>
                 </div>
                 <button

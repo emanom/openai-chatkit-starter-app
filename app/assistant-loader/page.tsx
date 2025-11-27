@@ -7,7 +7,7 @@ import { Suspense, useEffect, useState } from "react";
  * Loader page that receives parameters from Zapier and embeds the assistant iframe
  * 
  * Usage in Zapier:
- * Redirect to: https://main.d2xcz3k9ugtvab.amplifyapp.com/assistant-loader?first-name={{query.first-name}}
+ * Redirect to: https://main.d2xcz3k9ugtvab.amplifyapp.com/assistant-loader?first_name={{query.first_name}}
  * 
  * This page will then embed the assistant iframe with the parameter properly set
  */
@@ -16,14 +16,19 @@ function AssistantLoaderContent() {
   const [iframeSrc, setIframeSrc] = useState<string>("");
   
   useEffect(() => {
-    const firstName = searchParams.get("first-name") || 
+    const rawFirstName = searchParams.get("first_name") || 
+                     searchParams.get("first-name") ||
                      searchParams.get("firstName") || 
                      searchParams.get("firstname");
+    const firstName =
+      rawFirstName && !rawFirstName.includes("{{") && !rawFirstName.includes("}}")
+        ? rawFirstName
+        : null;
     
     // Build iframe URL with parameter
     const assistantUrl = new URL("/assistant", window.location.origin);
-    if (firstName && !firstName.includes("{{") && !firstName.includes("}}")) {
-      assistantUrl.searchParams.set("first-name", firstName);
+    if (firstName) {
+      assistantUrl.searchParams.set("first_name", firstName);
     }
     
     setIframeSrc(assistantUrl.toString());

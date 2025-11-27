@@ -95,11 +95,11 @@
 &gt;&lt;/iframe&gt;</code></pre>
 
             <h3>Step 3: Optional - Filter specific parameters</h3>
-            <p>If you only want to pass specific parameters (e.g., only <code>first-name</code>):</p>
+            <p>If you only want to pass specific parameters (e.g., only <code>first_name</code>):</p>
             <pre><code>&lt;iframe
     id="assistant-iframe"
     data-assistant-url="https://your-domain.com/assistant"
-    data-allowed-params="first-name,firstName"
+    data-allowed-params="first_name,firstName"
     width="100%"
     height="800"
     frameborder="0"
@@ -132,14 +132,14 @@
 (function() {
   // Get query parameters from parent page
   const urlParams = new URLSearchParams(window.location.search);
-  const firstName = urlParams.get('first-name') || urlParams.get('first_name');
+  const firstName = urlParams.get('first_name') || urlParams.get('first-name');
   
   // Build iframe URL with parameters
   const baseUrl = 'https://your-domain.com/assistant';
   const iframe = document.getElementById('assistant-iframe');
   
   if (iframe && firstName) {
-    iframe.src = baseUrl + '?first-name=' + encodeURIComponent(firstName);
+    iframe.src = baseUrl + '?first_name=' + encodeURIComponent(firstName);
   } else if (iframe) {
     iframe.src = baseUrl;
   }
@@ -168,11 +168,11 @@
   const iframe = document.getElementById('assistant-iframe');
   
   if (iframe && urlParams.toString()) {
-    // Map first_name to first-name for compatibility
+    // Normalise legacy param names to first_name for compatibility
     const params = new URLSearchParams();
     urlParams.forEach((value, key) => {
-      if (key === 'first_name') {
-        params.set('first-name', value);
+      if (key === 'first-name' || key === 'firstName') {
+        params.set('first_name', value);
       } else {
         params.set(key, value);
       }
@@ -212,9 +212,9 @@
 &lt;!-- JavaScript Block --&gt;
 &lt;script&gt;
 (function() {
-  // Get first-name from parent page URL
+  // Get first_name from parent page URL
   const urlParams = new URLSearchParams(window.location.search);
-  const firstName = urlParams.get('first-name') || urlParams.get('first_name');
+  const firstName = urlParams.get('first_name') || urlParams.get('first-name');
   
   // Your assistant domain - UPDATE THIS!
   const assistantUrl = 'https://your-deployed-domain.com/assistant';
@@ -222,7 +222,7 @@
   
   if (iframe) {
     if (firstName) {
-      iframe.src = assistantUrl + '?first-name=' + encodeURIComponent(firstName);
+      iframe.src = assistantUrl + '?first_name=' + encodeURIComponent(firstName);
     } else {
       iframe.src = assistantUrl;
     }

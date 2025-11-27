@@ -49,12 +49,11 @@
     paramsToPass.forEach(key => {
       const value = parentParams.get(key);
       if (value) {
-        // Map first_name to first-name if needed (for backward compatibility)
-        if (key === 'first_name') {
-          iframeParams.set('first-name', value);
-        } else {
-          iframeParams.set(key, value);
+        let targetKey = key;
+        if (key === 'first-name' || key === 'firstName') {
+          targetKey = 'first_name';
         }
+        iframeParams.set(targetKey, value);
       }
     });
     

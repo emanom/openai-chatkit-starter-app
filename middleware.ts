@@ -15,8 +15,8 @@ export function middleware(request: NextRequest) {
       try {
         const refererUrl = new URL(referer);
         // Try multiple parameter name variations
-        const firstName = refererUrl.searchParams.get('first-name') || 
-                         refererUrl.searchParams.get('first_name') ||
+        const firstName = refererUrl.searchParams.get('first_name') || 
+                         refererUrl.searchParams.get('first-name') ||
                          refererUrl.searchParams.get('firstName') ||
                          refererUrl.searchParams.get('firstname');
         
@@ -35,15 +35,21 @@ export function middleware(request: NextRequest) {
         console.log('[Middleware] Is own domain:', isOwnDomain);
         
         // Only use referer if it's from Zapier (parent page), not from our own domain (iframe)
-        if (isZapierReferer && firstName && !firstName.includes('{{')) {
+        const sanitizedFirstName = firstName && !firstName.includes('{{') && !firstName.includes('}}') 
+          ? firstName 
+          : null;
+
+        if (isZapierReferer && sanitizedFirstName) {
           // Set cookie with firstName from referer
           const response = NextResponse.next();
-          response.cookies.set('assistant-first-name', firstName, {
+          const cookieOptions = {
             httpOnly: false, // Allow client-side access
             sameSite: 'lax',
             maxAge: 300, // 5 minutes - increased for testing
-          });
-          console.log('[Middleware] Set cookie assistant-first-name:', firstName);
+          } as const;
+          response.cookies.set('assistant-first_name', sanitizedFirstName, cookieOptions);
+          response.cookies.set('assistant-first-name', sanitizedFirstName, cookieOptions);
+          console.log('[Middleware] Set cookie assistant-first_name:', sanitizedFirstName);
           return response;
         } else if (isOwnDomain && firstName && firstName.includes('{{')) {
           console.log('[Middleware] Referer is from own domain with template variable - ignoring');
