@@ -198,7 +198,6 @@ export async function POST(request: NextRequest) {
       .map((link) => link.s3Url || link.proxyUrl || link.key)
       .filter(Boolean);
 
-    // Validate required fields based on form type
     if (body.isConversationRequest) {
       // Conversation form doesn't require name/email
     } else {
@@ -300,6 +299,10 @@ export async function POST(request: NextRequest) {
     zapierData["fyi-region"] = normalizedMetadata.fyi_region;
     zapierData["practice-mgmt"] = normalizedMetadata.practice_mgmt;
     zapierData["fyi-age"] = normalizedMetadata.fyi_age;
+
+    zapierData["upload-files-list"] = proxyLinks;
+    zapierData["upload-files-direct-list"] = directLinks;
+    zapierData["upload-files-count"] = proxyLinks.length;
 
     if (body.isConversationRequest) {
       // Conversation form fields - minimal data since context comes from conversation
