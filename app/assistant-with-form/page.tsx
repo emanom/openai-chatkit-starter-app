@@ -12,7 +12,6 @@ import {
   sanitizeCitationText,
   ensureGlobalCitationObserver,
 } from "@/lib/sanitizeCitations";
-import { renderSummaryHtml } from "@/lib/renderSummaryHtml";
 import type { UserMetadata, UserMetadataKey } from "@/types/userMetadata";
 import { USER_METADATA_KEYS } from "@/types/userMetadata";
 
@@ -208,11 +207,6 @@ function AssistantWithFormContent() {
   const botResponseCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastTranscriptRef = useRef<string>("");
   const hasBotRespondedRef = useRef<boolean>(false);
-  const [latestAssistantSummary, setLatestAssistantSummary] = useState<string>("");
-  const latestAssistantSummaryHtml = useMemo(
-    () => renderSummaryHtml(latestAssistantSummary),
-    [latestAssistantSummary]
-  );
   
   const handleModalClose = useCallback(() => {
     setIsFormModalOpen(false);
@@ -792,7 +786,6 @@ function AssistantWithFormContent() {
                         // Check if transcript has stabilized
                         if (transcript === lastTranscriptRef.current && transcript.length > 0) {
                           stableCount++;
-                          setLatestAssistantSummary(assistantContent);
                           // Require 2 consecutive stable checks (2 seconds) to ensure streaming is done
                           if (stableCount >= 2 && !hasBotRespondedRef.current) {
                             // Transcript is stable, bot has finished streaming
@@ -1263,15 +1256,6 @@ function AssistantWithFormContent() {
               <p className="text-gray-600 mb-4">
                 Submit a support request from this conversation with additional details or attachments:
               </p>
-              {latestAssistantSummaryHtml ? (
-                <div className="w-full rounded-xl border border-gray-200 bg-white px-6 py-4 shadow-sm">
-                  <p className="text-sm font-semibold text-gray-700 mb-2">Clean conversation summary</p>
-                  <div
-                    className="text-sm text-gray-700 space-y-2 prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: latestAssistantSummaryHtml }}
-                  />
-                </div>
-              ) : null}
               <button
                 onClick={handleConversationFormClick}
                 className="group flex items-center justify-between rounded-xl border bg-white px-6 py-4 shadow-sm transition-all hover:shadow-md mb-4"
@@ -1419,7 +1403,6 @@ function AssistantWithFormContent() {
                     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/conversation/${sessionId}${threadId ? `?threadId=${encodeURIComponent(threadId)}` : ''}`
                     : undefined
                 }
-                summaryHtml={latestAssistantSummaryHtml}
                 metadata={metadata}
                 firstName={firstName || metadata?.first_name || undefined}
                 lastName={metadata?.last_name || undefined}

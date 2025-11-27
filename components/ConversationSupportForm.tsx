@@ -14,7 +14,6 @@ interface ConversationSupportFormProps {
   metadata?: UserMetadata;
   firstName?: string | null;
   lastName?: string | null;
-  summaryHtml?: string;
 }
 
 interface FormData {
@@ -34,7 +33,6 @@ export default function ConversationSupportForm({
   metadata,
   firstName,
   lastName,
-  summaryHtml,
 }: ConversationSupportFormProps) {
   const [formData, setFormData] = useState<FormData>({
     email: metadata?.user_email || "",
@@ -257,13 +255,6 @@ export default function ConversationSupportForm({
         <p className="text-gray-600 mb-6">
           Add any extra details to help our team resolve your request faster, the chat history will already be included.
         </p>
-
-        {summaryHtml ? (
-          <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <p className="text-sm font-semibold text-gray-700 mb-2">Conversation summary</p>
-            <div className="text-sm text-gray-700 space-y-2 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: summaryHtml }} />
-          </div>
-        ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {hiddenMetadataKeys.map((key) => (
