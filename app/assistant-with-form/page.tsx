@@ -1092,7 +1092,7 @@ function AssistantWithFormContent() {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const chatkitElement = document.querySelector('openai-chatkit') as any;
                     if (chatkitElement && typeof chatkitElement.setComposerValue === 'function') {
-                      await chatkitElement.setComposerValue({ text: "I need help with a feature: " });
+                      await chatkitElement.setComposerValue({ text: "I need help with this feature: " });
                       if (typeof chatkitElement.focusComposer === 'function') {
                         await chatkitElement.focusComposer();
                       }
@@ -1102,7 +1102,7 @@ function AssistantWithFormContent() {
                       if (shadow) {
                         const composer = shadow.querySelector('[role="textbox"], [contenteditable="true"]') as HTMLElement;
                         if (composer) {
-                          composer.textContent = "I need help with a feature: ";
+                          composer.textContent = "I need help with this feature: ";
                           composer.dispatchEvent(new Event('input', { bubbles: true }));
                           composer.focus();
                         }

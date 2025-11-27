@@ -78,7 +78,7 @@ export function buildLinkAwareGreeting(options?: BuildGreetingOptions): string {
   const sanitizedTarget = sanitizeLinkTarget(options?.link ?? null);
   const inferredSubject = inferViewSubject(toUrl(sanitizedTarget));
   const base = inferredSubject
-    ? `Do you need help with ${inferredSubject} or something else?`
+    ? `Do you need help with ${inferredSubject}, or something else?`
     : `Do you need help with ${fallbackSubject}?`;
   const prefix = options?.salutation?.trim();
   if (prefix) {

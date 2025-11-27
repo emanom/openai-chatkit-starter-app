@@ -287,7 +287,7 @@ function AssistantPageContent() {
     startScreen: {
       greeting: greeting,
       prompts: [
-        { label: "Help with feature", prompt: "I need help with a feature: ", icon: "circle-question" },
+        { label: "Help with feature", prompt: "I need help with this feature: ", icon: "circle-question" },
         { label: "Enhancement idea", prompt: "I have an enhancement idea", icon: "lightbulb" },
         { label: "Something's not working", prompt: "Something's not working as expected", icon: "bug" },
       ],
