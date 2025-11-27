@@ -168,9 +168,6 @@ export default function ConversationSupportForm({
           }
 
           const { url, key } = await presignResponse.json();
-
-          // Parse the presigned URL to extract required headers from query params
-          const urlObj = new URL(url);
           const headers: Record<string, string> = {
             "Content-Type": file.type,
             // SSE is part of the signed headers, so we must include it here.

@@ -196,9 +196,6 @@ export default function SupportRequestForm({
           }
 
           const { url, key } = await presignResponse.json();
-
-          // Parse the presigned URL to extract required headers from query params
-          const urlObj = new URL(url);
           const headers: Record<string, string> = {
             "Content-Type": file.type,
             // This header must be sent because the presigned URL signs SSE usage.

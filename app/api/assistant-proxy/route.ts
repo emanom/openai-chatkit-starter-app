@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.redirect(assistantUrl);
     const cookieOptions = {
       httpOnly: false,
-      sameSite: 'lax',
+      sameSite: "lax" as const,
       maxAge: 300, // 5 minutes
     };
     response.cookies.set('assistant-first_name', sanitizedFirstName, cookieOptions);
