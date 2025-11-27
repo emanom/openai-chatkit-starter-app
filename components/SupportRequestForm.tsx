@@ -113,6 +113,9 @@ export default function SupportRequestForm({
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = "Please enter a valid email address";
     }
+    if (!formData.description.trim()) {
+      newErrors.description = "Description is required";
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -337,19 +340,21 @@ export default function SupportRequestForm({
           {/* Description */}
           <div>
             <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-              Description
+              Description <span className="text-red-500">*</span>
             </label>
             <p className="text-xs text-gray-500 mb-2">
               Include any information to help us resolve your request. (step-by-step instructions to replicate, number of users affected...)
             </p>
             <textarea
               id="description"
+              required
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={6}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
               placeholder="Enter description with details..."
             />
+            {errors.description && <p className="mt-1 text-sm text-red-500">{errors.description}</p>}
           </div>
 
           {/* Video Recording Link */}
