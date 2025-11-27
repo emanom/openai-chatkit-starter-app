@@ -4,28 +4,19 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChatKitPanel, type FactAction } from "@/components/ChatKitPanel";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import type { UserMetadata } from "@/types/userMetadata";
+import { extractUserMetadataFromQueryString } from "@/lib/userMetadata";
 
 function AppContent() {
   const { scheme, setScheme } = useColorScheme();
   const [isOpen, setIsOpen] = useState(false);
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
-  const userMetadata = useMemo(() => {
-    const params = new URLSearchParams(searchParamsString);
-    const entries: Record<string, string> = {};
-    params.forEach((value, key) => {
-      if (key.startsWith("meta.") || key.startsWith("meta_")) {
-        const normalizedKey = key.startsWith("meta.")
-          ? key.slice(5)
-          : key.slice(5);
-        if (normalizedKey) {
-          entries[normalizedKey] = value;
-        }
-      }
-    });
-    return entries;
-  }, [searchParamsString]);
-  const metadataForChat =
+  const userMetadata = useMemo<UserMetadata>(
+    () => extractUserMetadataFromQueryString(searchParamsString),
+    [searchParamsString]
+  );
+  const metadataForChat: UserMetadata | undefined =
     Object.keys(userMetadata).length > 0 ? userMetadata : undefined;
   
   // Log modal state changes

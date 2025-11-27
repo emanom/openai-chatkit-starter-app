@@ -6,7 +6,6 @@ import type { UseChatKitOptions } from "@openai/chatkit-react";
 import {
   STARTER_PROMPTS,
   PLACEHOLDER_INPUT,
-  GREETING,
   CREATE_SESSION_ENDPOINT,
   WORKFLOW_ID,
   PROMPT_METADATA_ENDPOINT,
@@ -15,6 +14,8 @@ import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";
 import { stableStringify } from "@/lib/stableStringify";
 import { sanitizeCitationsDeep, ensureGlobalCitationObserver } from "@/lib/sanitizeCitations";
+import type { UserMetadata } from "@/types/userMetadata";
+import { buildLinkAwareGreeting, inferLinkContextValue } from "@/lib/greeting";
 
 // Component to auto-hide loading overlay after timeout
 function LoadingTimeoutHandler({ 
@@ -48,7 +49,7 @@ type ChatKitPanelProps = {
   onThemeRequest: (scheme: ColorScheme) => void;
   initialQuery?: string;
   hideComposer?: boolean;
-  userMetadata?: Record<string, unknown>;
+  userMetadata?: UserMetadata;
   onChatKitReady?: (chatkit: { setComposerValue: (value: { text: string }) => Promise<void>; focusComposer: () => Promise<void> }) => void;
 };
 
@@ -74,7 +75,7 @@ type PromptCacheInfo = {
 };
 
 function sanitizeMetadata(
-  input: Record<string, unknown> | null | undefined
+  input: UserMetadata | Record<string, unknown> | null | undefined
 ): Record<string, unknown> {
   if (!input || typeof input !== "object") {
     return {};
@@ -154,9 +155,34 @@ export function ChatKitPanel({
     () => sanitizeMetadata(userMetadata),
     [userMetadata]
   );
-  const metadataHash = useMemo(
-    () => stableStringify(cleanedMetadata),
+  const linkTarget = useMemo(
+    () =>
+      typeof cleanedMetadata["link_url"] === "string"
+        ? (cleanedMetadata["link_url"] as string)
+        : null,
     [cleanedMetadata]
+  );
+  const linkContext = useMemo(
+    () => inferLinkContextValue(linkTarget),
+    [linkTarget]
+  );
+  const promptParameters = useMemo(() => {
+    const next: Record<string, unknown> = { ...cleanedMetadata };
+    if (linkContext) {
+      next.link_context = linkContext;
+    }
+    return next;
+  }, [cleanedMetadata, linkContext]);
+  const startScreenGreeting = useMemo(
+    () =>
+      buildLinkAwareGreeting({
+        link: linkTarget,
+      }),
+    [linkTarget]
+  );
+  const metadataHash = useMemo(
+    () => stableStringify(promptParameters),
+    [promptParameters]
   );
 
   const setErrorState = useCallback((updates: Partial<ErrorState>) => {
@@ -357,7 +383,7 @@ export function ChatKitPanel({
         },
         body: JSON.stringify({
           workflowId: WORKFLOW_ID,
-          parameters: cleanedMetadata,
+          parameters: promptParameters,
         }),
       });
       if (!response.ok) {
@@ -387,7 +413,7 @@ export function ChatKitPanel({
       }
       return null;
     }
-  }, [cleanedMetadata, metadataHash, persistPromptMetadata]);
+  }, [metadataHash, persistPromptMetadata, promptParameters]);
 
   const getClientSecret = useCallback(
     async (currentSecret: string | null) => {
@@ -536,7 +562,7 @@ export function ChatKitPanel({
                 enabled: true,
               },
             },
-            prompt_parameters: cleanedMetadata,
+            prompt_parameters: promptParameters,
             ...(promptEntry
               ? {
                   prompt_metadata: {
@@ -637,13 +663,13 @@ export function ChatKitPanel({
       }
     },
     [
-      cleanedMetadata,
       ensurePromptMetadata,
       isWorkflowConfigured,
       metadataHash,
+      persistPromptMetadata,
+      promptParameters,
       setErrorState,
       storeSessionMetadataHash,
-      persistPromptMetadata,
     ]
   );
 
@@ -686,7 +712,7 @@ export function ChatKitPanel({
       radius: "round",
     },
     startScreen: {
-      greeting: GREETING,
+      greeting: startScreenGreeting,
       prompts: [
         { label: "What can FYI do for me?", prompt: "What can FYI do for me?", icon: "sparkle" },
         { label: "Tell me about the subscription plans", prompt: "Tell me about the subscription plans", icon: "circle-question" },

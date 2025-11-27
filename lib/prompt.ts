@@ -6,6 +6,7 @@ import { stableStringify } from "./stableStringify";
 
 const TEMPLATE_PATH = path.join(process.cwd(), "system_prompt.md");
 const DEFAULT_PROMPT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const TOKEN_REGEX = /{{\s*([^}]+?)\s*}}/g;
 
 type Primitive = string | number | boolean | null;
 
@@ -137,17 +138,67 @@ export function getPromptByKey(
   return entry;
 }
 
+type ParsedToken = {
+  path: string;
+  defaultValue?: string;
+};
+
 function renderTemplate(template: string, parameters: PromptParameters): string {
-  return template.replace(/{{\s*([^}\s]+)\s*}}/g, (_, token: string) => {
-    const value = resolveToken(parameters, token);
-    if (value === undefined || value === null) {
+  return template.replace(TOKEN_REGEX, (_, rawToken: string) => {
+    const parsed = parseToken(rawToken);
+    if (!parsed) {
       return "";
     }
-    if (typeof value === "object") {
-      return stringifyValue(value);
+    const value = resolveToken(parameters, parsed.path);
+    const resolved =
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && value.trim() === "")
+        ? parsed.defaultValue
+        : value;
+    if (resolved === undefined || resolved === null) {
+      return "";
     }
-    return String(value);
+    if (typeof resolved === "object") {
+      return stringifyValue(resolved as PromptParameterValue);
+    }
+    return String(resolved);
   });
+}
+
+function parseToken(rawToken: string): ParsedToken | null {
+  const trimmed = rawToken.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const [pathPart, ...modifierParts] = trimmed.split("|");
+  const path = pathPart.trim();
+  if (!path) {
+    return null;
+  }
+  let defaultValue: string | undefined;
+  for (const part of modifierParts) {
+    const normalized = part.trim();
+    if (normalized.startsWith("default:")) {
+      const rawDefault = normalized.slice("default:".length).trim();
+      defaultValue = parseDefaultValue(rawDefault);
+    }
+  }
+  return { path, defaultValue };
+}
+
+function parseDefaultValue(rawValue: string): string {
+  if (!rawValue) {
+    return "";
+  }
+  const firstChar = rawValue[0];
+  if ((firstChar === '"' || firstChar === "'") && rawValue.length > 1) {
+    const closingIndex = rawValue.indexOf(firstChar, 1);
+    if (closingIndex > 0) {
+      return rawValue.slice(1, closingIndex);
+    }
+  }
+  return rawValue;
 }
 
 function resolveToken(

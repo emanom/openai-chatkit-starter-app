@@ -5,6 +5,9 @@ import { useChatKit, ChatKit } from "@openai/chatkit-react";
 import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { CREATE_SESSION_ENDPOINT, WORKFLOW_ID } from "@/lib/config";
 import { sanitizeCitationsDeep, ensureGlobalCitationObserver } from "@/lib/sanitizeCitations";
+import type { UserMetadata } from "@/types/userMetadata";
+import { extractUserMetadataFromSearchParams } from "@/lib/userMetadata";
+import { buildLinkAwareGreeting, inferLinkContextValue } from "@/lib/greeting";
 
 const FIRST_NAME_PARAM_KEYS = ["first_name", "first-name", "firstName", "firstname"] as const;
 
@@ -70,6 +73,21 @@ function AssistantPageContent() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const searchParams = useSearchParams();
   const [firstNameFromParent, setFirstNameFromParent] = useState<string | null>(null);
+  const metadata = useMemo<UserMetadata>(
+    () => extractUserMetadataFromSearchParams(searchParams),
+    [searchParams]
+  );
+  const linkContext = useMemo(
+    () => inferLinkContextValue(metadata.link_url),
+    [metadata.link_url]
+  );
+  const promptParameters = useMemo(() => {
+    const next: Record<string, unknown> = { ...metadata };
+    if (linkContext) {
+      next.link_context = linkContext;
+    }
+    return next;
+  }, [linkContext, metadata]);
   
   const firstNameFromUrl = useMemo(
     () => extractFirstNameFromSearchParams(searchParams),
@@ -219,14 +237,17 @@ function AssistantPageContent() {
   
   // Use firstName from URL first, then from cookie/middleware, then from parent URL, then from postMessage
   const firstName = firstNameFromUrl || firstNameFromParent;
+  const linkTarget = metadata.link_url ?? null;
   
   // Create personalized greeting
-  const greeting = useMemo(() => {
-    if (firstName) {
-      return `Hi ${firstName}! How can I help you today?`;
-    }
-    return "How can I help you today?";
-  }, [firstName]);
+  const greeting = useMemo(
+    () =>
+      buildLinkAwareGreeting({
+        link: linkTarget,
+        salutation: firstName ? `Hi ${firstName}!` : null,
+      }),
+    [firstName, linkTarget]
+  );
 
   const getClientSecret = useCallback(async (currentSecret: string | null) => {
     if (currentSecret) return currentSecret;
@@ -241,6 +262,7 @@ function AssistantPageContent() {
         chatkit_configuration: {
           file_upload: { enabled: true },
         },
+        prompt_parameters: promptParameters,
       }),
     });
 
@@ -253,7 +275,7 @@ function AssistantPageContent() {
     const data = await response.json();
     console.log("[AssistantPage] Session created successfully");
     return data.client_secret as string;
-  }, []);
+  }, [promptParameters]);
 
   const chatkit = useChatKit({
     api: { getClientSecret },

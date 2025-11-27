@@ -27,7 +27,7 @@ export const STARTER_PROMPTS: StartScreenPrompt[] = [
 
 export const PLACEHOLDER_INPUT = "Message the assistant";
 
-export const GREETING = "How can I help you today?";
+export const GREETING = "Do you need help with any particular topic?";
 
 export const getThemeConfig = (theme: ColorScheme): ThemeOption => ({
   color: {

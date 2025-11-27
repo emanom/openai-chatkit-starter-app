@@ -12,57 +12,9 @@ import {
   sanitizeCitationText,
   ensureGlobalCitationObserver,
 } from "@/lib/sanitizeCitations";
-import type { UserMetadata, UserMetadataKey } from "@/types/userMetadata";
-import { USER_METADATA_KEYS } from "@/types/userMetadata";
-
-const USER_METADATA_KEY_SET = new Set<UserMetadataKey>(USER_METADATA_KEYS);
-
-const sanitizeMetadataParamValue = (value: string | null): string | null => {
-  if (!value) return null;
-  if (value.includes("{{") || value.includes("}}")) {
-    return null;
-  }
-  return value;
-};
-
-const normalizeMetadataParamKey = (rawKey: string): UserMetadataKey | null => {
-  if (USER_METADATA_KEY_SET.has(rawKey as UserMetadataKey)) {
-    return rawKey as UserMetadataKey;
-  }
-  if (rawKey.startsWith("meta.")) {
-    const trimmed = rawKey.slice(5);
-    if (USER_METADATA_KEY_SET.has(trimmed as UserMetadataKey)) {
-      return trimmed as UserMetadataKey;
-    }
-    return null;
-  }
-  if (rawKey.startsWith("meta_")) {
-    const trimmed = rawKey.slice(5);
-    if (USER_METADATA_KEY_SET.has(trimmed as UserMetadataKey)) {
-      return trimmed as UserMetadataKey;
-    }
-  }
-  return null;
-};
-
-const extractUserMetadataFromQuery = (queryString: string): UserMetadata => {
-  const metadata: UserMetadata = {};
-  if (!queryString) {
-    return metadata;
-  }
-  const params = new URLSearchParams(queryString);
-  params.forEach((value, key) => {
-    const normalizedKey = normalizeMetadataParamKey(key);
-    if (!normalizedKey) {
-      return;
-    }
-    const sanitized = sanitizeMetadataParamValue(value);
-    if (sanitized) {
-      metadata[normalizedKey] = sanitized;
-    }
-  });
-  return metadata;
-};
+import type { UserMetadata } from "@/types/userMetadata";
+import { extractUserMetadataFromQueryString } from "@/lib/userMetadata";
+import { buildLinkAwareGreeting, inferLinkContextValue } from "@/lib/greeting";
 
 // Function to extract transcript from ChatKit shadow DOM
 function extractTranscript(): string {
@@ -187,10 +139,21 @@ function AssistantWithFormContent() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
-  const metadata = useMemo(
-    () => extractUserMetadataFromQuery(searchParamsString),
+  const metadata = useMemo<UserMetadata>(
+    () => extractUserMetadataFromQueryString(searchParamsString),
     [searchParamsString]
   );
+  const linkContext = useMemo(
+    () => inferLinkContextValue(metadata.link_url),
+    [metadata.link_url]
+  );
+  const promptParameters = useMemo(() => {
+    const next: Record<string, unknown> = { ...metadata };
+    if (linkContext) {
+      next.link_context = linkContext;
+    }
+    return next;
+  }, [linkContext, metadata]);
   const [firstName, setFirstName] = useState<string | null>(null);
   const metadataFirstName = metadata.first_name ?? null;
   const [iframeSrc, setIframeSrc] = useState<string>("");
@@ -602,12 +565,14 @@ function AssistantWithFormContent() {
   }, []);
   
   // Create personalized greeting
-  const greeting = useMemo(() => {
-    if (firstName) {
-      return `Hi ${firstName}! How can I help you today?`;
-    }
-    return "Hi! How can I help you today?";
-  }, [firstName]);
+  const greeting = useMemo(
+    () =>
+      buildLinkAwareGreeting({
+        link: metadata.link_url,
+        salutation: firstName ? `Hi ${firstName}!` : null,
+      }),
+    [firstName, metadata.link_url]
+  );
 
   const getClientSecret = useCallback(async (currentSecret: string | null) => {
     if (currentSecret) return currentSecret;
@@ -620,6 +585,7 @@ function AssistantWithFormContent() {
         chatkit_configuration: {
           file_upload: { enabled: true },
         },
+        prompt_parameters: promptParameters,
       }),
     });
 
@@ -667,7 +633,7 @@ function AssistantWithFormContent() {
     }
     
     return data.client_secret as string;
-  }, [sessionId]);
+  }, [promptParameters, sessionId]);
 
   const handleThreadChange = useCallback((event: { threadId: string | null }) => {
     const newThreadId = event.threadId;
@@ -779,7 +745,7 @@ function AssistantWithFormContent() {
     startScreen: {
       greeting: greeting,
       prompts: [
-        { label: "Tell me about Learning resources", prompt: "Tell me about Learning resources", icon: "circle-question" },
+        { label: "Tell me about the learning resources", prompt: "Tell me about FYI learning resources", icon: "circle-question" },
         { label: "What's new in FYI?", prompt: "What's new in FYI? ", icon: "sparkle" },
         { label: "Details on subscription plans", prompt: "Details on subscription plans", icon: "document" },
       ],
@@ -1306,7 +1272,7 @@ function AssistantWithFormContent() {
                   <p className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-2">Resources</p>
                   <p className="text-lg font-semibold text-gray-900">Browse FYI documentation</p>
                   <p className="text-sm text-gray-600 mt-1">
-                    Open FYI docs to learn more about features, troubleshooting, and best practices.
+                    Read help articles to learn more about features, troubleshooting, and best practices.
                   </p>
                 </div>
                 <button

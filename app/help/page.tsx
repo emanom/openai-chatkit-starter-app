@@ -44,7 +44,7 @@ function HelpPageContent() {
       },
     },
     startScreen: {
-      greeting: "How can I help you today?",
+      greeting: "Do you need help with any particular topic?",
       prompts: [
         { label: "Help with feature", prompt: "I need help with a feature: ", icon: "circle-question" },
         { label: "Enhancement idea", prompt: "I have an enhancement idea", icon: "sparkle" },
